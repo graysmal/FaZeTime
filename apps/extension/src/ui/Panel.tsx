@@ -240,7 +240,7 @@ export function Panel(props: { host: HTMLElement; placement: Placement; notice: 
             <span className="ft-tab-ink" aria-hidden="true" />
           </nav>
           <div className="ft-body" role="tabpanel">
-            <div key={tab} className="ft-pane" data-dir={tabDir > 0 ? 'right' : 'left'}>
+            <div key={tab} className="ft-pane" data-tab={tab} data-dir={tabDir > 0 ? 'right' : 'left'}>
               {tab === 'market' && <MarketCard surface="panel" />}
               {tab === 'wallet' && <WalletTab />}
               {tab === 'redeem' && <RedeemTab />}

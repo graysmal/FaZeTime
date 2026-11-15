@@ -1330,3 +1330,144 @@ button:disabled {
 .ft-profile .ft-hint {
   font-size: 11px;
 }
+
+/* Wallet + Redeem: the grey boxes and buttons get the profile card's red edge and glow (owner request). */
+.ft-pane[data-tab='wallet'] .ft-stat,
+.ft-pane[data-tab='redeem'] .ft-item,
+.ft-pane[data-tab='redeem'] .ft-code,
+.ft-pane[data-tab='wallet'] .ft-primary:disabled,
+.ft-pane[data-tab='redeem'] .ft-secondary {
+  border: 1px solid var(--ft-red);
+  border-radius: 8px;
+  box-shadow: 0 0 10px rgba(228, 0, 43, 0.25);
+}
+.ft-pane[data-tab='redeem'] .ft-item {
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  background: rgba(31, 31, 35, 0.82);
+}
+.ft-pane[data-tab='redeem'] .ft-secondary:hover:not(:disabled) {
+  background: rgba(228, 0, 43, 0.18);
+  color: #fff;
+}
+.ft-pane[data-tab='wallet'] .ft-primary:disabled {
+  border-radius: 6px;
+}
+.ft-pane[data-tab='redeem'] .ft-secondary {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* =============================================================================================================
+   Jagged, not rounded (owner request): every box, button, tag and pill gets cut corners. clip-path also clips
+   outer shadows, so glows become inset glows; round marks become diamonds; the avatar is an octagon.
+   ============================================================================================================= */
+.ft-root {
+  --cut: 9px;
+  --cut-sm: 5px;
+  --chamfer: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+  --chamfer-sm: polygon(var(--cut-sm) 0, 100% 0, 100% calc(100% - var(--cut-sm)), calc(100% - var(--cut-sm)) 100%, 0 100%, 0 var(--cut-sm));
+  --octagon: polygon(30% 0, 70% 0, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0 70%, 0 30%);
+}
+/* large surfaces */
+.ft-panel[data-placement='floating'],
+.ft-stat,
+.ft-item,
+.ft-code,
+.ft-choice,
+.ft-banner,
+.ft-status,
+.ft-notice,
+.ft-dialog,
+.ft-drop,
+.ft-menu,
+.ft-profile,
+.ft-primary,
+.ft-secondary,
+.ft-amount,
+.ft-stake,
+.ft-input {
+  border-radius: 0 !important;
+  clip-path: var(--chamfer);
+}
+/* small controls and tags */
+.ft-icon-btn,
+.ft-chip-btn,
+.ft-x,
+.ft-eye,
+.ft-badge,
+.ft-state,
+.ft-tag,
+.ft-mode,
+.ft-verified,
+.ft-profile-row,
+.ft-select,
+.ft-menu-item,
+.ft-pill,
+.ft-poolbar {
+  border-radius: 0 !important;
+  clip-path: var(--chamfer-sm);
+}
+.ft-pill {
+  padding-left: 10px;
+}
+/* glows survive the clip as inset glows */
+.ft-pane[data-tab='wallet'] .ft-stat,
+.ft-pane[data-tab='redeem'] .ft-item,
+.ft-pane[data-tab='redeem'] .ft-code,
+.ft-pane[data-tab='wallet'] .ft-primary:disabled,
+.ft-pane[data-tab='redeem'] .ft-secondary {
+  border-radius: 0;
+  box-shadow: inset 0 0 12px rgba(228, 0, 43, 0.28);
+}
+.ft-profile {
+  box-shadow: inset 0 0 18px rgba(228, 0, 43, 0.25);
+}
+.ft-choice[aria-checked='true'].ft-choice--YES {
+  box-shadow: inset 0 0 0 1px var(--ft-red), inset 0 0 12px rgba(228, 0, 43, 0.35);
+}
+/* the code box was dashed; keep its border solid now that its corners are cut */
+.ft-code {
+  border-style: solid;
+}
+/* octagon avatar with a red rim (the rim is the outer layer, the face is the inner span) */
+.ft-avatar {
+  border-radius: 0;
+  clip-path: var(--octagon);
+  background: var(--ft-red);
+  box-shadow: none;
+  padding: 2px;
+}
+.ft-avatar span {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  clip-path: var(--octagon);
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255, 31, 75, 0.55), rgba(120, 0, 22, 0.9) 70%),
+    var(--ft-diamond, none) center / 160px auto;
+}
+/* round marks become diamonds */
+.ft-dot,
+.ft-watch > span {
+  border-radius: 0;
+  transform: rotate(45deg) scale(0.85);
+}
+.ft-resize::after {
+  border-radius: 0;
+  clip-path: polygon(3px 0, 100% 0, calc(100% - 3px) 100%, 0 100%);
+}
+
+/* Profile header: avatar + name block centred as a group in the card (owner request). */
+.ft-profile-top {
+  justify-content: center;
+  padding: 0 18px; /* keeps the group clear of the close (×) button */
+}
+.ft-profile-names {
+  align-items: center;
+  text-align: center;
+}
+.ft-profile-names .ft-verified {
+  align-self: center;
+}
