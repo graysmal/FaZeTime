@@ -1,0 +1,31 @@
+{
+  "market_id": "mkt_00000000000000000000000000000108",
+  "stream_session_id": "run_00000000000000000000000000000001",
+  "rules_version": 1,
+  "aggregate_version": 1,
+  "state": "DRAFT",
+  "origin": "OPERATOR_FIXTURE",
+  "question": "Will RedFox win the rematch?",
+  "yes_label": "RedFox",
+  "no_label": "BlueJay",
+  "opened_at_utc": null,
+  "close_at_utc": "2026-11-14T20:02:30.000Z",
+  "resolve_by_utc": "2026-11-14T20:15:00.000Z",
+  "locked_at_utc": null,
+  "terminal_at_utc": null,
+  "pool": {
+    "yes_minor": 0,
+    "no_minor": 0,
+    "total_minor": 0,
+    "simulated_minor": 0,
+    "wager_count": 0
+  },
+  "winning_side": null,
+  "void_reason": null,
+  "settlement_algorithm": null,
+  "criteria": null,
+  "opening_evidence_ids": null,
+  "resolution_evidence_ids": null,
+  "resolution_mode": null,
+  "resolution_reason": null
+}

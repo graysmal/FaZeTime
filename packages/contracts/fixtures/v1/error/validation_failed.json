@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "The request body is invalid.",
+    "retryable": false,
+    "retry_after_ms": null,
+    "request_id": "req_0000000000000000000000000000e00c",
+    "operation_id": null,
+    "details": {
+      "fields": [
+        {
+          "loc": [
+            "body",
+            "user_id"
+          ],
+          "msg": "Extra inputs are not permitted"
+        }
+      ]
+    }
+  },
+  "server_time_utc": "2026-11-14T20:00:00.000Z"
+}

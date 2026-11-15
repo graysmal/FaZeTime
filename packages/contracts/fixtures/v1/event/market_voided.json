@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "event_id": 69,
+  "stream_session_id": "run_00000000000000000000000000000001",
+  "aggregate_type": "MARKET",
+  "aggregate_id": "mkt_00000000000000000000000000000107",
+  "aggregate_version": 4,
+  "event_type": "market.voided",
+  "audience": "PUBLIC",
+  "occurred_at_utc": "2026-11-14T19:59:59.000Z",
+  "payload": {
+    "market_id": "mkt_00000000000000000000000000000107",
+    "stream_session_id": "run_00000000000000000000000000000001",
+    "rules_version": 1,
+    "aggregate_version": 4,
+    "state": "VOID",
+    "origin": "CANNED_FIXTURE",
+    "question": "Will RedFox build a tower taller than ten blocks?",
+    "yes_label": "Yes",
+    "no_label": "No",
+    "opened_at_utc": "2026-11-14T19:59:00.000Z",
+    "close_at_utc": "2026-11-14T20:02:00.000Z",
+    "resolve_by_utc": "2026-11-14T20:10:00.000Z",
+    "locked_at_utc": null,
+    "terminal_at_utc": "2026-11-14T19:59:59.000Z",
+    "pool": {
+      "yes_minor": 1000,
+      "no_minor": 500,
+      "total_minor": 1500,
+      "simulated_minor": 500,
+      "wager_count": 3
+    },
+    "winning_side": null,
+    "void_reason": "RUN_RESET",
+    "settlement_algorithm": null,
+    "criteria": null,
+    "opening_evidence_ids": null,
+    "resolution_evidence_ids": null,
+    "resolution_mode": null,
+    "resolution_reason": null
+  }
+}

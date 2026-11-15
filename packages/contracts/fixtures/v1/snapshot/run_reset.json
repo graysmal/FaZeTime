@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "server_time_utc": "2026-11-14T20:00:00.000Z",
+  "event_hwm": 70,
+  "stream": {
+    "stream_id": "str_00000000000000000000000000000001",
+    "twitch_channel_login": "fazetime_demo",
+    "stream_session_id": "run_00000000000000000000000000000002",
+    "run_state": "ACTIVE",
+    "aggregate_version": 5,
+    "wagering_paused": false,
+    "wagering_paused_reason": null
+  },
+  "modes": {
+    "ai_mode": "FIXTURE",
+    "payment_mode": "MOCK",
+    "media_source_kind": "TEST_FIXTURE"
+  },
+  "limits": {
+    "stake_min_minor": 100,
+    "stake_max_minor": 50000,
+    "stake_step_minor": 100,
+    "stake_default_minor": 500,
+    "topup_presets_minor": [
+      500,
+      1000,
+      5000
+    ],
+    "topup_min_minor": 500,
+    "topup_max_minor": 10000,
+    "topup_step_minor": 100
+  },
+  "source_health": {
+    "state": "LIVE",
+    "source_kind": "TEST_FIXTURE",
+    "source_epoch": "ep_00000000000000000000000000000001",
+    "last_media_at_utc": "2026-11-14T19:59:57.000Z",
+    "last_transcript_at_utc": "2026-11-14T19:59:56.000Z",
+    "updated_at_utc": "2026-11-14T20:00:00.000Z"
+  },
+  "market": null,
+  "my_position": null,
+  "wallet": {
+    "stream_session_id": "run_00000000000000000000000000000002",
+    "available_minor": 2000,
+    "in_play_minor": 0,
+    "balance_version": 1,
+    "pending_topup_minor": null
+  },
+  "raffle": null
+}

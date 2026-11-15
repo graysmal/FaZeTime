@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "server_time_utc": "2026-11-14T20:00:00.000Z",
+  "last_seen_utc": "2026-11-14T20:00:00.000Z",
+  "presence_state": "PRESENT",
+  "heartbeat_interval_ms": 15000,
+  "presence_ttl_ms": 45000,
+  "current_stream_session_id": "run_00000000000000000000000000000001"
+}

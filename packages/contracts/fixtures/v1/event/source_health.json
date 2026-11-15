@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "event_id": 52,
+  "stream_session_id": "run_00000000000000000000000000000001",
+  "aggregate_type": "SOURCE",
+  "aggregate_id": "str_00000000000000000000000000000001",
+  "aggregate_version": 12,
+  "event_type": "source.health",
+  "audience": "PUBLIC",
+  "occurred_at_utc": "2026-11-14T20:00:00.000Z",
+  "payload": {
+    "state": "STALE",
+    "source_kind": "TEST_FIXTURE",
+    "source_epoch": "ep_00000000000000000000000000000001",
+    "last_media_at_utc": "2026-11-14T19:59:42.000Z",
+    "last_transcript_at_utc": "2026-11-14T19:59:41.000Z",
+    "updated_at_utc": "2026-11-14T20:00:00.000Z"
+  }
+}

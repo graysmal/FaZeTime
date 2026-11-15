@@ -1,6 +1,6 @@
 # Shared contract specification
 
-Version: proposed v1. This is a design contract to freeze in P0, not generated OpenAPI or application code. [PROJECT_PLAN](../PROJECT_PLAN.md) is authoritative. The coordinator owns contract edits; implementers propose changes before changing both sides independently. Backend Pydantic/OpenAPI will become the executable schema; generated TypeScript types should derive from it.
+Version: **v1 FROZEN on 2026-11-14.** §9 is authoritative for P1/P2. This is a design contract, not generated OpenAPI or application code. [PROJECT_PLAN](../PROJECT_PLAN.md) is authoritative. The coordinator owns contract edits; implementers propose changes before changing both sides independently. Backend Pydantic/OpenAPI will become the executable schema; generated TypeScript types should derive from it.
 
 ## 1. Canonical vocabulary
 
@@ -13,7 +13,7 @@ Use these exact wire names after P0 review. Narrative references to run/session/
 | `stream_session_id` | One explicit demo/broadcast accounting run; also called demo run in prose |
 | `source_epoch` | New ID on ingest restart, seek/loop, adapter change or discontinuity recovery; formerly described as ingest session |
 | `sequence` | Monotonic integer within source epoch |
-| `market_id`, `market_version` | Immutable market identity and monotonic state version |
+| `market_id`, `rules_version`, `aggregate_version` | Immutable market identity; the frozen-terms version that wagers check; and a per-change ordering version (§9.3) |
 | `operation_id` | Durable client-generated economic idempotency key, scoped to authenticated actor/type |
 | `event_id` | Durable domain-event cursor; not the provider webhook event ID |
 | `amount_minor` | Integer demo currency units, 100 units per displayed demo dollar |
@@ -26,7 +26,7 @@ All records that can outlive a reset carry `stream_session_id` where applicable.
 ## 2. State machines
 
 Market states: `DRAFT`, `OPEN`, `LOCKED`, `EVALUATING`, `SETTLED`, `VOID`.
-Normal transitions: DRAFT→OPEN→LOCKED→EVALUATING→SETTLED. Any accepted but not terminal market can become VOID under its fixed cancellation policy. Empty/one-sided pools may become VOID at lock. A rejected candidate is not a market and has no ledger effects. No reopen, post-bet question edit, or terminal-to-terminal change.
+Normal transitions: DRAFT→OPEN→LOCKED→EVALUATING→SETTLED. Any accepted but not terminal market can become VOID under its fixed cancellation policy. Empty/one-sided pools must become VOID at lock (D12). A rejected candidate is not a market and has no ledger effects. No reopen, post-bet question edit, or terminal-to-terminal change.
 
 Only one market in OPEN/LOCKED/EVALUATING is permitted per stream session, even if the UI has hidden it. Enforce transactionally. A pending candidate does not reserve funds. A new market waits until the previous one is terminal and any draw boundary is released.
 
@@ -74,13 +74,13 @@ Names are proposed routes to finalize once; all mutation responses return the au
 | `POST /v1/presence` | Device ID, stream/session, page/player observations; server stamps last_seen |
 | `GET /v1/streams/{id}/snapshot` | Public current market/pools, own wager/receipt/balance, source health, server time, event high-water mark |
 | `POST /v1/ws-ticket` | Authenticated short-lived one-use ticket for scoped event subscription |
-| `POST /v1/wagers` | operation_id, market_id/version, side YES/NO, amount_minor; atomic acceptance or typed failure |
+| `POST /v1/wagers` | operation_id, stream_session_id, market_id, rules_version, side YES/NO, amount_minor; atomic acceptance or typed failure (§9.6) |
 | `POST /v1/topups` | operation_id + amount_minor; server-fixed currency and allowlisted Stripe return path; returns Checkout URL/intent |
 | `GET /v1/topups/{id}` | Own authoritative fulfillment status; useful when redirect/webhook lag |
 | `POST /v1/redemptions` | operation_id + fixed catalog item ID; transactionally debit, generate demo code once |
 | `GET /v1/raffle` | Current eligible weight/total, snapshot when drawn, winner display label; no full phone lists |
 
-Never accept client-supplied user_id as authority for a wallet action. Market version mismatches yield `STALE_MARKET`; the client refreshes and obtains new user intent where needed. UI estimates are not accepted settlement terms. To avoid spurious failures from pool updates, distinguish market state/rule version from pool/event version, or document exactly which version the wager precondition checks. Freeze that choice before implementation.
+Never accept client-supplied user_id as authority for a wallet action. Market version mismatches yield `STALE_MARKET`; the client refreshes and obtains new user intent where needed. UI estimates are not accepted settlement terms. Frozen in §9.3: the wager precondition checks `rules_version`. Pool updates never cause `STALE_MARKET`.
 
 Typed failure codes: `UNAUTHENTICATED`, `FORBIDDEN`, `INVALID_AMOUNT`, `INSUFFICIENT_FUNDS`, `MARKET_CLOSED`, `STALE_MARKET`, `WRONG_RUN`, `IDEMPOTENCY_CONFLICT`, `CAPABILITY_UNAVAILABLE`, `SOURCE_STALE`, `RATE_LIMITED`, `VALIDATION_FAILED`. Do not show a generic success toast for an unresolved timeout. Retry the same operation key or read its receipt.
 
@@ -115,4 +115,460 @@ Deliver public market/pool state to channel subscribers; wallet/wager/payment de
 Before independent coding, publish examples for each state/error, source gap, duplicate receipt, and call confirmation. Examples include exact units and nullable semantics. Keep one enum source and validate generated TS/Python compatibility. Contract changes increment schema version or are backward-compatible additive fields with defaults; do not alter amount units in place.
 
 A contract change proposal states affected producer/consumer, migration and tests. Coordinator approves, updates this file and the phase task packet, then schedules both sides. Incomplete consumers should use explicit mocks of the same contract rather than invent another API.
+
+## 9. v1 freeze (2026-11-14, coordinator; D26)
+
+Status: **FROZEN v1** for P1 and P2.
+- Sources: planner proposals F1–F16 and reviewer findings H1–H6 and M1–M8 (docs/evidence/p0/P0-G-contract-review.md).
+- Precedence: where §1–8 or ECONOMICS conflict with this section, this section wins.
+- Changes: follow §8 and §9.12.
+
+### 9.1 Formats
+
+- **Server IDs:** `<prefix>_<32 lowercase hex>`, generated from uuid4.
+  - Prefixes: `usr ses str run mkt wgr txn evd ep req inv`.
+  - `stream_session_id` is a `run_` ID.
+- **Client IDs** (`operation_id`, `device_id`, `tab_instance_id`): canonical lowercase UUID, from `crypto.randomUUID()`.
+- **Counters:** `event_id`, versions and `sequence` are positive integers.
+- **Stable ordering** (tie-breaks and raffle intervals): ASCII ascending on the ID string.
+- **Times:** UTC RFC 3339 with exactly three fractional digits and `Z`, e.g. `2026-11-15T02:15:00.000Z`. Reject inputs without an offset.
+- **Durations:** integer `*_ms`. Media positions use only `media_*_ms`, within one `source_epoch`.
+- **Money:** integer `*_minor`, 100 per demo dollar. Payout and estimate arithmetic uses Python/TS integers within the §9.2 bounds. Never use floats or SQL arithmetic for payouts.
+
+### 9.2 Limits
+
+The server publishes these in `snapshot.limits`. Clients never hardcode them.
+
+| Limit | Value |
+|---|---|
+| Stake | 100–50,000, step 100, default 500 |
+| Top-up presets | 500 / 1,000 / 5,000 |
+| Custom top-up | 500–10,000, step 100 |
+| Available balance | at most 1,000,000 |
+| Seed grant per real user per run | 2,000 (configurable) |
+
+### 9.3 Markets
+
+- **States:** `DRAFT OPEN LOCKED EVALUATING SETTLED VOID`.
+  - DRAFT is operator-only and never appears in viewer payloads.
+  - SETTLED and VOID are terminal and immutable.
+- **Sides:** `YES` and `NO`.
+  - `yes_label` and `no_label` are bound to their side.
+  - P4 criteria are keyed by side (`criteria.YES`, `criteria.NO`).
+  - A candidate whose labels and predicates are not paired by side is rejected.
+- **Frozen at OPEN:**
+  - `question`, labels and criteria.
+  - `opened_at_utc` and `resolve_by_utc`.
+  - `close_at_utc`, which is exclusive: a wager is accepted only if the server commit time is `< close_at_utc`.
+  - The cancellation rules.
+- **`rules_version`** identifies those frozen terms. It is 1 in v1; there are no edits after OPEN.
+- **`aggregate_version`** increments on every state or pool change. It orders events and snapshots, and never causes `STALE_MARKET`.
+- At most one market per run may be in `OPEN`, `LOCKED` or `EVALUATING`, enforced by a partial unique index.
+- **Origins:** `OPERATOR_FIXTURE CANNED_FIXTURE AI_APPROVED AI_AUTOMATIC`. The origin is always shown.
+
+The API owns every transition. Each is a conditional `UPDATE … WHERE state IN (…)`, written with its ledger and outbox rows in one `BEGIN IMMEDIATE` transaction.
+
+| From → to | Trigger | Guards and effects |
+|---|---|---|
+| DRAFT → OPEN | Operator approval, or AUTOMATIC mode | No other nonterminal market in the run. Source is `LIVE` for Twitch-origin markets. `close_at_utc − now ≥ min_lead_ms` (configurable, default 30,000), rechecked at commit |
+| OPEN → LOCKED | The sweeper, at `close_at_utc` | The sweeper runs every second and at startup. Wager acceptance checks `close_at_utc` itself and never depends on the sweeper. Records `locked_at_utc`, `lock_source_epoch` and `lock_media_ms` (nullable before P3) |
+| OPEN → VOID at lock | The same lock transaction, if `yes_minor = 0` or `no_minor = 0` | Reason `EMPTY_POOL` or `ONE_SIDED_POOL`. Refunds happen in the same transaction (D12) |
+| LOCKED → EVALUATING | The sweeper, immediately after lock | EVALUATING means "awaiting an accepted outcome" |
+| EVALUATING → SETTLED | An accepted YES/NO outcome before `resolve_by_utc`, by operator approval or AUTOMATIC mode | Asserts `0 < W < T`. Payouts follow ECONOMICS §4, and they and the state change happen in one transaction |
+| OPEN / LOCKED / EVALUATING → VOID | `UNRESOLVABLE` (immediate in AUTOMATIC mode; in APPROVAL mode the operator decides before the deadline), `RESOLUTION_TIMEOUT` (the sweeper at `resolve_by_utc`, in every mode), `SOURCE_GAP` (§9.4), `RUN_RESET` (§9.5), `OPERATOR_CANCELLED` | Every accepted wager is refunded exactly once, in the same transaction. No raffle weight |
+
+### 9.4 Source health and gaps
+
+The API derives health from worker observations and heartbeats, using `received_at_utc`. The thresholds are configurable defaults, to be tuned in P3.
+
+Measured 2026-11-14: default Streamlink delivers Twitch media in bursts of 2 s fMP4 segments about 6 s apart (spikes/p0-media/README.md). A threshold of 6 s or less would therefore flicker every cycle.
+
+| State | Meaning |
+|---|---|
+| `CONNECTING` | New epoch; no fresh media yet |
+| `LIVE` | Fresh media no more than 12 s old, in the current epoch |
+| `STALE` | Newest media is 12–30 s old |
+| `STOPPED` | Newest media is more than 30 s old, or the worker heartbeat has been missing for more than 30 s |
+| `GAP` | The worker reported a discontinuity |
+
+- A wager on a Twitch-origin market commits only while health is `LIVE`; otherwise it fails with `SOURCE_STALE`. Fixture-origin markets are exempt and labelled.
+- Between OPEN and an accepted outcome:
+  - if the `source_epoch` changes, or health reaches `GAP` or `STOPPED`, the market becomes VOID with `SOURCE_GAP`;
+  - `STALE` (30 s or less) only pauses acceptance.
+- Before P3, the snapshot reports `STOPPED` with null fields.
+
+### 9.5 Runs, wallets and reset
+
+- **Wallets** are per (user, run).
+  - Each new run seeds every real demo user with a labelled `SEED_GRANT`.
+  - Bots have separate seeded wallets, flagged as simulated.
+- **Reset** is an operator mutation with an `operation_id`. It:
+  1. voids the nonterminal market with `RUN_RESET`, refunding its stakes;
+  2. marks the run `ARCHIVED` (it stays inspectable);
+  3. creates a new run and its seed grants.
+  Ledger history and idempotency keys are never deleted.
+- A payment that completes for an archived run credits that run's wallet, never the new run (P6).
+- **Wallet fields:**
+  - `available_minor`: DB `CHECK ≥ 0`; debited only conditionally.
+  - `in_play_minor`: your own stakes in the nonterminal market.
+  - `balance_version`.
+  - `pending_topup_minor`: reserved for P6.
+  - There is no total field.
+
+### 9.6 Wagers
+
+- **Request fields:** `operation_id`, `stream_session_id`, `market_id`, `rules_version`, `side`, `amount_minor`. The request uses `extra="forbid"`, so a body containing `user_id` fails with `VALIDATION_FAILED`.
+- **One side per user per market.**
+  - More wagers on the same side are allowed; each is a new operation.
+  - A wager on the other side fails with `SIDE_CONFLICT`.
+  - No edits, cancellations, cashouts or side switches.
+- **Check order:**
+  - Before the transaction: authentication, then rate limit, then validation / `INVALID_AMOUNT`.
+  - Inside `BEGIN IMMEDIATE`, in order:
+    1. idempotency replay or conflict
+    2. `WRONG_RUN`
+    3. `STALE_MARKET` (unknown market, or `rules_version` mismatch)
+    4. `MARKET_CLOSED` (state is not OPEN, `now ≥ close_at_utc`, or acceptance is paused)
+    5. `SOURCE_STALE`
+    6. `SIDE_CONFLICT`
+    7. `INSUFFICIENT_FUNDS`
+    8. accept: debit available, credit escrow, insert the wager, insert the outbox event.
+- **Estimated gross return** shown before lock: `floor(s × (T + s) / (W_side + s))`. It is labelled as an estimate.
+
+### 9.7 Idempotency
+
+- **Key:** unique on (actor user ID, `operation_id`). Store the operation type and a SHA-256 of the canonical request (sorted-key JSON).
+- **Replays and conflicts:**
+  - Same key and same hash: return the original receipt, HTTP 200, `replayed: true`. This holds even after close or reset.
+  - Same key with a different hash or type: `IDEMPOTENCY_CONFLICT`, with no effect.
+  - Another user's identical key is a separate operation.
+- **What is recorded:** only committed effects. Business rejections are not cached.
+- **Client rules:**
+  - Create a new `operation_id` for every user intent, such as each Place Bet click.
+  - Reuse the same key and body only after a network error, timeout, 5xx or `RATE_LIMITED`, until a definitive answer arrives.
+  - Keep the pending operation in extension storage so a popup close or reload does not lose it.
+- **Lookup:** `GET /v1/operations/{operation_id}` returns the caller's own receipt, or `NOT_FOUND`.
+- Every operator mutation carries an `operation_id`: approve, void, reset, fixture credit, fixture market.
+- Keys are kept for the life of the database.
+
+### 9.8 Identity
+
+- **Invite code:**
+  - 12 Crockford base32 characters, case- and hyphen-insensitive.
+  - Single use, enforced by a conditional update. Valid for 24 h. Stored hashed.
+  - The code binds the role (`VIEWER` or `OPERATOR`) and the bot flag on the server. The enroll body cannot set them.
+- **Session:**
+  - `fzs_` + 32 random bytes (base64url), stored as SHA-256.
+  - 72 h absolute expiry, revocable.
+  - Sent only as `Authorization: Bearer` from the trusted extension context. Never put in URLs or exposed to page scripts.
+  - A lost session is recovered with a new invite; P2 may bind it to the existing user.
+- **Workers** use separate role credentials (`MEDIA_WORKER`, `CALL_WORKER`) from local configuration.
+- No phone fields in P1 or P2 (D16).
+- **Operator routes** live under `/v1/operator/*`. P2 defines them. Each requires an operator session, an `operation_id` and an audit event. They are not part of the viewer contract.
+
+### 9.9 Snapshot, events and WebSocket
+
+- **Snapshot:** `GET /v1/streams/{stream_id}/snapshot` is built in one read transaction. `event_hwm` is the highest committed `event_id` it includes.
+- **Ticket:** `POST /v1/ws-ticket {stream_id}` returns `{ticket: "fzw_…", expires_at_utc (30 s), ws_path: "/v1/ws"}`.
+- **Socket protocol:**
+  - The socket URL carries no secret.
+  - The first client frame must be `{"type":"auth","ticket"}` within 5 s, or the server closes with 4401.
+  - The server answers `{"type":"ready","event_hwm"}`, then sends `{"type":"event","event":DomainEvent}`.
+  - Either side may send an app-level ping every 25 s.
+  - The server checks Origin against an allowlist: the pinned extension origin and `https://www.twitch.tv`.
+- **Events:**
+  - Each market is one aggregate (`MARKET`), and every event carries the full current aggregate state. A client keeps the highest `aggregate_version` it has seen and discards older ones.
+  - Client sequence: subscribe and buffer, fetch the snapshot, then apply newer events. Refetch on a version gap or a run change.
+  - Gaps in `event_id` are normal, because events are filtered by audience.
+- **Polling fallback:** read the same snapshot every 2 s while a market is OPEN, and every 10 s otherwise.
+
+### 9.10 Errors
+
+Every non-2xx response returns:
+`{error:{code, message, retryable, retry_after_ms, request_id, operation_id, details}, server_time_utc}`.
+
+The codes are the §4 list plus `SIDE_CONFLICT`, `NOT_FOUND` and `INTERNAL_ERROR`.
+
+| HTTP | Codes |
+|---|---|
+| 401 | `UNAUTHENTICATED` |
+| 403 | `FORBIDDEN` |
+| 404 | `NOT_FOUND` |
+| 409 | `INSUFFICIENT_FUNDS`, `MARKET_CLOSED`, `STALE_MARKET`, `WRONG_RUN`, `IDEMPOTENCY_CONFLICT`, `SOURCE_STALE`, `SIDE_CONFLICT` |
+| 422 | `INVALID_AMOUNT`, `VALIDATION_FAILED` |
+| 429 | `RATE_LIMITED`, with `Retry-After` |
+| 500 | `INTERNAL_ERROR` |
+| 503 | `CAPABILITY_UNAVAILABLE` |
+
+- Only `RATE_LIMITED` and `INTERNAL_ERROR` are retryable with the same key and body.
+- A timeout or 5xx means the outcome is unknown. Retry with the same key, or read `/v1/operations/{id}`. Never show a success toast.
+
+### 9.11 Persistence (P2)
+
+- **SQLite settings (D23):** `journal_mode=DELETE`, `synchronous=FULL`, `foreign_keys=ON` and `busy_timeout=5000` on every connection.
+- **Transactions:**
+  - Every money or state mutation uses `BEGIN IMMEDIATE`: driver autocommit plus an explicit begin hook.
+  - Snapshot reads run inside one `BEGIN`.
+- **Backups:** use `sqlite3.Connection.backup`.
+- **Constraints:**
+  - A partial unique index allows only one nonterminal market per run.
+  - `CHECK (available_minor >= 0)`.
+  - Ledger tables are append-only, enforced by triggers that reject UPDATE and DELETE.
+
+### 9.12 Versioning
+
+- Every response and event carries `schema_version: 1`.
+- **Additive (no version bump):** new optional fields with defaults, and new event types.
+- **Needs a version bump plus a coordinator change record:** renames, removals, a change of type, unit or meaning, new required request fields, and new enum values that clients branch on.
+- Requests use `extra="forbid"`.
+- Clients ignore unknown fields, and render unknown enum values as a disabled "unavailable" state.
+
+### 9.13 Schema sketch (v1)
+
+```text
+Utc = str "2026-11-15T02:15:00.000Z" | Minor = StrictInt demo cents 0..1_000_000_000 | Pos = StrictInt >= 1
+Id(p) = ^p_[0-9a-f]{32}$ | CUuid = lowercase canonical UUID | every response/event: schema_version: Literal[1]
+
+A. ENUMS
+Side             YES | NO
+MarketState      DRAFT | OPEN | LOCKED | EVALUATING | SETTLED | VOID      # DRAFT is operator-only
+VoidReason       EMPTY_POOL | ONE_SIDED_POOL | UNRESOLVABLE | RESOLUTION_TIMEOUT | SOURCE_GAP | RUN_RESET | OPERATOR_CANCELLED
+MarketOrigin     OPERATOR_FIXTURE | CANNED_FIXTURE | AI_APPROVED | AI_AUTOMATIC
+ResolverDecision YES | NO | WAIT | UNRESOLVABLE                             # P5
+WagerStatus      ACCEPTED | WON | LOST | REFUNDED
+MyResult         NONE | PENDING | WON | LOST | VOID_REFUNDED | UNRESOLVED_REFUNDED
+                 # UNRESOLVED_REFUNDED = VOID with UNRESOLVABLE or RESOLUTION_TIMEOUT
+MediaHealth      CONNECTING | LIVE | GAP | STALE | STOPPED
+SourceKind       TWITCH_STREAMLINK | TWITCH_TAB_CAPTURE | TEST_FIXTURE
+AiMode           OFF | SHADOW | APPROVAL | AUTOMATIC | FIXTURE              # "supervised AI" = APPROVAL
+PaymentMode      MOCK | UNAVAILABLE | STRIPE_TEST
+Role             VIEWER | OPERATOR | MEDIA_WORKER | CALL_WORKER
+RunState         ACTIVE | ARCHIVED
+PauseReason      SOURCE_NOT_LIVE | OPERATOR_PAUSE | DRAW_BOUNDARY          # DRAW_BOUNDARY reserved (P8); blocks new markets only (D27)
+PresenceState    PRESENT | ABSENT
+PageVisibility   VISIBLE | HIDDEN | UNKNOWN
+PlayerState      PLAYING | PAUSED | BUFFERING | UNKNOWN
+AggregateType    STREAM | MARKET | WAGER | WALLET | SOURCE | RAFFLE (reserved) | CALL (reserved)
+Audience         PUBLIC | USER | OPERATOR
+LedgerReason     SEED_GRANT | FIXTURE_CREDIT | WAGER_STAKE | PAYOUT | REFUND | STRIPE_TEST_TOPUP (P6) | REDEMPTION (P6, optional)
+ErrorCode        UNAUTHENTICATED | FORBIDDEN | INVALID_AMOUNT | INSUFFICIENT_FUNDS | MARKET_CLOSED | STALE_MARKET |
+                 WRONG_RUN | IDEMPOTENCY_CONFLICT | CAPABILITY_UNAVAILABLE | SOURCE_STALE | RATE_LIMITED |
+                 VALIDATION_FAILED | SIDE_CONFLICT | NOT_FOUND | INTERNAL_ERROR
+event_type       stream.updated | source.health | market.opened | pool.updated | market.locked | market.evaluating |
+                 market.settled | market.voided | wager.updated | wallet.changed | raffle.* (reserved) | call.state (reserved)
+
+B. SHARED
+Limits: stake_min_minor=100, stake_max_minor=50000, stake_step_minor=100, stake_default_minor=500,
+  topup_presets_minor=[500,1000,5000], topup_min_minor=500, topup_max_minor=10000, topup_step_minor=100
+Modes: ai_mode AiMode; payment_mode PaymentMode; media_source_kind SourceKind|None
+WalletSummary: stream_session_id Id(run); available_minor Minor; in_play_minor Minor; balance_version int>=0;
+  pending_topup_minor Minor|None = None (P6)
+StreamInfo: stream_id Id(str); twitch_channel_login str; stream_session_id Id(run); run_state RunState;
+  aggregate_version Pos; wagering_paused bool; wagering_paused_reason PauseReason|None
+SourceHealth: state MediaHealth; source_kind SourceKind|None; source_epoch Id(ep)|None;
+  last_media_at_utc Utc|None; last_transcript_at_utc Utc|None; updated_at_utc Utc
+
+C. StreamSnapshot: GET /v1/streams/{stream_id}/snapshot (authenticated)
+server_time_utc; event_hwm int>=0; stream StreamInfo; modes Modes; limits Limits; source_health SourceHealth;
+market PublicMarket|None          # the nonterminal market, else the latest terminal market in the run, else None
+my_position MyPosition|None; wallet WalletSummary; raffle None (reserved P8)
+PublicMarket: market_id Id(mkt); stream_session_id Id(run); rules_version Pos; aggregate_version Pos;
+  state MarketState; origin MarketOrigin; question str[1..200]; yes_label str[1..40]="Yes"; no_label str[1..40]="No";
+  opened_at_utc; close_at_utc; resolve_by_utc; locked_at_utc|None; terminal_at_utc|None;
+  pool {yes_minor, no_minor, total_minor (= yes + no), simulated_minor (bot stakes, included in totals), wager_count int};
+  winning_side Side|None (iff SETTLED); void_reason VoidReason|None (iff VOID);
+  settlement_algorithm str|None ("PARIMUTUEL_FLOOR_REMAINDER_V1" iff SETTLED);
+  reserved, null until P4/P5: criteria {YES, NO}, opening_evidence_ids, resolution_evidence_ids,
+  resolution_mode, resolution_reason
+MyPosition: market_id; side Side|None; stake_total_minor Minor; result MyResult;
+  payout_total_minor Minor|None (WON: gross including stake; LOST: 0); refund_total_minor Minor|None;
+  wagers [WagerReceipt]
+
+D. WagerRequest: POST /v1/wagers (extra=forbid; no user_id)
+operation_id CUuid; stream_session_id Id(run); market_id Id(mkt); rules_version Pos; side Side; amount_minor StrictInt
+  # an error isolated to amount_minor -> INVALID_AMOUNT with details {min_minor, max_minor, step_minor}
+
+E. WagerReceipt: 201 the first time; 200 with replayed=true
+wager_id Id(wgr); operation_id; stream_session_id; market_id; rules_version; side; amount_minor;
+status WagerStatus; accepted_at_utc; terminal_at_utc|None; stake_txn_id Id(txn); terminal_txn_id Id(txn)|None;
+payout_minor|None; refund_minor|None; market_aggregate_version Pos; wallet_after WalletSummary; replayed bool
+
+F. Me: GET /v1/me
+server_time_utc; user {user_id Id(usr); display_name str[1..32]; claimed_twitch_login str|None (unverified label); role Role};
+session {session_id Id(ses); expires_at_utc}; current_stream {stream_id, twitch_channel_login, stream_session_id}|None;
+wallet WalletSummary|None
+
+G. ErrorEnvelope: every non-2xx (see 9.10)
+error {code; message (safe text); retryable bool; retry_after_ms int|None; request_id Id(req);
+  operation_id CUuid|None; details obj|None}; server_time_utc
+details: INSUFFICIENT_FUNDS {available_minor, requested_minor} | INVALID_AMOUNT {min_minor, max_minor, step_minor} |
+  MARKET_CLOSED {state, close_at_utc, reason DEADLINE|STATE|PAUSED} |
+  STALE_MARKET {current_market_id|None, current_rules_version|None} | WRONG_RUN {current_stream_session_id} |
+  SOURCE_STALE {source_state} | SIDE_CONFLICT {existing_side} | VALIDATION_FAILED {fields [{loc, msg}]}
+
+H. DomainEvent: WS frame {"type":"event","event": ...}
+event_id Pos; stream_session_id; aggregate_type; aggregate_id str; aggregate_version Pos; event_type; audience;
+occurred_at_utc; payload = full current state (PublicMarket | WagerReceipt | WalletSummary | SourceHealth | {stream, modes})
+WS control: client {"type":"auth","ticket"} within 5 s; server {"type":"ready","event_hwm"} | {"type":"resync","reason"};
+  {"type":"ping"} / {"type":"pong"}; close codes 4401 (auth) and 4403 (origin or role)
+POST /v1/ws-ticket {stream_id} -> {ticket "fzw_...", expires_at_utc, ws_path "/v1/ws"}
+
+I. PresenceHeartbeat: POST /v1/presence (keyed by session user + device_id; aggregated per user and stream)
+device_id CUuid; tab_instance_id CUuid; stream_id Id(str); known_stream_session_id Id(run)|None;
+observed_channel_login str|None; page_visibility PageVisibility; player_state PlayerState; extension_version str[1..32]
+PresenceAck: server_time_utc; last_seen_utc; presence_state PresenceState; heartbeat_interval_ms=15000;
+  presence_ttl_ms=45000; current_stream_session_id Id(run)
+
+J. Enroll: POST /v1/enroll (rate limited: 10 per 10 min per client)
+request: invite_code str (12 Crockford base32, case- and hyphen-insensitive); display_name str[1..32];
+  claimed_twitch_login ^[A-Za-z0-9_]{1,25}$ | None; device_id CUuid
+response: session_token "fzs_..." (returned once, never logged); session_id; expires_at_utc; me Me
+  # a bad, used or expired code -> UNAUTHENTICATED (indistinguishable)
+
+K. Operation lookup: GET /v1/operations/{operation_id} -> the caller's own receipt (WagerReceipt for wagers) or NOT_FOUND
+```
+
+### 9.14 Fixtures
+
+- **Location:** `packages/contracts/fixtures/v1/`. The extension engineer owns them; a backend contract test validates them.
+- **Conventions:**
+  - Fixed time `2026-11-14T20:00:00.000Z` and deterministic IDs.
+  - Fictional names, placeholder tokens, no phone numbers.
+  - P1 fixtures use modes `FIXTURE`, `MOCK` and `TEST_FIXTURE`.
+  - The P1 mock adapter shifts every `*_utc` value to "now".
+- **Required files:**
+  - `snapshot/`: no_market, open_no_position, open_with_position, open_empty_pool, open_one_sided, open_low_balance, open_source_stale, locked, evaluating, settled_win, settled_loss, settled_no_position, void_one_sided, void_empty, void_source_gap, void_resolution_timeout, void_unresolvable, run_reset.
+  - `operator/`: market_draft.
+  - `me/`: viewer_funded, viewer_low_balance.
+  - `enroll/`: request, response.
+  - `ws/`: ticket_response.
+  - `presence/`: heartbeat, ack.
+  - `wager/`: request, receipt_accepted, receipt_replayed, request_conflict.
+  - `error/`: one file per error code.
+  - `event/`: one file per event type, plus sequence_reorder_duplicate (with its expected final state).
+  - `domain/`: settlement_worked_example (ECONOMICS §4).
+  - P1-only mocks (the redeem catalog and code) live outside the contract folder.
+- **Invariants checked on every fixture:**
+  - `total = yes + no`.
+  - `winning_side` is present only when SETTLED; `void_reason` only when VOID.
+  - No DRAFT appears in viewer payloads.
+  - Amounts are integers within §9.2.
+  - Timestamps and IDs match §9.1.
+  - Each terminal fixture maps to exactly one banner:
+
+| `MyResult` | Banner |
+|---|---|
+| `WON` | Win |
+| `LOST` | "Ooohhh, so close!!" |
+| `VOID_REFUNDED` | Void, refunded |
+| `UNRESOLVED_REFUNDED` | Unresolved, refunded |
+| `NONE` | Neutral |
+
+### 9.15 v1 clarifications (2026-11-14, from the P1/P2 worker findings)
+
+These are additive rulings. No schema version change.
+
+1. **Wallet events:** aggregate `WALLET`, with `aggregate_id = user_id` and `aggregate_version = balance_version`. The version restarts each run. Clients key wallet state by (`stream_session_id`, `aggregate_id`) and refetch on a run change. `balance_version` increments on any `WalletSummary` change, including `in_play_minor`.
+2. **`wagering_paused`** is true iff the current market is OPEN and either:
+   - `OPERATOR_PAUSE` is set; or
+   - the market is Twitch-origin (`AI_APPROVED`/`AI_AUTOMATIC`) and health is not `LIVE` (`SOURCE_NOT_LIVE`).
+   Error codes:
+   - A SOURCE_NOT_LIVE pause rejects wagers with `SOURCE_STALE`.
+   - `MARKET_CLOSED` with reason `PAUSED` is only for `OPERATOR_PAUSE`.
+   - `DRAW_BOUNDARY` never blocks wagers (D27).
+   - The fixture `void_source_gap` should show `wagering_paused: false`.
+3. **DRAFT:** `close_at_utc` and `resolve_by_utc` are null until OPEN. Operator create takes `close_in_s` and `resolve_in_s`, and `resolve_by_utc = close_at_utc + resolve_in_s`. Absolute times in `operator/market_draft` are illustrative.
+4. **Versions:** `aggregate_version` is 1 at DRAFT creation, so viewers first see 2 or higher. Clients never assume a starting value.
+5. **`schema_version`:**
+   - Required on top-level responses, events and error envelopes.
+   - Optional or omitted on embedded objects.
+   - Never in requests.
+6. **`my_position`:** present iff `market` is present. "No position" means `side: null`, `stake_total_minor: 0`, `result: NONE`.
+7. **Receipts:**
+   - LOST: `payout_minor = 0`.
+   - REFUNDED: `refund_minor` = the stake and `payout_minor = null`.
+   - A POST replay and `GET /v1/operations/{id}` both return the stored original receipt with **`replayed: true`**. Live status comes from the snapshot or `wager.updated`.
+8. **Amounts:** VOID pools keep their accepted totals. Stakes and custom top-ups must be multiples of their step.
+9. **HTTP details:**
+   - `VALIDATION_FAILED` `loc` is a Pydantic-style array with a `"body"` prefix.
+   - Enroll returns 201 and ws-ticket returns 200.
+   - An unknown method returns 405 with `NOT_FOUND`.
+   - A rejected CORS preflight returns 403 with `FORBIDDEN`.
+10. **Operator error codes:**
+    - Opening while another market is nonterminal: `STALE_MARKET`.
+    - Wrong state: `MARKET_CLOSED` with reason `STATE`.
+    - Settling after `resolve_by`: `MARKET_CLOSED` with reason `DEADLINE`.
+    - Settling a non-fixture market by hand: `VALIDATION_FAILED`.
+    - No stream yet: `NOT_FOUND`.
+    - Credit out of range: `INVALID_AMOUNT`.
+    - An invite replay returns `invite_code: null`; the code is shown once.
+11. **Audiences:** USER-audience events go only to the owning user's sockets. Operators inspect through `/v1/operator/*`.
+12. **WebSocket:**
+    - A missing or disallowed Origin closes with 4403.
+    - `ready` carries `schema_version`, `stream_id`, `server_time_utc` and `event_hwm`.
+    - The extension ID is pinned with a manifest `key`, and the CORS and WS allowlists use that `chrome-extension://` origin.
+13. **P1-local shapes:** the top-up and redeem response shapes stay local to P1 until P6. The catalog is static.
+
+### 9.16 Media-worker contract (v1, for P3)
+
+**Authentication and limits**
+- `Authorization: Bearer fzk_…` (32 random bytes). The operator CLI issues it for role `MEDIA_WORKER`, and it is stored hashed. The worker reads it from `FAZETIME_WORKER_TOKEN`.
+- Every `/v1/worker/*` route requires that role.
+- JSON bodies are limited to 256 KB, and frame uploads to 300 KB JPEG.
+- Errors use the §9.10 envelope, plus a worker-only code `STALE_EPOCH` (409) for data from an epoch that is not current.
+- Media positions are milliseconds within the epoch's decoded stream, computed from sample counts, not from wall time. Transcript text is untrusted data. It is stored verbatim and never interpreted as instructions.
+
+**Routes**
+
+1. `POST /v1/worker/epochs`. Request:
+   - `schema_version`, `stream_id`
+   - `source_epoch` (`ep_` ID)
+   - `source_kind`: `TWITCH_STREAMLINK`, `TWITCH_TAB_CAPTURE` or `TEST_FIXTURE`
+   - `reason`: `PROCESS_START`, `PROCESS_RESTART`, `PTS_DISCONTINUITY`, `AFTER_GAP` or `ADAPTER_SWITCH`
+   - `variant` (string or null), `host_id`, `started_at_utc`
+
+   It is idempotent per `source_epoch`, and the epoch becomes the stream's current one. If a market is OPEN, LOCKED or EVALUATING, that market becomes VOID with `SOURCE_GAP` (§9.4).
+
+2. `POST /v1/worker/heartbeat`, sent every 5 s. Request:
+   - `schema_version`, `stream_id`
+   - `source_epoch` (or null)
+   - `worker_state` (a `MediaHealth` value)
+   - `last_media_end_ms` (or null), `last_input_age_ms` (or null)
+   - `asr_backlog_ms`, `queue_depth`, `gap_threshold_ms`
+   - `host_id`, `host_wall_utc`
+
+   Response: `{server_time_utc, stream_session_id, current_source_epoch}`.
+
+3. `POST /v1/worker/evidence`, multipart:
+   - part `meta`: `{source_epoch, sequence, kind: "FRAME", media_ms, width, height, sha256}`
+   - part `file`: one JPEG, at most 300 KB
+
+   Response: `{evidence_id, deduped}`. The API keeps frames in a bounded evidence directory: the last 600 frames or 30 minutes, plus any frame a market references.
+
+4. `POST /v1/worker/observations`: `{schema_version, stream_id, source_epoch, items}`, with at most 50 items. Each item has:
+   - `sequence`: monotonic per epoch. The dedupe key is (`source_epoch`, `sequence`).
+   - `kind`: `TRANSCRIPT`, `FRAME` or `GAP`.
+   - `media_start_ms` and `media_end_ms`. They are equal for a FRAME.
+   - `captured_at_utc`: the worker host's wall time.
+   - `source_wall_time_utc`: null. It is reserved until verified against an OBS clock (D29).
+   - `quality_flags`: any of `PARTIAL`, `CLOSED_BY_GAP`, `CLOSED_BY_PTS_DISCONTINUITY`, `CLOSED_BY_STOP`, `AFTER_GAP`, `DRAINED_AFTER_STOP`, `LATE_SPLIT`, `PTS_UNKNOWN`, `IN_DISCONTINUITY_HOLE`, `LOW_CONFIDENCE`, `DEDUPED_OVERLAP`.
+   - `transcript`: `{text (at most 1,000 chars), avg_logprob, no_speech_prob, model, language}`, or null.
+   - `evidence_id`: required for FRAME.
+   - `gap`: `{reason}`, or null.
+
+   Response: `{accepted, duplicates, rejected: [{sequence, code}]}`. The server stamps `received_at_utc`.
+
+5. **Health derivation (API).** Health is `LIVE` when all of the following hold for the current epoch:
+   - a heartbeat arrived no more than 12 s ago;
+   - it reported `worker_state=LIVE`;
+   - `last_media_end_ms` advanced within the last 12 s.
+
+   An `asr_backlog_ms` above 12,000 makes health at least `STALE`. The remaining thresholds are as in §9.4.
+
+6. **Operator evidence:**
+   - `GET /v1/operator/evidence?since=<received_at_utc>` returns recent observations and frame metadata.
+   - `GET /v1/operator/evidence/{evidence_id}` returns the JPEG.
+   - Both are operator-only.
+
+7. **Reserved, to be frozen at the start of P4:** `POST /v1/worker/proposals` and `POST /v1/worker/resolutions`.
 

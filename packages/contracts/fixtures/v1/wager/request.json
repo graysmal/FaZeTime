@@ -1,0 +1,8 @@
+{
+  "operation_id": "00000000-0000-4000-8000-00000000c001",
+  "stream_session_id": "run_00000000000000000000000000000001",
+  "market_id": "mkt_00000000000000000000000000000101",
+  "rules_version": 1,
+  "side": "YES",
+  "amount_minor": 500
+}

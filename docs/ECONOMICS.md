@@ -16,7 +16,7 @@ All economic amounts use nonnegative integer minor units, with a single demo cur
 
 Use a small append-only ledger that can explain every balance. Recommended accounts are user available balance, one escrow account per market, a demo-funding source, and a redemption sink. A complete enterprise accounting framework is unnecessary, but every movement needs a stable operation ID, reason, source reference, amount, timestamp, and equal debit/credit effect. A materialized balance is a cache of ledger movements, not an independently editable truth.
 
-Initial phase-1 local mocks are deliberately disposable. Phase-2 server seed grants are labeled demo funding. Phase-6 successful Stripe test payments generate a distinct `stripe_test_topup` source. Never represent a seed grant or mock dialog as a real Stripe integration. Coupon generation moves demo balance to the redemption sink once and produces a nonfunctional code; the interface must not imply an actual retailer accepted it.
+Initial phase-1 local mocks are deliberately disposable. Phase-2 server seed grants are labeled demo funding. Phase-6 successful Stripe test payments generate a distinct `STRIPE_TEST_TOPUP` source. Never represent a seed grant or mock dialog as a real Stripe integration. Coupon generation moves demo balance to the redemption sink once and produces a nonfunctional code; the interface must not imply an actual retailer accepted it.
 
 ## 3. Wager acceptance and time
 
@@ -28,7 +28,7 @@ A rejected draft never becomes a financial event. A locked market never reopens 
 
 Authenticate first, then acquire SQLite write access with BEGIN IMMEDIATE or the equivalent verified transaction pattern from ARCHITECTURE.md. Inside the transaction resolve the idempotency key, check the market/session and state, recheck the server deadline after write access is acquired, validate side/stake, conditionally debit sufficient available balance, credit escrow, insert the wager and persist its outgoing event. SQLite has a single writer; do not assume SELECT FOR UPDATE or per-row locks. If the owner later selects PostgreSQL, document its row-lock ordering separately. Verify the actual selected engine with concurrent requests.
 
-A retry with the same key and same payload returns the original receipt. Reusing that key with a different amount, user, side, or market is a conflict. Two independent operations can both be valid intentions, but they cannot both spend the same balance. Do not use an in-process lock as the only protection against concurrent workers or restart.
+When the same actor retries with the same key and payload, the original receipt is returned. Reusing that key with a different amount, side or market is a conflict. Keys are scoped per actor (CONTRACTS §9.7). Two independent operations can both be valid intentions, but they cannot both spend the same balance. Do not use an in-process lock as the only protection against concurrent workers or restart.
 
 Do not allow wager editing, cancellation, cashout, or side switching in this demo. If the UI permits another wager, it is a new operation and a new stake, accepted under the same current deadline. One open market per stream remains the narrow scope.
 
@@ -61,11 +61,11 @@ For the demo's small number of users, settlement can atomically write every payo
 
 ## 5. Raffle snapshot and draw
 
-Each stream session has an explicit immutable ID. A prerecorded video looping does not silently reset accounting. The operator must begin a new demo session explicitly, with new market and raffle IDs and isolated balances/records as the reset policy specifies.
+Each stream session has an explicit immutable ID. A prerecorded video looping does not silently reset accounting. The operator must begin a new demo session explicitly, with new market and raffle IDs, and with balances and records isolated as the reset policy specifies (CONTRACTS §9.5: wallets per user and run).
 
 For an eligible real demo user `u`, calculate `weight(u)` as the sum of that user's accepted stake cents in SETTLED, nonvoid markets belonging to this session. Exclude bot accounts, seed grants, deposits, coupon redemption, failed wagers, refunded/voided wagers, and previous-session activity. A winning user's weight is its original stake, not its payout. Aggregate directly in cents; never round each wager into tickets.
 
-When the operator arms a draw and the finalized transcript detects the configured “Raffle” cue, first pause new market creation and new wager acceptance for the draw boundary. If any wager remains unresolved, defer the draw until the associated market settles or voids. Do not let a late settlement change an already advertised snapshot. Snapshot eligible users and weights transactionally after the unresolved check. Persist the snapshot hash, session ID, raffle ID, and trigger evidence.
+When the operator arms a draw and the finalized transcript detects the configured “Raffle” cue, first pause new market creation for the draw boundary (D27). A market that is already open keeps its frozen rules; the cue never closes it early. If any wager remains unresolved, defer the draw until the associated market settles or voids. Do not let a late settlement change an already advertised snapshot. Snapshot eligible users and weights transactionally after the unresolved check. Persist the snapshot hash, session ID, raffle ID, and trigger evidence.
 
 If total weight is zero, produce a no-eligible-entries result and do not call anyone. Otherwise draw a cryptographically secure uniform integer from zero inclusive to total weight exclusive. Sort users by stable ID, assign cumulative intervals, and select the interval containing the draw. Store the draw value, total, chosen user, and algorithm version. An implementation should use a standard bounded secure-random facility, not `random()` or modulo reduction of an arbitrary random byte string.
 

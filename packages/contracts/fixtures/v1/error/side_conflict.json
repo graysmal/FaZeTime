@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "error": {
+    "code": "SIDE_CONFLICT",
+    "message": "You already backed the other side of this market.",
+    "retryable": false,
+    "retry_after_ms": null,
+    "request_id": "req_0000000000000000000000000000e00d",
+    "operation_id": "00000000-0000-4000-8000-00000000c001",
+    "details": {
+      "existing_side": "YES"
+    }
+  },
+  "server_time_utc": "2026-11-14T20:00:00.000Z"
+}

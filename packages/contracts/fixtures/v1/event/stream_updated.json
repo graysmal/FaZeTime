@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "event_id": 70,
+  "stream_session_id": "run_00000000000000000000000000000002",
+  "aggregate_type": "STREAM",
+  "aggregate_id": "str_00000000000000000000000000000001",
+  "aggregate_version": 5,
+  "event_type": "stream.updated",
+  "audience": "PUBLIC",
+  "occurred_at_utc": "2026-11-14T20:00:00.000Z",
+  "payload": {
+    "stream": {
+      "stream_id": "str_00000000000000000000000000000001",
+      "twitch_channel_login": "fazetime_demo",
+      "stream_session_id": "run_00000000000000000000000000000002",
+      "run_state": "ACTIVE",
+      "aggregate_version": 5,
+      "wagering_paused": false,
+      "wagering_paused_reason": null
+    },
+    "modes": {
+      "ai_mode": "FIXTURE",
+      "payment_mode": "MOCK",
+      "media_source_kind": "TEST_FIXTURE"
+    }
+  }
+}

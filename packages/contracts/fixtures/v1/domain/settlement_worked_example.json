@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "description": "ECONOMICS.md section 4 worked example: zero fee, floor payouts, remainder cents by descending remainder then wager_id ascending.",
+  "settlement_algorithm": "PARIMUTUEL_FLOOR_REMAINDER_V1",
+  "fee_minor": 0,
+  "winning_side": "YES",
+  "pool": {
+    "yes_minor": 600,
+    "no_minor": 400,
+    "total_minor": 1000,
+    "simulated_minor": 0,
+    "wager_count": 4
+  },
+  "wagers": [
+    {
+      "wager_id": "wgr_0000000000000000000000000000e001",
+      "label": "A",
+      "side": "YES",
+      "amount_minor": 100
+    },
+    {
+      "wager_id": "wgr_0000000000000000000000000000e002",
+      "label": "B",
+      "side": "YES",
+      "amount_minor": 200
+    },
+    {
+      "wager_id": "wgr_0000000000000000000000000000e003",
+      "label": "C",
+      "side": "YES",
+      "amount_minor": 300
+    },
+    {
+      "wager_id": "wgr_0000000000000000000000000000e004",
+      "label": "D",
+      "side": "NO",
+      "amount_minor": 400
+    }
+  ],
+  "expected": {
+    "total_minor": 1000,
+    "winning_total_minor": 600,
+    "initial_payout_sum_minor": 999,
+    "unallocated_minor": 1,
+    "final_payout_sum_minor": 1000,
+    "payouts": [
+      {
+        "wager_id": "wgr_0000000000000000000000000000e001",
+        "initial_payout_minor": 166,
+        "remainder_numerator": 400,
+        "final_payout_minor": 167,
+        "net_profit_minor": 67
+      },
+      {
+        "wager_id": "wgr_0000000000000000000000000000e002",
+        "initial_payout_minor": 333,
+        "remainder_numerator": 200,
+        "final_payout_minor": 333,
+        "net_profit_minor": 133
+      },
+      {
+        "wager_id": "wgr_0000000000000000000000000000e003",
+        "initial_payout_minor": 500,
+        "remainder_numerator": 0,
+        "final_payout_minor": 500,
+        "net_profit_minor": 200
+      }
+    ],
+    "losing_payouts": [
+      {
+        "wager_id": "wgr_0000000000000000000000000000e004",
+        "final_payout_minor": 0
+      }
+    ]
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "event_id": 50,
+  "stream_session_id": "run_00000000000000000000000000000001",
+  "aggregate_type": "MARKET",
+  "aggregate_id": "mkt_00000000000000000000000000000101",
+  "aggregate_version": 9,
+  "event_type": "market.locked",
+  "audience": "PUBLIC",
+  "occurred_at_utc": "2026-11-14T19:57:30.000Z",
+  "payload": {
+    "market_id": "mkt_00000000000000000000000000000101",
+    "stream_session_id": "run_00000000000000000000000000000001",
+    "rules_version": 1,
+    "aggregate_version": 9,
+    "state": "LOCKED",
+    "origin": "CANNED_FIXTURE",
+    "question": "Will RedFox win the first Minecraft duel against BlueJay?",
+    "yes_label": "RedFox",
+    "no_label": "BlueJay",
+    "opened_at_utc": "2026-11-14T19:55:00.000Z",
+    "close_at_utc": "2026-11-14T19:57:30.000Z",
+    "resolve_by_utc": "2026-11-14T20:05:00.000Z",
+    "locked_at_utc": "2026-11-14T19:57:30.000Z",
+    "terminal_at_utc": null,
+    "pool": {
+      "yes_minor": 2000,
+      "no_minor": 3000,
+      "total_minor": 5000,
+      "simulated_minor": 3000,
+      "wager_count": 7
+    },
+    "winning_side": null,
+    "void_reason": null,
+    "settlement_algorithm": null,
+    "criteria": null,
+    "opening_evidence_ids": null,
+    "resolution_evidence_ids": null,
+    "resolution_mode": null,
+    "resolution_reason": null
+  }
+}

@@ -1,0 +1,22 @@
+# Secrets and local configuration (never commit credentials)
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+**/.venv/
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Capability-spike media, models and outputs (bulky or third-party; measurement only)
+spikes/**/out/
+spikes/**/models/

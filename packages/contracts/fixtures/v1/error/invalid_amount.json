@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "error": {
+    "code": "INVALID_AMOUNT",
+    "message": "Stake must be between 100 and 50000 in steps of 100.",
+    "retryable": false,
+    "retry_after_ms": null,
+    "request_id": "req_0000000000000000000000000000e003",
+    "operation_id": "00000000-0000-4000-8000-00000000c001",
+    "details": {
+      "min_minor": 100,
+      "max_minor": 50000,
+      "step_minor": 100
+    }
+  },
+  "server_time_utc": "2026-11-14T20:00:00.000Z"
+}

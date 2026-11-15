@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "server_time_utc": "2026-11-14T20:00:00.000Z",
+  "event_hwm": 55,
+  "stream": {
+    "stream_id": "str_00000000000000000000000000000001",
+    "twitch_channel_login": "fazetime_demo",
+    "stream_session_id": "run_00000000000000000000000000000001",
+    "run_state": "ACTIVE",
+    "aggregate_version": 3,
+    "wagering_paused": false,
+    "wagering_paused_reason": null
+  },
+  "modes": {
+    "ai_mode": "FIXTURE",
+    "payment_mode": "MOCK",
+    "media_source_kind": "TEST_FIXTURE"
+  },
+  "limits": {
+    "stake_min_minor": 100,
+    "stake_max_minor": 50000,
+    "stake_step_minor": 100,
+    "stake_default_minor": 500,
+    "topup_presets_minor": [
+      500,
+      1000,
+      5000
+    ],
+    "topup_min_minor": 500,
+    "topup_max_minor": 10000,
+    "topup_step_minor": 100
+  },
+  "source_health": {
+    "state": "LIVE",
+    "source_kind": "TEST_FIXTURE",
+    "source_epoch": "ep_00000000000000000000000000000001",
+    "last_media_at_utc": "2026-11-14T19:59:57.000Z",
+    "last_transcript_at_utc": "2026-11-14T19:59:56.000Z",
+    "updated_at_utc": "2026-11-14T20:00:00.000Z"
+  },
+  "market": {
+    "market_id": "mkt_00000000000000000000000000000101",
+    "stream_session_id": "run_00000000000000000000000000000001",
+    "rules_version": 1,
+    "aggregate_version": 11,
+    "state": "SETTLED",
+    "origin": "CANNED_FIXTURE",
+    "question": "Will RedFox win the first Minecraft duel against BlueJay?",
+    "yes_label": "RedFox",
+    "no_label": "BlueJay",
+    "opened_at_utc": "2026-11-14T19:55:00.000Z",
+    "close_at_utc": "2026-11-14T19:57:30.000Z",
+    "resolve_by_utc": "2026-11-14T20:05:00.000Z",
+    "locked_at_utc": "2026-11-14T19:57:30.000Z",
+    "terminal_at_utc": "2026-11-14T19:59:40.000Z",
+    "pool": {
+      "yes_minor": 2000,
+      "no_minor": 3000,
+      "total_minor": 5000,
+      "simulated_minor": 3000,
+      "wager_count": 7
+    },
+    "winning_side": "NO",
+    "void_reason": null,
+    "settlement_algorithm": "PARIMUTUEL_FLOOR_REMAINDER_V1",
+    "criteria": null,
+    "opening_evidence_ids": null,
+    "resolution_evidence_ids": null,
+    "resolution_mode": null,
+    "resolution_reason": null
+  },
+  "my_position": {
+    "market_id": "mkt_00000000000000000000000000000101",
+    "side": "YES",
+    "stake_total_minor": 500,
+    "result": "LOST",
+    "payout_total_minor": 0,
+    "refund_total_minor": null,
+    "wagers": [
+      {
+        "wager_id": "wgr_0000000000000000000000000000b001",
+        "operation_id": "00000000-0000-4000-8000-00000000c001",
+        "stream_session_id": "run_00000000000000000000000000000001",
+        "market_id": "mkt_00000000000000000000000000000101",
+        "rules_version": 1,
+        "side": "YES",
+        "amount_minor": 500,
+        "status": "LOST",
+        "accepted_at_utc": "2026-11-14T19:56:40.000Z",
+        "terminal_at_utc": "2026-11-14T19:59:40.000Z",
+        "stake_txn_id": "txn_0000000000000000000000000000b001",
+        "terminal_txn_id": "txn_0000000000000000000000000000b101",
+        "payout_minor": 0,
+        "refund_minor": null,
+        "market_aggregate_version": 7,
+        "wallet_after": {
+          "stream_session_id": "run_00000000000000000000000000000001",
+          "available_minor": 1500,
+          "in_play_minor": 500,
+          "balance_version": 2,
+          "pending_topup_minor": null
+        },
+        "replayed": false
+      }
+    ]
+  },
+  "wallet": {
+    "stream_session_id": "run_00000000000000000000000000000001",
+    "available_minor": 1500,
+    "in_play_minor": 0,
+    "balance_version": 2,
+    "pending_topup_minor": null
+  },
+  "raffle": null
+}

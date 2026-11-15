@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "server_time_utc": "2026-11-14T20:00:00.000Z",
+  "user": {
+    "user_id": "usr_0000000000000000000000000000a001",
+    "display_name": "PixelPilot",
+    "claimed_twitch_login": "pixelpilot_demo",
+    "role": "VIEWER"
+  },
+  "session": {
+    "session_id": "ses_0000000000000000000000000000a001",
+    "expires_at_utc": "2026-11-17T20:00:00.000Z"
+  },
+  "current_stream": {
+    "stream_id": "str_00000000000000000000000000000001",
+    "twitch_channel_login": "fazetime_demo",
+    "stream_session_id": "run_00000000000000000000000000000001"
+  },
+  "wallet": {
+    "stream_session_id": "run_00000000000000000000000000000001",
+    "available_minor": 2000,
+    "in_play_minor": 0,
+    "balance_version": 1,
+    "pending_topup_minor": null
+  }
+}

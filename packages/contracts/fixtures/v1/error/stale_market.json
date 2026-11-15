@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "error": {
+    "code": "STALE_MARKET",
+    "message": "The market terms changed or the market is unknown.",
+    "retryable": false,
+    "retry_after_ms": null,
+    "request_id": "req_0000000000000000000000000000e006",
+    "operation_id": "00000000-0000-4000-8000-00000000c001",
+    "details": {
+      "current_market_id": "mkt_00000000000000000000000000000101",
+      "current_rules_version": 1
+    }
+  },
+  "server_time_utc": "2026-11-14T20:00:00.000Z"
+}

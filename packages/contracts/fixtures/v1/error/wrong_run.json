@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "error": {
+    "code": "WRONG_RUN",
+    "message": "A new demo run has started.",
+    "retryable": false,
+    "retry_after_ms": null,
+    "request_id": "req_0000000000000000000000000000e007",
+    "operation_id": "00000000-0000-4000-8000-00000000c001",
+    "details": {
+      "current_stream_session_id": "run_00000000000000000000000000000002"
+    }
+  },
+  "server_time_utc": "2026-11-14T20:00:00.000Z"
+}

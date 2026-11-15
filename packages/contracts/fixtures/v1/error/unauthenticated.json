@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Session missing, expired or revoked.",
+    "retryable": false,
+    "retry_after_ms": null,
+    "request_id": "req_0000000000000000000000000000e001",
+    "operation_id": null,
+    "details": null
+  },
+  "server_time_utc": "2026-11-14T20:00:00.000Z"
+}

@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "event_id": 54,
+  "stream_session_id": "run_00000000000000000000000000000001",
+  "aggregate_type": "WAGER",
+  "aggregate_id": "wgr_0000000000000000000000000000b001",
+  "aggregate_version": 2,
+  "event_type": "wager.updated",
+  "audience": "USER",
+  "occurred_at_utc": "2026-11-14T19:59:40.000Z",
+  "payload": {
+    "wager_id": "wgr_0000000000000000000000000000b001",
+    "operation_id": "00000000-0000-4000-8000-00000000c001",
+    "stream_session_id": "run_00000000000000000000000000000001",
+    "market_id": "mkt_00000000000000000000000000000101",
+    "rules_version": 1,
+    "side": "YES",
+    "amount_minor": 500,
+    "status": "WON",
+    "accepted_at_utc": "2026-11-14T19:56:40.000Z",
+    "terminal_at_utc": "2026-11-14T19:59:40.000Z",
+    "stake_txn_id": "txn_0000000000000000000000000000b001",
+    "terminal_txn_id": "txn_0000000000000000000000000000b101",
+    "payout_minor": 1250,
+    "refund_minor": null,
+    "market_aggregate_version": 7,
+    "wallet_after": {
+      "stream_session_id": "run_00000000000000000000000000000001",
+      "available_minor": 1500,
+      "in_play_minor": 500,
+      "balance_version": 2,
+      "pending_topup_minor": null
+    },
+    "replayed": false
+  }
+}

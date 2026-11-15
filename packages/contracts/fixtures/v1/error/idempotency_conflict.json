@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "error": {
+    "code": "IDEMPOTENCY_CONFLICT",
+    "message": "This operation_id was already used with a different request.",
+    "retryable": false,
+    "retry_after_ms": null,
+    "request_id": "req_0000000000000000000000000000e008",
+    "operation_id": "00000000-0000-4000-8000-00000000c001",
+    "details": null
+  },
+  "server_time_utc": "2026-11-14T20:00:00.000Z"
+}

@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "server_time_utc": "2026-11-14T20:00:00.000Z",
+  "event_hwm": 60,
+  "stream": {
+    "stream_id": "str_00000000000000000000000000000001",
+    "twitch_channel_login": "fazetime_demo",
+    "stream_session_id": "run_00000000000000000000000000000001",
+    "run_state": "ACTIVE",
+    "aggregate_version": 3,
+    "wagering_paused": false,
+    "wagering_paused_reason": null
+  },
+  "modes": {
+    "ai_mode": "FIXTURE",
+    "payment_mode": "MOCK",
+    "media_source_kind": "TEST_FIXTURE"
+  },
+  "limits": {
+    "stake_min_minor": 100,
+    "stake_max_minor": 50000,
+    "stake_step_minor": 100,
+    "stake_default_minor": 500,
+    "topup_presets_minor": [
+      500,
+      1000,
+      5000
+    ],
+    "topup_min_minor": 500,
+    "topup_max_minor": 10000,
+    "topup_step_minor": 100
+  },
+  "source_health": {
+    "state": "LIVE",
+    "source_kind": "TEST_FIXTURE",
+    "source_epoch": "ep_00000000000000000000000000000001",
+    "last_media_at_utc": "2026-11-14T19:59:57.000Z",
+    "last_transcript_at_utc": "2026-11-14T19:59:56.000Z",
+    "updated_at_utc": "2026-11-14T20:00:00.000Z"
+  },
+  "market": {
+    "market_id": "mkt_00000000000000000000000000000105",
+    "stream_session_id": "run_00000000000000000000000000000001",
+    "rules_version": 1,
+    "aggregate_version": 9,
+    "state": "VOID",
+    "origin": "AI_APPROVED",
+    "question": "Will the duel last longer than five minutes?",
+    "yes_label": "Yes",
+    "no_label": "No",
+    "opened_at_utc": "2026-11-14T19:48:20.000Z",
+    "close_at_utc": "2026-11-14T19:50:20.000Z",
+    "resolve_by_utc": "2026-11-14T19:59:50.000Z",
+    "locked_at_utc": "2026-11-14T19:50:20.000Z",
+    "terminal_at_utc": "2026-11-14T19:59:50.000Z",
+    "pool": {
+      "yes_minor": 1500,
+      "no_minor": 2000,
+      "total_minor": 3500,
+      "simulated_minor": 1500,
+      "wager_count": 5
+    },
+    "winning_side": null,
+    "void_reason": "RESOLUTION_TIMEOUT",
+    "settlement_algorithm": null,
+    "criteria": null,
+    "opening_evidence_ids": null,
+    "resolution_evidence_ids": null,
+    "resolution_mode": null,
+    "resolution_reason": null
+  },
+  "my_position": {
+    "market_id": "mkt_00000000000000000000000000000105",
+    "side": "NO",
+    "stake_total_minor": 1000,
+    "result": "UNRESOLVED_REFUNDED",
+    "payout_total_minor": null,
+    "refund_total_minor": 1000,
+    "wagers": [
+      {
+        "wager_id": "wgr_0000000000000000000000000000b004",
+        "operation_id": "00000000-0000-4000-8000-00000000c004",
+        "stream_session_id": "run_00000000000000000000000000000001",
+        "market_id": "mkt_00000000000000000000000000000105",
+        "rules_version": 1,
+        "side": "NO",
+        "amount_minor": 1000,
+        "status": "REFUNDED",
+        "accepted_at_utc": "2026-11-14T19:49:20.000Z",
+        "terminal_at_utc": "2026-11-14T19:59:50.000Z",
+        "stake_txn_id": "txn_0000000000000000000000000000b004",
+        "terminal_txn_id": "txn_0000000000000000000000000000b104",
+        "payout_minor": null,
+        "refund_minor": 1000,
+        "market_aggregate_version": 5,
+        "wallet_after": {
+          "stream_session_id": "run_00000000000000000000000000000001",
+          "available_minor": 1000,
+          "in_play_minor": 1000,
+          "balance_version": 2,
+          "pending_topup_minor": null
+        },
+        "replayed": false
+      }
+    ]
+  },
+  "wallet": {
+    "stream_session_id": "run_00000000000000000000000000000001",
+    "available_minor": 2000,
+    "in_play_minor": 0,
+    "balance_version": 3,
+    "pending_topup_minor": null
+  },
+  "raffle": null
+}

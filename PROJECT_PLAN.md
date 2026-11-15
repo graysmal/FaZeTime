@@ -75,7 +75,7 @@ Wallet exposes 5/10/50/custom test top-up amounts with a $5 equivalent minimum. 
 
 A market has a question, two named choices defaulting to Yes/No, amount-weighted pool bar, numeric total accepted pool volume, countdown, side selection, stake input default 500 cents, estimated gross return including stake, available balance, and a Place Bet action. Insufficient funds opens top-up; it does not guarantee the old market will remain available. A terminal banner distinguishes win, loss (“Ooohhh, so close!!”), void/refund, and unresolved.
 
-Profile collects display name, optional claimed Twitch name, and a team-demo phone field only if calls are being tested. It is not verified Twitch identity. Do not collect card details in a general profile form. Profile/setup usability is distinct from authentication introduced in P2.
+Profile collects a display name and an optional claimed Twitch name. Under D16 there is no phone field. Demo call recipients live in local operator configuration instead. It is not verified Twitch identity. Do not collect card details in a general profile form. Profile/setup usability is distinct from authentication introduced in P2.
 
 ### Narrow tasks
 
@@ -155,7 +155,7 @@ Owner: media-AI engineer with backend engineer and independent reviewer. Depends
 
 State transitions from locked to evaluating to resolved or void, with separate model recommendation and deterministic financial action. Resolver examines subsequent evidence within the correct stream/epoch, answers YES/NO/WAIT/UNRESOLVABLE with cited evidence, checks the predefined success/failure criteria, and flags contradictions/gaps. Do not infer a loss just because time elapsed, the streamer yelled, chat celebrated, or the model guessed.
 
-Use the same model in a separate bounded resolver role initially; extra models do not automatically make the result correct. Require an observable decisive cue appropriate to the recorded challenge. When evidence is absent, contradictory, stale, or obscured, remain pending until the configured timeout and then void/refund or request operator review. The timeout is part of the market rules before opening, not invented after seeing which side has money.
+Use the same model in a separate bounded resolver role initially; extra models do not automatically make the result correct. Require an observable decisive cue appropriate to the recorded challenge. When evidence is absent, contradictory, stale or obscured, the market stays pending. An operator can review it only before the frozen resolution deadline. At that deadline the market is voided and every stake refunded (CONTRACTS §9.3). The timeout is part of the market rules before opening, not invented after seeing which side has money.
 
 P5-A result evidence envelope; P5-B resolver; P5-C deterministic state/criteria gate; P5-D operator evidence approval; P5-E economic settlement preview and repeated-event tests. P6 wires full payment-funded wagering, but the settlement function should already be exercised with fixture stakes.
 

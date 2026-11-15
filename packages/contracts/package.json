@@ -1,0 +1,21 @@
+{
+  "name": "@fazetime/contracts",
+  "version": "1.0.0",
+  "private": true,
+  "description": "FaZeTime contract v1 (CONTRACTS.md section 9): hand-written TS types, runtime validators and fixtures. Interim until OpenAPI generation exists.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./fixtures/v1/*": "./fixtures/v1/*"
+  },
+  "scripts": {
+    "generate:fixtures": "node scripts/generate-fixtures.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "6.0.3",
+    "vitest": "4.1.12"
+  }
+}

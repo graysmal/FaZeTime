@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "error": {
+    "code": "CAPABILITY_UNAVAILABLE",
+    "message": "This capability is not available right now.",
+    "retryable": false,
+    "retry_after_ms": null,
+    "request_id": "req_0000000000000000000000000000e009",
+    "operation_id": null,
+    "details": null
+  },
+  "server_time_utc": "2026-11-14T20:00:00.000Z"
+}

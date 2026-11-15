@@ -1,0 +1,24 @@
+[project]
+name = "fazetime-api"
+version = "0.1.0"
+description = "FaZeTime hackathon demo API (phase 2): identity, ledger, markets, events. Test money only."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "websockets>=13",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "httpx2",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q -p no:cacheprovider"

@@ -1,0 +1,29 @@
+<!doctype html>
+<!-- P0-B helper: add in OBS as Sources > + > Browser > "Local file" (640x140).
+     Shows UTC wall time to the millisecond so captured Twitch frames can be compared
+     with capture receipt time to estimate end-to-end delay. -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>FaZeTime P0-B clock</title>
+<style>
+  html, body { margin: 0; background: #000; }
+  #c { font: 700 64px/1 "DejaVu Sans Mono", monospace; color: #fff; padding: 16px 20px 6px; }
+  #l { font: 600 22px/1 "DejaVu Sans Mono", monospace; color: #E4002B; padding: 0 20px 16px; }
+</style>
+</head>
+<body>
+<div id="c">--:--:--.---</div>
+<div id="l">UTC · FaZeTime P0-B clock</div>
+<script>
+  const c = document.getElementById("c");
+  const pad = (n, w = 2) => String(n).padStart(w, "0");
+  function tick() {
+    const d = new Date();
+    c.textContent = `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}.${pad(d.getUTCMilliseconds(), 3)}`;
+    requestAnimationFrame(tick);
+  }
+  tick();
+</script>
+</body>
+</html>

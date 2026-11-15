@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "error": {
+    "code": "SOURCE_STALE",
+    "message": "The stream source is not live; wagering is paused.",
+    "retryable": false,
+    "retry_after_ms": null,
+    "request_id": "req_0000000000000000000000000000e00a",
+    "operation_id": "00000000-0000-4000-8000-00000000c001",
+    "details": {
+      "source_state": "STALE"
+    }
+  },
+  "server_time_utc": "2026-11-14T20:00:00.000Z"
+}

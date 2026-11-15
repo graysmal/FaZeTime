@@ -1,0 +1,10 @@
+{
+  "device_id": "00000000-0000-4000-8000-00000000d001",
+  "tab_instance_id": "00000000-0000-4000-8000-00000000d101",
+  "stream_id": "str_00000000000000000000000000000001",
+  "known_stream_session_id": "run_00000000000000000000000000000001",
+  "observed_channel_login": "fazetime_demo",
+  "page_visibility": "VISIBLE",
+  "player_state": "PLAYING",
+  "extension_version": "0.1.0"
+}

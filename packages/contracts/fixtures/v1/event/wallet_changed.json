@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "event_id": 55,
+  "stream_session_id": "run_00000000000000000000000000000001",
+  "aggregate_type": "WALLET",
+  "aggregate_id": "usr_0000000000000000000000000000a001",
+  "aggregate_version": 3,
+  "event_type": "wallet.changed",
+  "audience": "USER",
+  "occurred_at_utc": "2026-11-14T19:59:40.000Z",
+  "payload": {
+    "stream_session_id": "run_00000000000000000000000000000001",
+    "available_minor": 2750,
+    "in_play_minor": 0,
+    "balance_version": 3,
+    "pending_topup_minor": null
+  }
+}

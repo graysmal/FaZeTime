@@ -1,0 +1,3 @@
+# Local database, rollback journal and backups (never commit)
+var/
+*.db-journal
