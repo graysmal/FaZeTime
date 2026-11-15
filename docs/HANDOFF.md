@@ -1,6 +1,6 @@
 # Current handoff (final checkpoint before switching to a new chat)
 
-- **Timestamp / coordinator:** 2026-11-15 ~00:50 CT. Coordinator session in the Claude Code desktop app (2.1.289, Opus 5.5 `claude-opus-5-5`).
+- **Timestamp / coordinator:** 2026-11-15 ~01:11 CT (updated mid-work on D37; see "Current work" below). Coordinator session in the Claude Code desktop app (Opus 5.5 `claude-opus-5-5`).
 - **Deadline:** 12:00 CT Sun 2026-11-15. Feature freeze 09:00; rehearsals 09:00–12:00.
 - **Branch:** `hackathon-build`, pushed to `origin` (graysmal/FaZeTime, a **PUBLIC** repo). Run `git log -1` for the SHA.
   - The owner authorized committing and pushing reviewed increments.
@@ -41,8 +41,8 @@ Phase state:
 
 ## Next concrete actions (new session)
 
-1. **Owner, Stage 0:** read the Gemini free-tier RPM/RPD for `gemini-3.5-flash-lite` at aistudio.google.com/rate-limit.
-   - Set `FAZETIME_AI_DAILY_BUDGET` (and optionally `FAZETIME_AI_RESOLVER_RESERVE`, default 0.4) in `~/fazetime-data/worker.env`.
+1. **Stage 0 is done** (500 RPD for Flash-Lite 3.5).
+   - Set `FAZETIME_AI_DAILY_BUDGET=400` (and optionally `FAZETIME_AI_RESOLVER_RESERVE`, default 0.4) in `~/fazetime-data/worker.env`.
    - The quota resets at **02:00 CT**; after that, rehearsals spend demo-day requests.
 2. **P6 gate.** The owner, in the extension, does Wallet → Add funds → $5 → FaZe Up! → test card 4242 4242 4242 4242.
    - Verify "Test credits added" plus exactly one `STRIPE_TEST_TOPUP` ledger credit, using operator health / reconcile or `python -m fazetime_api reconcile` on the Pi.
@@ -59,14 +59,47 @@ Phase state:
 5. **If time remains before the 09:00 freeze:** P8 (weighted raffle draw, backend) and P9 (armed spoken "Raffle" trigger). Then P10 as a **manual** FaceTime handoff (D05/D18).
 6. **After judging:** the VM is torn down automatically at 18:00 CT; run `python3 -I infra/vultr/budget_guard.py teardown` to end it early. The owner revokes the reusable Tailscale auth key.
 
-## Research to build on
+## Current work: game-agnostic AI markets (D37), started 2026-11-15 ~00:30 CT
 
-- `reports/LLM stream market architectures.md`, with notes in `research_notes/LLM stream market architectures/`. It is the deep research on generic, LLM-driven market proposal and resolution, delivered 2026-11-15 ~00:30 CT.
-- **Recommendation:** widen to any-game head-to-heads (Stage 1) with no contract change, and leave generic binary markets until after the deadline.
-- **What was decided:**
-  - Stage 1 is **deferred by the owner (D36)**.
-  - Stage 1a is **done** (`12d7b76`).
-  - Stage 0 is open (action 1 above).
+- **Owner direction (D37):** proposals and verification must work for any game or format. The earlier report's narrow scope (Minecraft, then any-game H2H) is superseded. D36 is superseded.
+- **Research:**
+  - A fresh, independent deep research ran with no project context. Notes are in `research_notes/Game agnostic stream prop bets/`: state_tracking, proposition_generation, resolution_verification, models_and_budget.
+  - The report goes to `reports/Game agnostic stream prop bets.md` (being written at 01:11 CT).
+- **Stage 0 done:** the owner pasted the AI Studio quota table (recorded in `docs/evidence/p0/P0-C-gemini.md`). Flash-Lite 3.5 and 3.1 have 15 RPM / 500 RPD each. Gemma 4 26B/31B have 30 RPM / 16K TPM / 14.4K RPD, but the 26B returns HTTP 500 on about half its calls.
+- **Prototype** in `spikes/p4-generic/` (LOCAL FIXTURE replay only; not wired to the API or the worker):
+  - `prep_fixture.py`: ASR plus 1 fps frames.
+  - `fixture.py`: causal slicer.
+  - `llm.py`: per-model gates.
+  - `generic.py`: code-owned state reducer, observer, template proposer, extract-then-decide resolver.
+  - `replay.py`: the loop.
+- **Fixtures** (owner-provided Peggle recordings; never commit them) are in `~/fazetime-data/fixtures/peggle/`:
+  - `verbose.mp4`, `normal.mp4`, each with a prepped dir;
+  - `ground_truth.json` (coordinator labels);
+  - `runs/<HHMM>/`, with calls, events and a summary.
+- **Fixture replay results** (`docs/evidence/p4/P4-generic-fixture-replay.md`):
+  - Pass 1 opened 0 markets; that was fixed.
+  - Pass 2: 4 markets, 3 correct, 1 correct void.
+  - **Pass 3** (D39 35 s window, 20 s void margin, the report's refinements): 4 markets, 2 correct, 2 correct voids, **0 wrong**.
+  - Bets are published 2–5 s after their trigger, and settled 19–20 s after the labelled end.
+  - Run outputs: `~/fazetime-data/fixtures/peggle/runs/0122-v3/` (grade with `spikes/p4-generic/grade.py`).
+- **Known gaps:**
+  - Episode ends are found 10–13 s late; boundary refinement is the fix.
+  - Observer p90 latency is 7–9 s, so live it must skip busy slices.
+  - The first 3.1 Flash-Lite call 504s; send a warm-up request.
+  - One market at a time means late invitations are ignored.
+  - Only Peggle has been tested.
+- **Paid fallback (D38, deferred):** Vultr Serverless Inference, only with a fresh owner OK.
+- **Sponsor deck scan:** Gemini's free tier is the only card-free multimodal option. Vultr Serverless Inference is per-token ($0.55 per million in, $2.75 per million out). The owner confirmed the Devpost placeholder was submitted before midnight; the final edit is due before 12:00.
+- **Next:** owner decision on integration. Proposed path, in the report's build order:
+  - Port `spikes/p4-generic` into `services/worker/fazetime_worker/generic/` as a worker profile.
+  - Make an additive CONTRACTS §9.17 change: generic template IDs carrying the frozen spec and its hash; one subject or none instead of the H2H pair; a generic episode fingerprint; the window floor lowered to 35 s (D39).
+  - Have the console show the generic question and rules.
+  - Ship `episode_outcome` and `utterance` in APPROVAL mode first.
+  - The H2H path stays until the replacement passes a Twitch run.
+
+## Earlier research (superseded on scope by D37)
+
+- `reports/LLM stream market architectures.md`, with notes in `research_notes/LLM stream market architectures/`. Its Stage 1 (any-game H2H) was deferred (D36). Stage 1a is done (`12d7b76`).
 
 ## Environment facts
 

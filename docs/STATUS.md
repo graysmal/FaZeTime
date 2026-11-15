@@ -1,6 +1,6 @@
 # Current execution status
 
-Updated: 2026-11-15 ~00:50 CT. Plan version: 1.0 + contract v1 (CONTRACTS §9, items 9.15–9.18). State: CORE BUILT AND DEPLOYED; real-world gates P3–P6 pending; P7–P10 not started. See HANDOFF for the runbook.
+Updated: 2026-11-15 ~01:30 CT. Plan version: 1.0 + contract v1 (CONTRACTS §9, items 9.15–9.18). State: CORE BUILT AND DEPLOYED; real-world gates P3–P6 pending; P7–P10 not started. **D37 (game-agnostic AI markets) is prototyped as a fixture spike; not integrated.** See HANDOFF for the runbook.
 
 **Deadline:** submission cutoff 12:00 CT Sun 2026-11-15 (D10). About 15 h were left at 21:00.
 
@@ -20,8 +20,8 @@ Updated: 2026-11-15 ~00:50 CT. Plan version: 1.0 + contract v1 (CONTRACTS §9, i
 | P1 Extension mocks | **COMPLETE** (mock gate) | Coordinator re-ran 94/94 extension and 190/190 contracts. Playwright on live Twitch passed 25/25: install, mount once, SPA remount, close/reopen, resize, no focus trap, mock wager, insufficient funds → "FaZe Up!", all terminal banners, theater mode, chat collapse/expand, full-screen hides the pill. The owner loaded the mock build in Flatpak Chrome: "looks alright". MOCK is shown in mock builds. Live builds follow D31 |
 | P2 Server/users/presence/ledger foundation | BUILT, gate PARTIAL (checkpoint commit on `hackathon-build`) | pytest 167 passed, 2 skipped (coordinator re-run). Review: **accept with limitations**, no Critical/High (`docs/evidence/p2/P2-review.md`), bound to `6930352`. Fixes M2 (pinned origin) and M3 (constraint tests) are in progress. **Two-browser e2e PASSED 31/31** (with D31 clean UI; bet sync 118 ms): two Chromium processes against the real API with the pinned origin; the pool update reached the other viewer in 310 ms; WS-drop → polling → reconnect; correct settlement banners and balances; ledger reconciled. **Still pending:** the Pi run, the M2/M3 fixes, and the operator console (P2-E, in progress) **Still pending:** the two-browser live test (extension live adapter, in progress) and the run on the Pi (in progress) |
 | P3 Twitch perception | BUILT, gate pending a live run | Worker deployed on the Pi (env ready; `check` reports no problems), with remote ASR (Vultr distil-small.en) and local tiny.en fallback. The gate needs a live team-channel run through the Pi API |
-| P4 AI proposals | BUILT, gate pending Twitch evidence | Backend §9.17 (502 tests) and the worker proposer (101 tests; synthetic live smoke correct) are deployed. The supervised-AI console is live on the Pi (AI e2e 10/10). APPROVAL mode. The gate needs the owner's recording through Twitch |
-| P5 AI outcomes | BUILT, gate pending Twitch evidence | Resolver plus operator resolution approval (e2e settled exactly once). The gate needs a positive and a negative real outcome |
+| P4 AI proposals | BUILT (H2H), gate pending Twitch evidence; **D37 generic: fixture prototype** | Backend §9.17 (502 tests) and the worker proposer (101 tests; synthetic live smoke correct) are deployed. The supervised-AI console is live on the Pi (AI e2e 10/10). APPROVAL mode. The gate needs the owner's recording through Twitch. **D37:** the game-agnostic observer, reducer and template proposer in `spikes/p4-generic/` were replayed on two owner Peggle recordings (LOCAL FIXTURE). Pass 3: 4 markets, 2 correct, 2 correct voids, 0 wrong. A bet is published 2–5 s after its trigger (`docs/evidence/p4/P4-generic-fixture-replay.md`). Not wired to the API: it needs an additive generic template, and the API still enforces a 45 s window floor (D39 wants 35 s) |
+| P5 AI outcomes | BUILT (H2H), gate pending Twitch evidence; **D37 generic: fixture prototype** | Resolver plus operator resolution approval (e2e settled exactly once). The gate needs a positive and a negative real outcome. **D37:** two parallel extraction reads (3.5 and 3.1 Flash-Lite), with the decision made in code. Settlement lands 19–20 s after the labelled end in fixtures, and every miss so far was a correct void |
 | P6 Test payments and wagering | BUILT, gate pending a 4242 checkout | API top-ups and webhook (§9.18) deployed on the Pi with a laptop `stripe listen` forwarding to it. The extension hands off to Stripe Checkout (117 tests). The gate needs one real 4242 test checkout credited exactly once, plus negative cases |
 | P7 Integrated core | NOT_STARTED | None |
 | P8 Weighted raffle | NOT_STARTED | None |
@@ -41,7 +41,7 @@ Updated: 2026-11-15 ~00:50 CT. Plan version: 1.0 + contract v1 (CONTRACTS §9, i
 | P0-F network | Tailnet **VERIFIED** (DERP relay) | Laptop → Pi over Tailscale: HTTP 200; WebSocket round-trip p50 13 ms, p95 15.5 ms; survives 120 s idle; reconnects after restart. Bundled panel (D14), so no public route is needed. API calls will run from the extension background, avoiding mixed-content and local-network-access issues |
 | P0-G contracts | v1 FROZEN | CONTRACTS §9; decisions D23–D29 |
 
-- **Critical unknowns:** the team Twitch channel/OBS capture through Twitch; whether the Gemini project is on the free tier; Pi ASR throughput; Chert line capabilities; Pi power supply.
+- **Critical unknowns:** the team Twitch channel/OBS capture through Twitch; Pi ASR throughput; Chert line capabilities; Pi power supply. The Gemini free-tier quotas are now VERIFIED: Flash-Lite 3.5 and 3.1 at 500 RPD each, Gemma 4 at 14.4K RPD (`docs/evidence/p0/P0-C-gemini.md`).
 - **Approved cuts:** manual FaceTime handoff (D05); bundled panel instead of the hosted iframe (D14); P11 is the first expansion to cut (D17).
 - **Not approved:** replacing Twitch with local playback for final acceptance.
 

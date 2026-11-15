@@ -17,7 +17,19 @@
   - Usage: prompt 1,161 tokens (**image 1,100**, text 61), output 102, total 1,263.
   - Reproduce with `spikes/p0-gemini/smoke.py <model> <jpeg>`. The key is read from the environment only and never printed.
 - **Limits:**
-  - Numeric free RPM/TPM/RPD: **UNVERIFIED**. They are visible only at https://aistudio.google.com/rate-limit; ask the owner to read them.
+  - **VERIFIED (owner's AI Studio rate-limit page, project FaZeTime, free tier, 2026-11-15 ~00:50 CT):**
+    - `gemini-3.5-flash-lite`: **15 RPM, 250K TPM, 500 RPD**. The 28-day peak was 3 RPM, 4.2K TPM and 7 RPD.
+    - `gemini-2.5-flash`: 5 RPM, 250K TPM, 20 RPD. `gemini-2.5-flash-lite`: 10 RPM, 250K TPM, 20 RPD. `gemini-2.5-flash` TTS: 3 RPM, 10 RPD. Gemini 2 Flash and 2 Flash Lite: 0 (unavailable).
+    - Full table (owner paste, ~00:55 CT), as RPM / TPM / RPD:
+      - `gemini-3.1-flash-lite`: 15 / 250K / 500, a separate pool.
+      - **Gemma 4 26B and Gemma 4 31B: 30 / 16K / 14.4K each.**
+      - Gemini 3 Flash, 3.6 Flash, 3.8 Flash, Gemini 4 Hydrogen and Robotics ER 2 Preview: 5 / 250K / 20 each.
+      - Gemini 3.5 Transcribe: 3 / 10K / 25.
+      - "Gemini Decision 1" (Decisions API): 200 / 50K / 10K.
+      - Embedding 1 and 2: 100 / 30K / 1K.
+      - Live API, unlimited RPM and RPD: Gemini 3 Flash Live and Gemini 3.8 Live (65K TPM each), 3.8 Live Extended Thinking (65K TPM), 2.5 Flash Native Audio Dialog (1M TPM), 3.5 Transcribe Live and 3.5 Live Translate (20K TPM each).
+      - Zero quota (unavailable on this tier): 2.5 Pro, 3.1 Pro, Gemini 4 Argon, Gemini 4 Carbon, and all image, Omni and Lyria models.
+  - `models.list` on this key (2026-11-15 ~00:52 CT, no quota used) shows these `generateContent` models: gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.5-pro, gemini-3.1-flash-lite, gemini-3.5-flash, gemini-3.5-flash-lite, gemini-3.6-flash, gemini-3.7-flash, gemini-3.8-flash, gemini-4-argon, gemini-4-carbon, gemini-4-hydrogen, gemini-omni-flash-preview, gemma-4-26b-a4b-it and gemma-4-31b-it.
   - Limits apply per project, and RPD resets at midnight Pacific.
 - **Budget implications (P4/P5):**
   - One 854×480 frame costs about 1,100 tokens, so the documented 258-tokens-per-tile estimate does not hold for this model.
@@ -27,6 +39,6 @@
 - **Hardware:** not relevant (hosted API).
 - **Selected primary path:** `gemini-3.5-flash-lite` via `generateContent`. It is labelled "legacy" but fully supported. Decide whether to move to the Interactions API before P4. Keep the model ID centralized.
 - **Owner-approved fallback:** none paid. If the free quota is exhausted, pause proposals and use operator approval with canned fixtures, labelled as such.
-- **Status:** VERIFIED for text + image + structured output on this account. Quota figures UNVERIFIED.
+- **Status:** VERIFIED for text + image + structured output on this account. Free-tier quotas VERIFIED for all models on the project (owner's AI Studio page, 2026-11-15).
 
 The record contains no key, phone number or personal data. The test image is synthetic.
