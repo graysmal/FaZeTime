@@ -1,6 +1,6 @@
 # Current execution status
 
-Updated: 2026-11-14 ~21:05 CT. Plan version: 1.0 + contract v1 freeze. State: P0_IN_PROGRESS. P1 and P2 started early, because their only dependencies were the UI decisions and the contract freeze.
+Updated: 2026-11-15 ~00:50 CT. Plan version: 1.0 + contract v1 (CONTRACTS §9, items 9.15–9.18). State: CORE BUILT AND DEPLOYED; real-world gates P3–P6 pending; P7–P10 not started. See HANDOFF for the runbook.
 
 **Deadline:** submission cutoff 12:00 CT Sun 2026-11-15 (D10). About 15 h were left at 21:00.
 

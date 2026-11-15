@@ -1,83 +1,63 @@
-# Current handoff (checkpoint for context reset)
+# Current handoff (final checkpoint before switching to a new chat)
 
-- **Timestamp / coordinator:** 2026-11-14 ~22:55 CT. Coordinator session in the Claude Code desktop app (2.1.289, Opus 5.5 `claude-opus-5-5`).
+- **Timestamp / coordinator:** 2026-11-15 ~00:50 CT. Coordinator session in the Claude Code desktop app (2.1.289, Opus 5.5 `claude-opus-5-5`).
 - **Deadline:** 12:00 CT Sun 2026-11-15. Feature freeze 09:00; rehearsals 09:00–12:00.
-- **Branch:** `hackathon-build`, pushed to `origin` (graysmal/FaZeTime, a **PUBLIC** repo). Run `git log -1` for the exact SHA.
-  - The owner authorized committing and pushing coherent, reviewed increments.
-  - Scan the staged diff before every push: no names, phone numbers, IDs, IPs of private hosts, or keys.
-  - No key-shaped literals even in tests; push protection blocks them, and the bypass is never used.
+- **Branch:** `hackathon-build`, pushed to `origin` (graysmal/FaZeTime, a **PUBLIC** repo). Run `git log -1` for the SHA.
+  - The owner authorized committing and pushing reviewed increments.
+  - Scan every staged diff for names, phone numbers, IDs, private IPs and keys.
+  - No key-shaped literals even in tests (push protection blocks them); never use the bypass.
+- **In-flight workers:** NONE. Everything below is committed, and deployed where stated.
 
-## Phase state
+## What exists (see STATUS for the evidence)
 
-See STATUS for the evidence.
-
-| Phase | State |
+| Piece | State |
 |---|---|
-| P0 | COMPLETE_WITH_ACCEPTED_FALLBACK (Chert: manual FaceTime) |
-| P1 | COMPLETE (mock gate). D31: the live UI looks real, with a single "test credits" note |
-| P2 | Built and reviewed (accept with limitations). Fixes merged; two-browser e2e 31/31; API running on the Pi. Remaining for the P2 gate: an owner-run multi-laptop check against the Pi |
-| P3 | Worker built (33 tests) and API routes live. Remaining: a live run on the Pi against the Pi API with the team channel |
-| P4/P5 | In progress. Contract frozen (CONTRACTS §9.17) |
-| P6 | Adapter merged (CONTRACTS §9.18). Wiring in progress |
-| P7–P11 | Not started. P11 is the first cut (D17); P10 is a manual FaceTime handoff |
+| Extension (`apps/extension`) | P1 COMPLETE. Live builds look real (D31). One-tap **Join**, with no codes (D35), and silent re-join. Stripe test top-up handoff. 133 tests. Builds in `~/Documents/fazetime-extension{,-live,-live-pi}`, pinned ID `hodaaffdhncidmaccebmionoljljfefe` |
+| Operator console (`apps/operator`) | Served from the Pi at `http://fazetime:8000/operator/`. **No sign-in** (open access). Default **demo view**: a LIVE/OFFLINE pill, one card (AI bet Approve/Reject → pool and countdown → betting closed → AI result Approve/Void → result), and Reset. The full console is at `#advanced`. 60 tests |
+| API (`services/api`) | Running on the Pi, tailnet IP only, `:8000`. P2 foundation, §9.16 worker routes, §9.17 AI (APPROVAL mode), §9.18 Stripe test top-ups, D35 open access. 524 tests |
+| Worker (`services/worker`) | Deployed on the Pi, **not running**. Streamlink→FFmpeg capture, ASR (remote Vultr distil-small.en with local tiny.en fallback), and the Gemini proposer and resolver (`gemini-3.5-flash-lite`). Stage 1a fixes are in. 108 tests |
+| Remote ASR (`services/asr_remote`) | Vultr VM `fazetime-asr` (tailnet), distil-small.en, systemd. Pi→VM p50 1.0 s / p95 1.2 s per 4 s chunk |
+| Vultr budget (D34) | Guards on the Pi (crontab `@reboot`) and the laptop. Hard stop at $85 pre-tax ($100 incl. tax), with auto-teardown at **Sun 18:00 CT**. Spend about $0.24, projected about $4.3. `infra/vultr/README.md` |
+| Stripe | Test keys only. Laptop listener `infra/stripe/start_listener.sh` → Pi `/v1/webhooks/stripe`, log private. Restart it if the laptop rebooted |
 
-## In-flight workers
+Phase state:
+- P0 and P1 are complete.
+- P2–P6 are built, deployed and reviewed. **Their real-world gates are still pending**: the Twitch run, two real outcomes, and a 4242 checkout.
+- P7–P10 have not started. P11 is cut (D17).
 
-They report to THIS session, and their work is uncommitted on disk.
+## How to run a live take (runbook)
 
-If the session resets before a worker reports: run `git status`, review the diff in that worker's paths, and re-run its tests. Then either finish the work or re-delegate it with the same packet, summarised from this table.
+1. **Laptop:**
+   - Stripe listener: run `infra/stripe/start_listener.sh`; it does nothing if already running.
+   - Vultr guard backup: `pgrep -af "[b]udget_guard.py"`. Restart it per `infra/vultr/README.md` if missing.
+2. **Pi API health:** `ssh fazetime@fazetime 'cd ~/fazetime/services/api && scripts/pi_run.sh status'`.
+3. **Owner streams with OBS** to `fazegavin1234`, with the keyframe interval set to 2 s.
+4. **Start the worker:** `ssh fazetime@fazetime 'cd ~/fazetime/services/worker && scripts/run_pi.sh'`.
+   - Log: `~/fazetime-data/worker.log`.
+   - Stop: `scripts/stop_pi.sh`.
+   - AI-only stop: `touch ~/fazetime-data/worker/AI_STOP`.
+5. **Console:** open `http://fazetime:8000/operator/` and click **Enable sound**. When the AI's bet card appears, click **Approve** within the countdown. Viewers (Chrome, live-pi build, **Join**) bet. After the fight the AI's result card appears; click **Approve result**.
+6. **Reset for next take.** Leave **≥60 s** of stream between take 1's result speech and take 2's opening line (Stage 1a known gap).
 
-| Worker | Paths (sole owner) | Task / expected result |
-|---|---|---|
-| Backend P4/P5 | `services/api/fazetime_api/ai.py`, `migrations/0004_ai.sql`, `tests/test_ai*.py`; edits to `domain.py`, `api_operator.py`, `views.py`, `worker.py`, README | §9.17 worker proposals and resolutions, operator candidates, resolutions and ai-mode (AUTOMATIC only with `FAZETIME_ALLOW_AUTOMATIC`); settle `note`; operator health with modes, worker detail and limits. Full suite must pass |
-| Stripe P6-C/D | `fazetime_api/topups.py`, `migrations/0005_topups.sql`, `tests/test_topups*.py`, `api_viewer.py` top-up stubs, `integrations/**` | `POST /v1/topups`, `GET /v1/topups/{id}`, `POST /v1/webhooks/stripe` per §9.18. It reports a `payment_mode(services)` call site for the coordinator to wire into `views.py` |
-| AI P4/P5 (worker) | `services/worker/fazetime_worker/{gemini,proposer,resolver,context}.py` + tests; edits to `pipeline.py`, `config.py`, README, pyproject/uv.lock (`google-genai==3.3.0`) | Gemini proposer (deterministic pre-filter, H2H_WINNER_V1, abstention) and resolver (YES/NO/WAIT/UNRESOLVABLE with evidence). Rate limit and daily budget; ≤6 live calls in smoke tests |
-| Vultr ASR | `services/asr_remote/**`; `services/worker/fazetime_worker/asr_remote.py` + `tests/test_asr_remote.py` (new files only) | faster-whisper service on VM `fazetime-asr`: tailnet-only `:8090`, bearer `ASR_REMOTE_TOKEN`, systemd. Model chosen by benchmark on team audio. Client with circuit breaker and local tiny.en fallback. **The coordinator wires the client into `pipeline.py` afterwards** |
+## Next concrete actions (new session)
 
-The two `services/api` workers share `main.py`, `ids.py`, `config.py` and `schemas.py` with append-only edits. Migration numbers are fixed: 0004 = AI, 0005 = top-ups.
-
-## Deployed state
-
-- **Pi `fazetime`** (key-auth `ssh fazetime@fazetime`; never a password or sudo):
-  - **API:** `http://fazetime:8000` (tailnet IP only), code digest `99feda70f09dc5f6`, equivalent to `dcd699e`. Data in `~/fazetime-data`. Control: `services/api/scripts/pi_run.sh start|stop|status|restart`.
-  - **Origins:** `https://www.twitch.tv` and `chrome-extension://hodaaffdhncidmaccebmionoljljfefe`.
-  - **DONE ~23:15 CT:**
-    - Redeployed the AI and top-up API (commit `76508bd`). `~/fazetime-data/api.env` (600) sets `FAZETIME_AI_MODE_DEFAULT=APPROVAL` and the Stripe env file `~/fazetime-data/stripe.env` (600).
-    - Health: ai_mode APPROVAL, payment_mode STRIPE_TEST, automatic not allowed.
-    - The operator console is served at `http://fazetime:8000/operator/`.
-    - Stream `fazegavin1234` is created (`str_dcf14fde37d544be9b1bac9668938eae`).
-    - **The owner's operator invite** is in `~/Documents/fazetime-operator-invite.txt` (600). A second, automation operator session is in the coordinator's scratchpad.
-    - **Stripe listener** runs on the laptop via `infra/stripe/start_listener.sh` → `http://fazetime:8000/v1/webhooks/stripe`. Its log is private.
-  - **Worker:** `~/fazetime-data/worker.env` (600) holds the API base, worker token, stream ID, channel, Gemini key, streamlink path and models dir. `fazetime_worker check` reports no problems. **Not running yet**; start it with `scripts/run_pi.sh` when the owner streams. Remote ASR is WIRED (commit `40b3ea2`): `ASR_REMOTE_URL` and `ASR_REMOTE_TOKEN` are in `worker.env`. The VM serves distil-small.en, with a circuit-breaker fallback to the Pi's local tiny.en.
-  - **Vultr budget guard:** runs via `~/fazetime/infra/vultr/start_guard.sh` (crontab `@reboot`), log `~/fazetime-data/vultr-guard.log`.
-- **Vultr:**
-  - VM `fazetime-asr`: tailnet MagicDNS `fazetime-asr`, plan `voc-c-8c-16gb-150s-amd`, $0.219/h, tag `fazetime`.
-  - Spend $0.24 at 22:50 CT; projected about $4.45 to the deadline.
-  - Hard stop $85 pre-tax ($100 incl. tax, D34). Auto-teardown Sun 18:00 CT.
-  - Guards on the Pi and the laptop (`~/.local/state/fazetime/vultr-guard.log`). Runbook: `infra/vultr/README.md`.
-- **Laptop `latpop`:**
-  - Extension builds in `~/Documents/fazetime-extension{,-live,-live-pi}` (ID `hodaaffdhncidmaccebmionoljljfefe`).
-  - Stripe CLI 1.55.11 at `~/.local/bin/stripe`; use `--api-key` from the environment, no login.
-  - OBS 32.2 for streaming the recordings.
-
-**`.env.local` keys** (names only): `GEMINI_API_KEY`, `CHERT_API_KEY`, `CHERT_PROJECT_ID`, `CHERT_LINE_NUMBER`, `DEMO_CALL_ALLOWLIST`, `STRIPE_SECRET_KEY` (test), `STRIPE_WEBHOOK_SECRET` (CLI, device `fazetime-api`), `TAILSCALE_AUTH_KEY` (reusable, 90 days; revoke after the event), `VULTR_API_KEY` (access list `129.107.192.0/24`), and `ASR_REMOTE_TOKEN` (being added by the Vultr worker).
-
-## Next concrete actions, in order
-
-1. **Review each worker report:** run the tests, read the diffs, rule on contract questions, commit and push.
-2. **Wire up the Stripe and Vultr code:**
-   - Stripe `payment_mode` call site in `views.py`.
-   - The remote ASR client in the worker `pipeline.py`: remote first, with the local tiny.en fallback.
-3. **Deploy to the Pi:**
-   1. API (applies migrations 0004 and 0005).
-   2. The operator dist.
-   3. Bootstrap the operator: the owner's invite goes to `~/Documents/fazetime-operator-invite.txt` (mode 600).
-   4. Worker token and stream.
-   5. Start the worker.
-   6. Run `stripe listen --device-name fazetime-api --forward-to http://fazetime:8000/v1/webhooks/stripe` on the laptop.
-4. **First real end-to-end** with the owner streaming a recording: Twitch → Pi transcript and frames → Gemini candidate → operator approves → two laptops bet → lock → result suggestion → operator approves → settle. Record the P4/P5 evidence and the measured lead-in.
-5. **P6 gate:** one 4242 test checkout credited exactly once, plus the negative cases.
-6. **P7:** two consecutive full rehearsals and the fault drill. Then P8/P9 (raffle and spoken trigger), then P10 manual FaceTime.
+1. **Owner, Stage 0:** read the Gemini free-tier RPM/RPD for `gemini-3.5-flash-lite` at aistudio.google.com/rate-limit.
+   - Set `FAZETIME_AI_DAILY_BUDGET` (and optionally `FAZETIME_AI_RESOLVER_RESERVE`, default 0.4) in `~/fazetime-data/worker.env`.
+   - The quota resets at **02:00 CT**; after that, rehearsals spend demo-day requests.
+2. **P6 gate.** The owner, in the extension, does Wallet → Add funds → $5 → FaZe Up! → test card 4242 4242 4242 4242.
+   - Verify "Test credits added" plus exactly one `STRIPE_TEST_TOPUP` ledger credit, using operator health / reconcile or `python -m fazetime_api reconcile` on the Pi.
+   - Record it in `docs/evidence/p6/`.
+3. **P3/P4/P5 gates**, with the owner's two recordings (one per winner) streamed through Twitch:
+   - candidate before the fight, with the lead-in measured;
+   - approve;
+   - two viewers bet;
+   - lock;
+   - resolver suggestion matches the recording;
+   - approve, settle, payouts.
+   Record a positive and a negative outcome in `docs/evidence/p3-p5/`, with sanitized timings and no transcripts.
+4. **P7:** two consecutive full rehearsals, plus a subset of the fault drill (worker restart, viewer reload, webhook repeat). The reviewer signs off.
+5. **If time remains before the 09:00 freeze:** P8 (weighted raffle draw, backend) and P9 (armed spoken "Raffle" trigger). Then P10 as a **manual** FaceTime handoff (D05/D18).
+6. **After judging:** the VM is torn down automatically at 18:00 CT; run `python3 -I infra/vultr/budget_guard.py teardown` to end it early. The owner revokes the reusable Tailscale auth key.
 
 ## Research to build on
 
@@ -85,14 +65,18 @@ The two `services/api` workers share `main.py`, `ids.py`, `config.py` and `schem
 - **Recommendation:** widen to any-game head-to-heads (Stage 1) with no contract change, and leave generic binary markets until after the deadline.
 - **What was decided:**
   - Stage 1 is **deferred by the owner (D36)**.
-  - **Stage 1a** (the proposer cap resets per run, a resolver quota reserve, the challenge name from config) is being implemented as a bug fix.
-  - **Stage 0 is open:** the owner should read the real Gemini free-tier RPM/RPD at aistudio.google.com/rate-limit. The quota resets at 02:00 CT.
+  - Stage 1a is **done** (`12d7b76`).
+  - Stage 0 is open (action 1 above).
 
-## Owner actions pending
+## Environment facts
 
-- **Record two Minecraft 1v1 takes**, one won by each player. Cues are in D19 and the earlier HANDOFF: an opening line, ≥90 s of setup, "3, 2, 1, fight!", the death message visible, and a spoken winner.
-- **Set the OBS keyframe interval to 2 s**, and add the clock overlay `spikes/p0-media/obs_clock.html` for delay measurement.
-- **Later:** the 4242 test checkout; rehearsals; the manual FaceTime call.
+- **`.env.local` (laptop, mode 600; names only):** `GEMINI_API_KEY`, `CHERT_API_KEY`, `CHERT_PROJECT_ID`, `CHERT_LINE_NUMBER`, `DEMO_CALL_ALLOWLIST`, `STRIPE_SECRET_KEY` (test), `STRIPE_WEBHOOK_SECRET`, `TAILSCALE_AUTH_KEY`, `VULTR_API_KEY` (access list `129.107.192.0/24`), `ASR_REMOTE_TOKEN`.
+- **Pi `~/fazetime-data/` (mode 600):**
+  - `api.env`: `FAZETIME_AI_MODE_DEFAULT=APPROVAL`, `FAZETIME_STRIPE_ENV_FILE`, `FAZETIME_OPEN_ACCESS=1`;
+  - `stripe.env`;
+  - `worker.env`: API base, worker token, stream ID `str_dcf14fde37d544be9b1bac9668938eae`, channel, Gemini key, streamlink path, models dir, `ASR_REMOTE_URL`, `ASR_REMOTE_TOKEN`;
+  - `vultr.env`.
+- **Pi access:** key-auth `ssh fazetime@fazetime` only. Never a password or sudo.
 
 ## Do not repeat / known failures
 
@@ -101,9 +85,9 @@ The two `services/api` workers share `main.py`, `ids.py`, `config.py` and `schem
   - Never use the WAL journal mode (D23).
   - Never pass `--twitch-disable-ads`.
   - Never run `cpu_threads=4` on the Pi alongside other load.
-- **ASR:**
-  - Never use decoder prompts or hotwords: they hallucinated "FaZeGavin" and "1v1".
-  - Never commit third-party media or any transcripts.
-- **Process checks:** `pgrep -f` in a shell one-liner matches its own command line. Use a script file, or the `[x]` bracket trick.
+- **ASR:** never use decoder prompts or hotwords; they hallucinated "FaZeGavin" and "1v1". Never commit third-party media or any transcripts.
+- **Process checks:** `pgrep -f` in a one-liner matches its own shell's command text. Use a script file plus the `[x]` bracket trick.
+- **Browser APIs:** `crypto.randomUUID` is undefined on the plain-http tailnet origin. The console needs `src/polyfills.ts` as the first import.
 - **Origins:** never use wildcard extension origins.
 - **Vultr:** never create a resource without `check-create` and the `fazetime` tag.
+- **Approval timing:** the approval window is short (minimum lead 30 s). A recording needs ≥2 min of setup between the announcement and "3, 2, 1, fight!" for a comfortable approval window.
