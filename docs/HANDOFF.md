@@ -48,7 +48,7 @@ The two `services/api` workers share `main.py`, `ids.py`, `config.py` and `schem
     - Stream `fazegavin1234` is created (`str_dcf14fde37d544be9b1bac9668938eae`).
     - **The owner's operator invite** is in `~/Documents/fazetime-operator-invite.txt` (600). A second, automation operator session is in the coordinator's scratchpad.
     - **Stripe listener** runs on the laptop via `infra/stripe/start_listener.sh` → `http://fazetime:8000/v1/webhooks/stripe`. Its log is private.
-  - **Worker:** `~/fazetime-data/worker.env` (600) holds the API base, worker token, stream ID, channel, Gemini key, streamlink path and models dir. `fazetime_worker check` reports no problems. **Not running yet**; start it with `scripts/run_pi.sh` when the owner streams. Remote ASR wiring is pending the Vultr worker.
+  - **Worker:** `~/fazetime-data/worker.env` (600) holds the API base, worker token, stream ID, channel, Gemini key, streamlink path and models dir. `fazetime_worker check` reports no problems. **Not running yet**; start it with `scripts/run_pi.sh` when the owner streams. Remote ASR is WIRED (commit `40b3ea2`): `ASR_REMOTE_URL` and `ASR_REMOTE_TOKEN` are in `worker.env`. The VM serves distil-small.en, with a circuit-breaker fallback to the Pi's local tiny.en.
   - **Vultr budget guard:** runs via `~/fazetime/infra/vultr/start_guard.sh` (crontab `@reboot`), log `~/fazetime-data/vultr-guard.log`.
 - **Vultr:**
   - VM `fazetime-asr`: tailnet MagicDNS `fazetime-asr`, plan `voc-c-8c-16gb-150s-amd`, $0.219/h, tag `fazetime`.
