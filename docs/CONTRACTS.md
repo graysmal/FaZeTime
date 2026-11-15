@@ -672,3 +672,52 @@ Late or duplicate resolutions for a terminal or other market are recorded and ig
 
 **6. Persistence.** Store candidates and resolutions with the model, prompt version, evidence IDs and validation result, as `InferenceTrace` rows, with no secrets. Public market fields `criteria.YES` and `criteria.NO` carry the predicates (side-keyed, §9.3).
 
+### 9.18 Stripe test top-up contract (v1, for P6)
+
+The adapter is in `services/api/fazetime_api/integrations/`, pinned to `Stripe-Version: 2026-10-28.endive`. Evidence: `spikes/p6-stripe/README.md`.
+
+**IDs and enums**
+- New ID prefix `top`.
+- `TopupStatus`: `CREATED | PENDING | CREDITED | FAILED | EXPIRED`.
+- `payment_mode` is `STRIPE_TEST` only when both the test secret key (`sk_test_` or `rk_test_`) and `STRIPE_WEBHOOK_SECRET` load. Otherwise it is `UNAVAILABLE`.
+
+**`POST /v1/topups`**
+- Request: `{operation_id, amount_minor}`, with `extra="forbid"`. Amounts follow §9.2: presets 500, 1,000 or 5,000, or a custom amount from 500 to 10,000 in steps of 100.
+- Response, `TopupReceipt`:
+  - `schema_version`, `topup_id`, `operation_id`, `amount_minor`
+  - `currency: "usd"`, `status`, `payment_mode`
+  - `checkout_url`: only while the top-up is `PENDING`. The client opens it in a new tab. It is never logged.
+  - `checkout_expires_at_utc`
+  - `replayed`
+- Errors:
+
+| Code | When |
+|---|---|
+| `INVALID_AMOUNT` | Amount outside §9.2 |
+| `IDEMPOTENCY_CONFLICT` | Same operation_id, different request |
+| `RATE_LIMITED` | Too many requests |
+| `FORBIDDEN` | Bots and operators (D30) |
+| `CAPABILITY_UNAVAILABLE` | Payments not configured |
+| `INTERNAL_ERROR` | The row stays `CREATED`. Retry with the same `operation_id` |
+
+- The server never holds a database transaction during network I/O.
+
+**`GET /v1/topups/{id}`**
+- Returns only the caller's own top-up.
+- While the top-up is `CREATED` or `PENDING`, the server reconciles with Stripe (throttled to once per 3 s per top-up) and applies the result through the same fulfillment planner.
+- A return URL or a browser claim never credits.
+
+**`POST /v1/webhooks/stripe`**
+- Takes the raw body. `Stripe-Signature` is verified with a 300 s tolerance, and test mode only: any `livemode=true` event is rejected.
+- Valid duplicates, ignored types and mismatches all get 2xx. Mismatches are flagged for review and grant no funds.
+- Credits are posted once under `source_key = stripe_topup:<topup_id>` with reason `STRIPE_TEST_TOPUP`.
+- `provider_receipts` is unique on (`provider`, `event_id`). `topups` is unique on the session ID and the PaymentIntent ID.
+- Payload hashes are stored instead of raw bodies.
+
+**Rules**
+- Credits always post to the top-up's own run, even if that run is ARCHIVED (§9.5). A reset never touches pending top-ups.
+- A late credit never backdates a wager; the user must confirm a new wager.
+- `wallet.changed` is emitted on credit.
+- The success and cancel URLs come from server config. Their query parameter is only a polling hint.
+- The webhook route is fed by the Stripe CLI: `stripe listen --device-name fazetime-api --forward-to <API>/v1/webhooks/stripe`, with the key passed through the environment.
+
