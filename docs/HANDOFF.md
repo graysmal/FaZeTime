@@ -1,11 +1,11 @@
-# Current handoff
+# Current handoff (checkpoint for context reset)
 
-- **Timestamp / coordinator:** 2026-11-14 22:01 CT. Coordinator session in the Claude Code desktop app (2.1.289, model Opus 5.5 `claude-opus-5-5`).
-- **Deadline:** 12:00 CT Sun 2026-11-15, about 14 h away.
-- **Branch:** `hackathon-build` @ `e4f736a`, pushed to `origin` (graysmal/FaZeTime, a **public** repo).
-  - The owner authorized committing and pushing coherent increments.
-  - Never commit names, phone numbers, Chert or Stripe IDs, or keys.
-  - Run a scan of the staged diff before every push.
+- **Timestamp / coordinator:** 2026-11-14 ~22:55 CT. Coordinator session in the Claude Code desktop app (2.1.289, Opus 5.5 `claude-opus-5-5`).
+- **Deadline:** 12:00 CT Sun 2026-11-15. Feature freeze 09:00; rehearsals 09:00–12:00.
+- **Branch:** `hackathon-build`, pushed to `origin` (graysmal/FaZeTime, a **PUBLIC** repo). Run `git log -1` for the exact SHA.
+  - The owner authorized committing and pushing coherent, reviewed increments.
+  - Scan the staged diff before every push: no names, phone numbers, IDs, IPs of private hosts, or keys.
+  - No key-shaped literals even in tests; push protection blocks them, and the bypass is never used.
 
 ## Phase state
 
@@ -13,71 +13,87 @@ See STATUS for the evidence.
 
 | Phase | State |
 |---|---|
-| P0 | Closing. Remaining: the P0-B team-channel analysis from the media worker, then the coordinator writes the P0 gate record |
-| P1 | Built. The owner loaded the mock build in Flatpak Chrome: "looks alright". Visual critique deferred; focus on function |
-| P2 | Built, and the two-browser e2e passed 29/29. Remaining: the Pi run, review fixes M2/M3, and the operator console |
-| P3 | In progress |
-| P4/P5 | Contract frozen (CONTRACTS §9.17), not started |
-| P6 | Adapter prep in progress |
+| P0 | COMPLETE_WITH_ACCEPTED_FALLBACK (Chert: manual FaceTime) |
+| P1 | COMPLETE (mock gate). D31: the live UI looks real, with a single "test credits" note |
+| P2 | Built and reviewed (accept with limitations). Fixes merged; two-browser e2e 31/31; API running on the Pi. Remaining for the P2 gate: an owner-run multi-laptop check against the Pi |
+| P3 | Worker built (33 tests) and API routes live. Remaining: a live run on the Pi against the Pi API with the team channel |
+| P4/P5 | In progress. Contract frozen (CONTRACTS §9.17) |
+| P6 | Adapter merged (CONTRACTS §9.18). Wiring in progress |
+| P7–P11 | Not started. P11 is the first cut (D17); P10 is a manual FaceTime handoff |
 
-## Active workers
+## In-flight workers
 
-All work in the main checkout on disjoint paths and do not commit.
+They report to THIS session, and their work is uncommitted on disk.
 
-| Worker | Paths | Task |
+If the session resets before a worker reports: run `git status`, review the diff in that worker's paths, and re-run its tests. Then either finish the work or re-delegate it with the same packet, summarised from this table.
+
+| Worker | Paths (sole owner) | Task / expected result |
 |---|---|---|
-| Backend | `services/api/**` | §9.16 worker routes; review fixes M2, M3, L1–L3 and L8; D30 operators cannot wager; `/operator` static mount; Pi deploy with origins `https://www.twitch.tv,chrome-extension://hodaaffdhncidmaccebmionoljljfefe` |
-| Media | `services/worker/**`, `spikes/p0b-team/**` | P0-B analysis and choosing the ASR model on the team audio, then the P3 worker |
-| Extension | `apps/extension/**`, `packages/contracts/**` | D31 clean live UI with one "test credits" note; snapshot refresh on reload; theater/chat/full-screen smoke checks |
-| Operator console | `apps/operator/**` | New React/Vite app, served by the API at `/operator/` |
-| Stripe | `services/api/fazetime_api/integrations/**`, `services/api/tests/integrations/**`, `spikes/p6-stripe/**` | Stdlib adapter for Checkout and webhooks, a fulfillment planner, and a test-mode smoke run |
+| Backend P4/P5 | `services/api/fazetime_api/ai.py`, `migrations/0004_ai.sql`, `tests/test_ai*.py`; edits to `domain.py`, `api_operator.py`, `views.py`, `worker.py`, README | §9.17 worker proposals and resolutions, operator candidates, resolutions and ai-mode (AUTOMATIC only with `FAZETIME_ALLOW_AUTOMATIC`); settle `note`; operator health with modes, worker detail and limits. Full suite must pass |
+| Stripe P6-C/D | `fazetime_api/topups.py`, `migrations/0005_topups.sql`, `tests/test_topups*.py`, `api_viewer.py` top-up stubs, `integrations/**` | `POST /v1/topups`, `GET /v1/topups/{id}`, `POST /v1/webhooks/stripe` per §9.18. It reports a `payment_mode(services)` call site for the coordinator to wire into `views.py` |
+| AI P4/P5 (worker) | `services/worker/fazetime_worker/{gemini,proposer,resolver,context}.py` + tests; edits to `pipeline.py`, `config.py`, README, pyproject/uv.lock (`google-genai==3.3.0`) | Gemini proposer (deterministic pre-filter, H2H_WINNER_V1, abstention) and resolver (YES/NO/WAIT/UNRESOLVABLE with evidence). Rate limit and daily budget; ≤6 live calls in smoke tests |
+| Vultr ASR | `services/asr_remote/**`; `services/worker/fazetime_worker/asr_remote.py` + `tests/test_asr_remote.py` (new files only) | faster-whisper service on VM `fazetime-asr`: tailnet-only `:8090`, bearer `ASR_REMOTE_TOKEN`, systemd. Model chosen by benchmark on team audio. Client with circuit breaker and local tiny.en fallback. **The coordinator wires the client into `pipeline.py` afterwards** |
 
-## Next assignments, after the current reports
+The two `services/api` workers share `main.py`, `ids.py`, `config.py` and `schemas.py` with append-only edits. Migration numbers are fixed: 0004 = AI, 0005 = top-ups.
 
-1. **Backend (queued gaps from the operator console, commit `bed549e`):**
-   - an optional settle `note` (at most 200 chars) recorded in the audit row;
-   - operator health returns `modes`, worker detail (`asr_backlog_ms`, `queue_depth`, heartbeat age, `host_id`) and the market limits (minimum lead, close/resolve bounds);
-   - a self-logout route that revokes only the current session;
-   - `FAZETIME_OPERATOR_DIST` in the README environment table.
-   Then the P4/P5 routes from §9.17, plus P6 wiring: a topups table, the webhook route with the raw body, and fulfillment inside the transaction, following the Stripe adapter's report. Then a review.
-2. **Media:** the Gemini proposer and resolver from §9.17 (`gemini-3.5-flash-lite`, structured output, few frames), tested against the owner's recordings.
-3. **Extension:** P6-E, the Stripe Checkout handoff in Wallet, once the backend routes exist.
-4. **Coordinator:** the P0 gate record; then commit and push each accepted increment.
+## Deployed state
 
-## Owner actions
+- **Pi `fazetime`** (key-auth `ssh fazetime@fazetime`; never a password or sudo):
+  - **API:** `http://fazetime:8000` (tailnet IP only), code digest `99feda70f09dc5f6`, equivalent to `dcd699e`. Data in `~/fazetime-data`. Control: `services/api/scripts/pi_run.sh start|stop|status|restart`.
+  - **Origins:** `https://www.twitch.tv` and `chrome-extension://hodaaffdhncidmaccebmionoljljfefe`.
+  - **Not yet done on the Pi:**
+    - `bootstrap-operator`: the coordinator runs it, and gives the owner's code via a local file, never in chat or the repo.
+    - `issue-worker-token`.
+    - Create the stream for `fazegavin1234` (operator route).
+    - Copy `apps/operator/dist` and set `FAZETIME_OPERATOR_DIST`.
+    - Redeploy after the P4/P5/P6 merge.
+  - **Worker:** venv and tiny/base models installed at `~/fazetime/services/worker`; not running. `worker.env` is not created yet.
+  - **Vultr budget guard:** runs via `~/fazetime/infra/vultr/start_guard.sh` (crontab `@reboot`), log `~/fazetime-data/vultr-guard.log`.
+- **Vultr:**
+  - VM `fazetime-asr`: tailnet MagicDNS `fazetime-asr`, plan `voc-c-8c-16gb-150s-amd`, $0.219/h, tag `fazetime`.
+  - Spend $0.24 at 22:50 CT; projected about $4.45 to the deadline.
+  - Hard stop $85 pre-tax ($100 incl. tax, D34). Auto-teardown Sun 18:00 CT.
+  - Guards on the Pi and the laptop (`~/.local/state/fazetime/vultr-guard.log`). Runbook: `infra/vultr/README.md`.
+- **Laptop `latpop`:**
+  - Extension builds in `~/Documents/fazetime-extension{,-live,-live-pi}` (ID `hodaaffdhncidmaccebmionoljljfefe`).
+  - Stripe CLI 1.55.11 at `~/.local/bin/stripe`; use `--api-key` from the environment, no login.
+  - OBS 32.2 for streaming the recordings.
 
-- **Record two Minecraft 1v1 takes**, ETA about 00:00 CT. One where FaZeGavin wins, one where FaZeNeville wins. Cues:
-  - in-game names FaZeGavin and FaZeNeville;
-  - the opening line from D19, then at least 90 s of setup;
-  - "3, 2, 1, fight!";
-  - chat visible so the death message shows;
-  - a spoken "FaZe<name> wins!".
-- **Then stream them via OBS** on `latpop` to `fazegavin1234`, for the live P3/P4/P5 tests.
-- **Later:** a P6 test checkout using Stripe's published test card in Stripe's test-mode page; the rehearsals; and a manual FaceTime handoff for P10. Chert is blocked unless the owner wants automation.
+**`.env.local` keys** (names only): `GEMINI_API_KEY`, `CHERT_API_KEY`, `CHERT_PROJECT_ID`, `CHERT_LINE_NUMBER`, `DEMO_CALL_ALLOWLIST`, `STRIPE_SECRET_KEY` (test), `STRIPE_WEBHOOK_SECRET` (CLI, device `fazetime-api`), `TAILSCALE_AUTH_KEY` (reusable, 90 days; revoke after the event), `VULTR_API_KEY` (access list `129.107.192.0/24`), and `ASR_REMOTE_TOKEN` (being added by the Vultr worker).
 
-## Environment facts
+## Next concrete actions, in order
 
-- **`.env.local` keys** (names only): `GEMINI_API_KEY`, `CHERT_API_KEY`, `CHERT_PROJECT_ID`, `CHERT_LINE_NUMBER`, `DEMO_CALL_ALLOWLIST`, `STRIPE_SECRET_KEY`. The Stripe key's test-mode prefix has been verified.
-- **Stripe CLI** 1.55.11 at `~/.local/bin/stripe`. Use `--api-key`; no login is needed.
-- **Pi `fazetime`:**
-  - Official PSU: `0x0` throttling under load.
-  - Reached with `ssh fazetime@fazetime` using key auth only. Never use a password or sudo.
-  - The API binds only to the tailnet IP on port 8000 (`http://fazetime:8000`), with data in `~/fazetime-data/`.
-  - ASR: tiny.en at 3 threads is provisional, pending the team-audio test.
-  - The P0-B capture output is in `~/fazetime-p0b/`. It is the team's own content; keep it out of git.
-- **Extension builds** in `~/Documents/`:
-  - `fazetime-extension` (mock)
-  - `fazetime-extension-live` (`127.0.0.1:8000`)
-  - `fazetime-extension-live-pi` (`fazetime:8000`)
-  - Pinned extension ID: `hodaaffdhncidmaccebmionoljljfefe`.
+1. **Review each worker report:** run the tests, read the diffs, rule on contract questions, commit and push.
+2. **Wire up the Stripe and Vultr code:**
+   - Stripe `payment_mode` call site in `views.py`.
+   - The remote ASR client in the worker `pipeline.py`: remote first, with the local tiny.en fallback.
+3. **Deploy to the Pi:**
+   1. API (applies migrations 0004 and 0005).
+   2. The operator dist.
+   3. Bootstrap the operator: the owner's invite goes to `~/Documents/fazetime-operator-invite.txt` (mode 600).
+   4. Worker token and stream.
+   5. Start the worker.
+   6. Run `stripe listen --device-name fazetime-api --forward-to http://fazetime:8000/v1/webhooks/stripe` on the laptop.
+4. **First real end-to-end** with the owner streaming a recording: Twitch → Pi transcript and frames → Gemini candidate → operator approves → two laptops bet → lock → result suggestion → operator approves → settle. Record the P4/P5 evidence and the measured lead-in.
+5. **P6 gate:** one 4242 test checkout credited exactly once, plus the negative cases.
+6. **P7:** two consecutive full rehearsals and the fault drill. Then P8/P9 (raffle and spoken trigger), then P10 manual FaceTime.
+
+## Owner actions pending
+
+- **Record two Minecraft 1v1 takes**, one won by each player. Cues are in D19 and the earlier HANDOFF: an opening line, ≥90 s of setup, "3, 2, 1, fight!", the death message visible, and a spoken winner.
+- **Set the OBS keyframe interval to 2 s**, and add the clock overlay `spikes/p0-media/obs_clock.html` for delay measurement.
+- **Later:** the 4242 test checkout; rehearsals; the manual FaceTime call.
 
 ## Do not repeat / known failures
 
-- Never use a GAP/STALE threshold of 6 s or less: Twitch delivers media in bursts about 6 s apart.
-- Never use the WAL journal mode (D23).
-- Never pass `--twitch-disable-ads`.
-- Never run `cpu_threads=4` on the Pi alongside other load.
-- Never use wildcard extension origins.
-- Never commit third-party media or transcripts.
-- Never write key-shaped literals in tests, even obviously fake ones (`sk_test_…`, `rk_live_…`, `whsec_…`). GitHub push protection blocks them in this public repo. Split them with adjacent literals, for example `"sk" "_test_FIXTURE…"`. Never use the "allow secret" bypass.
-- `STRIPE_WEBHOOK_SECRET` (CLI listener, `--device-name fazetime-api`) is now in `.env.local`. **P6 wiring is not done yet.** It goes to the backend owner after its current task, following CONTRACTS §9.18 and the integration steps in spikes/p6-stripe/README.md.
+- **Capture:**
+  - Never use a GAP/STALE threshold of 6 s or less: Twitch delivers media in bursts about 6 s apart.
+  - Never use the WAL journal mode (D23).
+  - Never pass `--twitch-disable-ads`.
+  - Never run `cpu_threads=4` on the Pi alongside other load.
+- **ASR:**
+  - Never use decoder prompts or hotwords: they hallucinated "FaZeGavin" and "1v1".
+  - Never commit third-party media or any transcripts.
+- **Process checks:** `pgrep -f` in a shell one-liner matches its own command line. Use a script file, or the `[x]` bracket trick.
+- **Origins:** never use wildcard extension origins.
+- **Vultr:** never create a resource without `check-create` and the `fazetime` tag.
