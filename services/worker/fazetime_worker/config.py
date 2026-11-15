@@ -113,6 +113,22 @@ class Config:
     ai_post_wait: bool = True
     ai_market_source: str = "auto"  # auto | worker | snapshot | none
     resolver_session_token: str | None = field(default=None, repr=False)
+    # ---- D37 game-agnostic profile (CONTRACTS §9.19). FAZETIME_AI_PROFILE=generic; the default h2h is unchanged.
+    # Every model below gets its own Gate with its own persisted daily counter (ai_daily_budget each).
+    ai_profile: str = "h2h"  # h2h | generic
+    ai_observer_models: tuple = ("gemini-3.1-flash-lite",)  # fallback chain, first is tried first
+    ai_observer_interval_s: float = 8.0  # media seconds between observer calls while an episode is in progress
+    ai_observer_idle_interval_s: float = 16.0  # otherwise
+    ai_proposer_model: str = "gemini-3.5-flash-lite"
+    ai_reader_models: tuple = ("gemini-3.5-flash-lite", "gemini-3.1-flash-lite")  # reader A, reader B
+    ai_bet_window_s: int = 35  # D39: suggested close_in_s
+    ai_fairness_margin_s: int = 20  # §9.19 item 7: decisive evidence at or before lock + M -> UNRESOLVABLE
+    ai_min_lead_after_lock_s: int = 40  # expected outcome at least this long after lock (> margin + slack)
+    # A screen-detected episode end trails the decisive moment (Peggle: result screen ~12 s after the winning
+    # shot), so the fairness void for kinds whose end comes from the screen adds this slack to the margin.
+    ai_end_detection_slack_s: int = 15
+    ai_max_horizon_s: int = 300  # outcome confirmable within this long after lock; resolve_in_s = window + this
+    ai_duration_band_s: int = 15  # DURATION_OVER voids within this band of the line
     streamlink_bin: str = "streamlink"
     ffmpeg_bin: str = "ffmpeg"
 
@@ -161,7 +177,32 @@ class Config:
                 problems.append("FAZETIME_AI_RESOLVER_RESERVE must be a fraction in [0, 1) or a percentage like 40%")
             elif self.ai_proposer and self.ai_daily_budget - self.ai_resolver_reserve_requests() <= 0:
                 problems.append("FAZETIME_AI_RESOLVER_RESERVE leaves the proposer no daily requests")
+            if self.ai_profile not in ("h2h", "generic"):
+                problems.append("FAZETIME_AI_PROFILE must be h2h or generic")
+            elif self.ai_profile == "generic":
+                problems += self._generic_problems()
         return problems
+
+    def _generic_problems(self) -> list[str]:
+        out = []
+        model_re = re.compile(r"[a-z0-9][a-z0-9.\-]{0,63}")
+        models = list(self.ai_observer_models) + [self.ai_proposer_model] + list(self.ai_reader_models)
+        if not self.ai_observer_models or not all(model_re.fullmatch(m or "") for m in models):
+            out.append("FAZETIME_AI_OBSERVER_MODELS / PROPOSER_MODEL / READER_MODELS must be model ids")
+        if len(self.ai_reader_models) != 2 or len(set(self.ai_reader_models)) != 2:
+            out.append("FAZETIME_AI_READER_MODELS must name two different models (two independent reads)")
+        if not (self.ai_observer_interval_s > 0 and self.ai_observer_idle_interval_s > 0):
+            out.append("FAZETIME_AI_OBSERVER_INTERVAL_S / IDLE_INTERVAL_S must be positive")
+        if not 35 <= self.ai_bet_window_s <= 600:
+            out.append("FAZETIME_AI_BET_WINDOW_S must be in [35, 600] (API close_in_s clamp, D39)")
+        if not 60 <= self.ai_bet_window_s + self.ai_max_horizon_s <= 900:
+            out.append("FAZETIME_AI_BET_WINDOW_S + FAZETIME_AI_MAX_HORIZON_S must be in [60, 900] (resolve_in_s)")
+        if (self.ai_fairness_margin_s < 0 or self.ai_min_lead_after_lock_s < 0 or self.ai_duration_band_s < 0
+                or self.ai_end_detection_slack_s < 0):
+            out.append("FAZETIME_AI fairness margin, minimum lead and duration band must be >= 0")
+        if self.ai_min_lead_after_lock_s > self.ai_max_horizon_s:
+            out.append("FAZETIME_AI_MIN_LEAD_AFTER_LOCK_S must not exceed FAZETIME_AI_MAX_HORIZON_S")
+        return out
 
     def public_dict(self) -> dict:
         """Loggable view: the token is replaced by its presence only."""
@@ -232,4 +273,18 @@ def from_env() -> Config:
         c.ai_chat_crop = tuple(float(x) for x in crop.split(","))
     c.ai_market_source = _env("FAZETIME_AI_MARKET_SOURCE", c.ai_market_source)
     c.resolver_session_token = _env("FAZETIME_RESOLVER_SESSION_TOKEN")
+    # D37 generic profile (only read by the generic components)
+    models = lambda v: tuple(m.strip() for m in str(v).split(",") if m.strip())  # noqa: E731
+    c.ai_profile = str(_env("FAZETIME_AI_PROFILE", c.ai_profile)).strip().lower()
+    c.ai_observer_models = models(_env("FAZETIME_AI_OBSERVER_MODELS", ",".join(c.ai_observer_models)))
+    c.ai_observer_interval_s = float(_env("FAZETIME_AI_OBSERVER_INTERVAL_S", c.ai_observer_interval_s))
+    c.ai_observer_idle_interval_s = float(_env("FAZETIME_AI_OBSERVER_IDLE_INTERVAL_S", c.ai_observer_idle_interval_s))
+    c.ai_proposer_model = str(_env("FAZETIME_AI_PROPOSER_MODEL", c.ai_proposer_model)).strip()
+    c.ai_reader_models = models(_env("FAZETIME_AI_READER_MODELS", ",".join(c.ai_reader_models)))
+    c.ai_bet_window_s = int(_env("FAZETIME_AI_BET_WINDOW_S", c.ai_bet_window_s))
+    c.ai_fairness_margin_s = int(_env("FAZETIME_AI_FAIRNESS_MARGIN_S", c.ai_fairness_margin_s))
+    c.ai_min_lead_after_lock_s = int(_env("FAZETIME_AI_MIN_LEAD_AFTER_LOCK_S", c.ai_min_lead_after_lock_s))
+    c.ai_max_horizon_s = int(_env("FAZETIME_AI_MAX_HORIZON_S", c.ai_max_horizon_s))
+    c.ai_duration_band_s = int(_env("FAZETIME_AI_DURATION_BAND_S", c.ai_duration_band_s))
+    c.ai_end_detection_slack_s = int(_env("FAZETIME_AI_END_DETECTION_SLACK_S", c.ai_end_detection_slack_s))
     return c

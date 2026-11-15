@@ -93,15 +93,18 @@ class MarketView:
     resolve_by_utc: str | None = None
     origin: str | None = None
     criteria: dict | None = None
+    template_id: str | None = None  # §9.19 item 6 (additive): null for fixture markets
+    generic: dict | None = None  # §9.19 item 6: the stored GENERIC_BINARY_V1 object, else null
 
     @classmethod
     def from_json(cls, m: dict | None):
         if not m or not m.get("market_id"):
             return None
+        g = m.get("generic")
         return cls(m["market_id"], int(m.get("rules_version") or 1), str(m.get("state")), m.get("question") or "",
                    m.get("yes_label") or "", m.get("no_label") or "", m.get("lock_source_epoch"),
                    m.get("lock_media_ms"), m.get("locked_at_utc"), m.get("resolve_by_utc"), m.get("origin"),
-                   m.get("criteria"))
+                   m.get("criteria"), m.get("template_id"), g if isinstance(g, dict) else None)
 
 
 class StaticMarketSource:

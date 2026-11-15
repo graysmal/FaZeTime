@@ -134,3 +134,34 @@ touch ~/fazetime-data/worker/AI_STOP                                 # hard stop
 scripts/stop_pi.sh
 ```
 Between the two recorded takes, reset the run (operator `POST /v1/operator/runs/reset`). Both takes share the fingerprint `h2h:fazegavin|fazeneville:minecraft-1v1`, so in a single run the second take is a `DUPLICATE_EPISODE`.
+
+## D37 generic profile (game-agnostic AI markets, CONTRACTS §9.19)
+
+`FAZETIME_AI_PROFILE=generic` replaces the H2H proposer and resolver with the game-agnostic profile ported from `spikes/p4-generic/`. The default stays `h2h`, which is unchanged. AI must be enabled as above (`FAZETIME_AI_ENABLED`, `GEMINI_API_KEY`). Approval mode (D32) and test money are unchanged.
+
+| Module (`fazetime_worker/generic/`) | Role |
+|---|---|
+| `observer.py` | Stateless observer on a non-blocking cadence: every 8 media seconds while an episode is in progress, 16 s otherwise. It sends the latest 1–2 acknowledged frames, the transcript since the last call and the code-owned snapshot. It never queues: a cycle is skipped while a call is in flight or every model in the chain is cooling down. One attempt per model, then the next model in the chain |
+| `reducer.py` | The only writer of game state, in media ms. Episode start after 2 gameplay observations. End on a result screen or "ended" hint, 2 consecutive away observations, or a rising number (score) reset. A new epoch resets everything |
+| `proposer.py`, `templates.py` | Trigger, prompt, validators and the four kinds (`EPISODE_OUTCOME`, `END_VALUE_AT_LEAST`, `SAY_PHRASE`, `DURATION_OVER`). Code renders the question, predicates and cancellation conditions. Posts `GENERIC_BINARY_V1` with `suggested_close_in_s=35` and `suggested_resolve_in_s=335`, prompt `generic-proposer-1.0` |
+| `resolver.py` | §9.19 item 7. Fairness void at `lock_media_ms + 20 s`. `SAY_PHRASE` and `DURATION_OVER` are decided by code. Visual kinds use two parallel reads (reader A and B: different models, different post-end frames), then `decide_visual`. Prompt `generic-resolver-1.0` |
+| `models.py` | One `Gate` per model, each with its own Pacific-day counter `<data_dir>/gemini_usage_<model>.json` and `FAZETIME_AI_DAILY_BUDGET` requests. On reader models, `FAZETIME_AI_RESOLVER_RESERVE` of that budget is kept for reads: observer and proposer calls stop at budget minus reserve. Gemma gets no system instruction and no `media_resolution` |
+
+Knobs (environment; defaults): `FAZETIME_AI_OBSERVER_MODELS` (`gemini-3.1-flash-lite`; Gemma-first is `gemma-4-26b-a4b-it,gemini-3.1-flash-lite`), `FAZETIME_AI_OBSERVER_INTERVAL_S` (8), `FAZETIME_AI_OBSERVER_IDLE_INTERVAL_S` (16), `FAZETIME_AI_PROPOSER_MODEL` (`gemini-3.5-flash-lite`), `FAZETIME_AI_READER_MODELS` (`gemini-3.5-flash-lite,gemini-3.1-flash-lite`), `FAZETIME_AI_BET_WINDOW_S` (35), `FAZETIME_AI_FAIRNESS_MARGIN_S` (20), `FAZETIME_AI_MIN_LEAD_AFTER_LOCK_S` (30), `FAZETIME_AI_MAX_HORIZON_S` (300), `FAZETIME_AI_DURATION_BAND_S` (15). `FAZETIME_AI_MIN_INTERVAL_S`, `FAZETIME_AI_TIMEOUT_S` and `FAZETIME_AI_EVIDENCE_REFS` apply per model. Quota: the observer is the main consumer, about 450 calls per hour of play at the 8 s cadence, and each Flash-Lite model allows 500 a day. For a demo day set, for example, `FAZETIME_AI_DAILY_BUDGET=480` and `FAZETIME_AI_RESOLVER_RESERVE=0.1`.
+
+```bash
+# Pi, live Twitch: add to ~/fazetime-data/worker.env, then run as usual
+FAZETIME_AI_PROFILE=generic
+scripts/run_pi.sh
+.venv/bin/python -m fazetime_worker check          # shows ai_profile and the model list; never the key
+touch ~/fazetime-data/worker/AI_STOP                # stops every model and every generic post (rm to resume)
+```
+
+**TEST_FIXTURE recipe (local file; never Twitch evidence).** This plays a local recording at real-time rate through the `--test-source-cmd` flag. There is no environment variable for it, on purpose. The epoch is registered as `source_kind=TEST_FIXTURE`, so the API and console label it as a fixture. It never satisfies the P3/P4/P5 Twitch gates, and an AI run spends real Gemini quota.
+
+```bash
+FAZETIME_AI_PROFILE=generic uv run python -m fazetime_worker run --ai --duration-s 330 \
+  --test-source-cmd "ffmpeg -hide_banner -loglevel error -re -i /path/to/file.mp4 -c:v libx264 -preset ultrafast -g 60 -c:a aac -f mpegts -"
+```
+
+Add `--dry-run` to keep everything local (`uplink_dryrun.jsonl`; candidates are recorded as `DRY_RUN`, and there is no market, so the resolver stays idle). Decisions and model calls go to `<data_dir>/ai_trace.jsonl` without transcripts, frames or secrets.

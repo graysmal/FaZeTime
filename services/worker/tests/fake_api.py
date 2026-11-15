@@ -34,6 +34,12 @@ class FakeApi:
         self.calls: list[tuple] = []
         self.fail_plan: list[tuple] = []  # (route_suffix, status, after_commit)
         self.auth_headers_seen: set[str] = set()
+        # §9.17/§9.19 AI routes (generic profile tests): APPROVAL mode, the market view is set by the test
+        self.proposals: list[dict] = []
+        self.resolutions: list[dict] = []
+        self.used_fingerprints: set[str] = set()
+        self.market: dict | None = None
+        self.evidence_ms: dict[str, int] = {}
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), self._handler())
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
 
@@ -69,7 +75,79 @@ class FakeApi:
             return self._observations(body)
         if path == "/v1/worker/evidence":
             return self._evidence(files)
+        if path == "/v1/worker/proposals":
+            return self._proposal(body)
+        if path == "/v1/worker/resolutions":
+            return self._resolution(body)
         return self.err(404, "NOT_FOUND")
+
+    def get_route(self, path):
+        if path.startswith("/v1/worker/market?stream_id="):
+            return 200, {"schema_version": 1, "market": self.market}
+        return self.err(404, "NOT_FOUND")
+
+    GENERIC_KEYS = {"spec_version", "kind", "unit", "params", "episode_start_media_ms", "success_cue", "failure_cue"}
+    PARAM_KEYS = {"EPISODE_OUTCOME": {"win_verb"}, "END_VALUE_AT_LEAST": {"label", "threshold"},
+                  "SAY_PHRASE": {"phrase"}, "DURATION_OVER": {"duration_s"}}
+    CANDIDATE_KEYS = {"candidate_id", "template_id", "episode_fingerprint", "question", "yes", "no", "subjects",
+                      "evidence_ids", "announced_at_media_ms", "suggested_close_in_s", "suggested_resolve_in_s",
+                      "cancellation_conditions", "rationale", "model", "prompt_version", "generic"}
+
+    def ref_ms(self, epoch, ref):
+        """(media_start_ms) of a known evidence reference in ``epoch`` (§9.17 item 5c), else None."""
+        if ref.startswith("evd_"):
+            return self.evidence_ms.get(ref) if self.evidence_epoch.get(ref) == epoch else None
+        m = re.fullmatch(r"(ep_[0-9a-f]{32}):(\d+)", ref)
+        it = self.observations.get((epoch, int(m.group(2)))) if m and m.group(1) == epoch else None
+        return None if it is None or it["kind"] == "GAP" else it["media_start_ms"]
+
+    def _proposal(self, b):
+        c = b.get("candidate") or {}
+        if set(c) != self.CANDIDATE_KEYS or c.get("template_id") != "GENERIC_BINARY_V1":
+            return self.err(422, "VALIDATION_FAILED", "candidate fields")
+        g = c["generic"]
+        if (not isinstance(g, dict) or set(g) != self.GENERIC_KEYS or g["spec_version"] != "gen-1"
+                or set(g["params"]) != self.PARAM_KEYS.get(g["kind"], {None}) or len(c["subjects"]) > 1):
+            return self.err(422, "VALIDATION_FAILED", "generic")
+        if b["source_epoch"] != self.current:
+            return self.err(409, "STALE_EPOCH")
+        self.proposals.append(b)
+        fp = f"gen:{b['source_epoch']}:{g['episode_start_media_ms']}:{g['kind'].lower()}"
+        reject = None
+        if not c["evidence_ids"] or any(self.ref_ms(b["source_epoch"], r) is None for r in c["evidence_ids"]):
+            reject = "STALE_EVIDENCE"
+        elif c["episode_fingerprint"] != fp or fp in self.used_fingerprints:
+            reject = "DUPLICATE_EPISODE" if fp in self.used_fingerprints else "UNPAIRED_SIDES"
+        elif (c["yes"]["label"], c["no"]["label"]) != ("Yes", "No") or \
+                c["yes"]["predicate"].lower() == c["no"]["predicate"].lower():
+            reject = "UNPAIRED_SIDES"
+        elif c["suggested_close_in_s"] < 35:
+            reject = "INSUFFICIENT_LEAD"
+        if reject is None:
+            self.used_fingerprints.add(fp)
+        return 201, {"candidate_id": c["candidate_id"], "id": "cnd_" + uuid.uuid4().hex,
+                     "status": "REJECTED" if reject else "PENDING", "reject_code": reject, "market_id": None}
+
+    def _resolution(self, b):
+        r = b["resolution"]
+        self.resolutions.append(b)
+        m = self.market
+        out = lambda status, why=None: (201, {"resolution_id": r["resolution_id"], "id": "rsl_" + uuid.uuid4().hex,  # noqa
+                                              "status": status, "reason": why})
+        if m is None or m["market_id"] != r["market_id"] or m["state"] != "EVALUATING" or \
+                m["rules_version"] != r["rules_version"]:
+            return out("IGNORED", "STALE_MARKET")
+        if b["source_epoch"] != m["lock_source_epoch"]:
+            return out("IGNORED", "EPOCH_MISMATCH")
+        ms = [self.ref_ms(b["source_epoch"], e) for e in r["evidence_ids"]]
+        if not ms or any(x is None for x in ms):
+            return out("IGNORED", "STALE_EVIDENCE")
+        if r["media_interval"]["start_ms"] < m["lock_media_ms"] or min(ms) < m["lock_media_ms"]:
+            return out("IGNORED", "EVIDENCE_BEFORE_LOCK")
+        sup = (r["predicate_support"]["YES"], r["predicate_support"]["NO"])
+        if (r["decision"] == "YES" and sup != (True, False)) or (r["decision"] == "NO" and sup != (False, True)):
+            return out("IGNORED", "PREDICATE_SUPPORT_MISMATCH")
+        return out("RECORDED", "WAIT") if r["decision"] == "WAIT" else out("PENDING_APPROVAL", "APPROVAL_MODE")
 
     def _check_common(self, b, keys):
         missing = [k for k in keys if k not in b]
@@ -165,6 +243,7 @@ class FakeApi:
         evd = "evd_" + uuid.uuid4().hex
         self.evidence[key] = (evd, meta["sha256"])
         self.evidence_epoch[evd] = meta["source_epoch"]
+        self.evidence_ms[evd] = meta["media_ms"]
         return 201, {"evidence_id": evd, "deduped": False}
 
     def _handler(self):
@@ -173,6 +252,20 @@ class FakeApi:
         class H(BaseHTTPRequestHandler):
             def log_message(self, *a):
                 pass
+
+            def do_GET(self):
+                with api.lock:
+                    if self.headers.get("authorization", "") != f"Bearer {api.token}":
+                        status, body = api.err(401, "UNAUTHENTICATED")
+                    else:
+                        status, body = api.get_route(self.path)
+                    api.calls.append((self.path, status))
+                out = json.dumps(body).encode()
+                self.send_response(status)
+                self.send_header("content-type", "application/json")
+                self.send_header("content-length", str(len(out)))
+                self.end_headers()
+                self.wfile.write(out)
 
             def do_POST(self):
                 n = int(self.headers.get("content-length", "0"))

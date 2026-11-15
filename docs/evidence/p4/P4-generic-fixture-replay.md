@@ -105,3 +105,29 @@ What the passes showed needs work:
 - **Sample size:** two recordings of one game, 4–6 markets per pass. By the rule of three, zero wrong settlements in n markets bounds the error rate only at about 3/n. This supports approval mode only (D32).
 - **Missing kinds of fixture:** no chess, CS2, fighting-game or speedrun fixtures yet. Speech and number templates have barely been exercised.
 - **Not wired in:** nothing here posts to the API. The API still enforces the old 45 s window floor and the `H2H_WINNER_V1` template only. Integration needs the additive generic template described in the report.
+
+## Integrated end-to-end on real code (2026-11-15, 02:14–02:33 CT)
+
+**LOCAL TEST_FIXTURE, not the Twitch gate.** A throwaway API ran on the laptop (`127.0.0.1:8010`, scratch DB, open access, APPROVAL mode), with the real worker in `FAZETIME_AI_PROFILE=generic`.
+- **Source:** a Peggle recording played through `--test-source-cmd` (ffmpeg `-re`, 480p30, a keyframe every 2 s). The epoch is registered as `TEST_FIXTURE`.
+- **ASR:** local faster-whisper `base.en`.
+- **Operator stand-in:** `spikes/p4-generic/e2e_operator.py` approves the way the console does (§9.19 item 5), has two test viewers stake both sides, and approves resolutions.
+- **Code under test:** commits `5df12ac` (API and console) plus the worker changes in this increment.
+
+| Run | Fixture | What happened | Finding and fix |
+|---|---|---|---|
+| 1 | verbose | Frames uploaded (evidence stored), but the observer reported `NO_FRAMES` and made 0 calls | **Wiring bug:** `Pipeline` gave the uplink the raw client instead of `EvidenceTap`, so frame `evd_` ids never reached the AI context. Fixed in `pipeline.py`, with a regression test |
+| 2 | verbose | 2 generic candidates were proposed, validated and approved with the 35 s window counted from approval. Both markets voided `EMPTY_POOL` at lock | No viewer bets, which is correct D12 behaviour. The harness now stakes both sides |
+| 3 | normal | Proposed, approved, both sides staked, episode end seen at 150 s. Reader A read "Level COMPLETE!" (success), but reader B (3.1 Flash-Lite) returned **504**, so WAIT. Then the fixture file ended, the source restarted, a new epoch began, and the market voided `SOURCE_GAP` | **Reader fallback:** a failed reader model is retried on the other reader model with the same frames. Regression test added. The harness now loops the file (`-stream_loop 1`) so a test file's end cannot void the market |
+| 4 | normal | "Will the streamer win this level?" was approved (35 s from approval) and staked both sides. Readers: 3.5 read "Level Complete!", 3.1 read "LEVEL COMPLETE!"; the worker posted **YES** citing 3 post-lock frames. Approved, then **SETTLED**. A second market (duration) opened on the looped level | **Fairness:** lock was 119.6 s, the winning shot about 138 s (18 s after lock, inside M = 20 s), and the result screen was detected at 150 s. The screen-detected end trails the decisive moment, so the worker now adds a **15 s end-detection slack**: void when end ≤ lock + 35 s. The proposer's minimum expected lead after lock rises from 30 to 40 s. Regression test added. Under these rules, run 4's market would void instead of settle |
+
+Model behaviour in these runs:
+- **`gemini-3.1-flash-lite`:** p50 3.6–5.3 s, p95 9.5–10.8 s, and 504s on about 15% of calls.
+- **`gemini-3.5-flash-lite`:** p50 1.7–1.9 s, no errors.
+- **Recommended observer chain:** `FAZETIME_AI_OBSERVER_MODELS=gemini-3.1-flash-lite,gemini-3.5-flash-lite`. A 3.1 failure falls through to 3.5 instead of skipping the cycle.
+
+Test suites after the fixes:
+- worker **151 passed**
+- API **552 passed, 2 skipped**
+- operator console **73/73**
+- extension **133/133** (unchanged)

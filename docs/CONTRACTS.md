@@ -751,7 +751,7 @@ This is an additive change to §9.17, recorded by the coordinator before integra
 |---|---|---|
 | `EPISODE_OUTCOME` | "Will the streamer {win_verb} this {unit}?" | `win_verb` ∈ `win`, `clear`, `complete`, `beat`, `survive`, `finish` |
 | `END_VALUE_AT_LEAST` | "Will {label} be at least {threshold} when this {unit} ends?" | `label` (1–40 chars), `threshold` (number) |
-| `SAY_PHRASE` | 'Will "{phrase}" be heard on stream before this {unit} ends?' | `phrase` (1–3 words, letters and apostrophes) |
+| `SAY_PHRASE` | 'Will "{phrase}" be heard on stream after betting closes, before this {unit} ends?' (the viewer panel shows only the question, so it states its own window) | `phrase` (1–3 words, letters and apostrophes) |
 | `DURATION_OVER` | "Will this {unit} last longer than {m:ss}?" | `duration_s` (integer, 30–3600) |
 
 **1. Candidate changes** (`POST /v1/worker/proposals`). The body is the same as in §9.17, with these differences:
@@ -822,4 +822,6 @@ A missing, extra or malformed `generic` object is a schema error, HTTP 422, and 
 - **`threshold`:** an integer or finite float. Booleans and strings are rejected.
 - **Fingerprint check:** only the `gen:` prefix and the `:<kind>` suffix are checked, on the lowercased form. The middle parts are not matched against `source_epoch` or `episode_start_media_ms`.
 - **Storage guards:** migration 0006 adds a JSON check of at most 4096 bytes on `generic_json`. Triggers require it for GENERIC and forbid it for every other template, and make `template_id` and `generic_json` immutable.
+- **Worker-side detection slack (end-to-end finding):** for kinds whose episode end comes from the screen, the worker adds an end-detection slack of 15 s (`FAZETIME_AI_END_DETECTION_SLACK_S`) to the fairness margin. It voids when the detected end is at or before `lock_media_ms` + 20 000 + 15 000, because a result screen trails the decisive moment (in Peggle, by about 12 s). The proposer's minimum expected lead after lock is 40 s.
+- **Reader fallback (end-to-end finding):** if a reader's model errors or is cooling down, the other reader model reads that reader's own frames. Two agreeing reads on different frames are still required.
 - **Viewer isolation:** viewer snapshots, `/v1/me` and PUBLIC/USER events never carry `generic`, the cues or `template_id`. This is tested.

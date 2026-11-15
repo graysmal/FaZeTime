@@ -45,7 +45,11 @@ class EvidenceTap:
 
 
 def build_ai(cfg: Config, ctx: ContextBuffer, api, stream_id: str, data_dir: Path):
-    """P4/P5 components (only when FAZETIME_AI_ENABLED=1). Returns (AiThread, GeminiClient, tracker)."""
+    """P4/P5 components (only when FAZETIME_AI_ENABLED=1). Returns (AiThread, GeminiClient, tracker).
+    FAZETIME_AI_PROFILE=generic builds the D37 game-agnostic profile instead: (GenericAi, ModelPool, tracker)."""
+    if cfg.ai_profile == "generic":
+        from .generic import build_generic_ai
+        return build_generic_ai(cfg, ctx, api, stream_id, data_dir)
     from .context import FrameTransformer
     from .gemini import Gate, GeminiClient
     from .proposer import Proposer, Registry, Trace
@@ -78,7 +82,9 @@ class Pipeline:
                       else ApiClient(cfg.api_base, cfg.token, cfg.http_timeout_s))
         self.ctx = ContextBuffer()
         self.client = EvidenceTap(client, self.ctx.on_evidence_ack, self.ctx.on_observations_ack)
-        self.uplink = Uplink(client, cfg.stream_id or "str_" + "0" * 32, max_queue=cfg.uplink_queue_max,
+        # The uplink must post through the tap: it is what records each frame's server evd_ id (and transcript
+        # refs) in the AI context. With the raw client the generic observer never sees an acknowledged frame.
+        self.uplink = Uplink(self.client, cfg.stream_id or "str_" + "0" * 32, max_queue=cfg.uplink_queue_max,
                              batch_max=cfg.batch_max_items, batch_wait_s=cfg.batch_max_wait_s)
         self.queue = BoundedQueue(cfg.asr_queue_max)
         self.windower = Windower(cfg.asr_window_ms, cfg.asr_hop_ms, self.queue.put)
@@ -214,6 +220,9 @@ class Pipeline:
     def ai_status(self) -> dict:
         if self.ai is None:
             return {"enabled": False, "reason": self.ai_disabled_reason}
+        if self.cfg.ai_profile == "generic":
+            return {"enabled": True, **self.ai.status(),
+                    "market": getattr(self.market_tracker.current, "__dict__", None)}
         gate = self.gemini.gate
         return {"enabled": True, "gate": gate.state(), "proposer_gate": gate.state("proposer"),
                 "used_today": gate.used_today, "budget": gate.daily_budget,

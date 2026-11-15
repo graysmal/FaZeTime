@@ -250,3 +250,34 @@ def test_asr_drops_turn_heartbeat_stale(tmp_path):
         p.queue.put(mkwin(ep, i, mono_ns()))
     body = p.heartbeat_body()
     assert body["worker_state"] == "STALE" and body["queue_depth"] == 2
+
+
+def test_uplink_posts_through_evidence_tap(tmp_path):
+    """Regression (D37 end-to-end, 2026-11-15): frame uploads must report their server evd_ id to the AI context.
+    The uplink once held the raw client, so the generic observer never saw an acknowledged frame (NO_FRAMES)."""
+    from fazetime_worker.asr import FakeEngine
+    from fazetime_worker.pipeline import EvidenceTap, Pipeline
+
+    class Res:
+        def __init__(self, body):
+            self.ok, self.status, self.body = True, 201, body
+
+    class Stub:
+        def post_evidence(self, meta, jpeg):
+            return Res({"evidence_id": "evd_" + "a" * 32})
+
+        def post_json(self, path, body):
+            return Res({})
+
+        def get_json(self, path, bearer=None):
+            return Res({})
+
+    cfg = Config(data_dir=tmp_path, asr_engine="fake")
+    p = Pipeline(cfg, engine=FakeEngine(), client=Stub())
+    assert isinstance(p.client, EvidenceTap) and p.uplink.client is p.client
+    ep = new_epoch_id()
+    p.ctx.open_epoch(ep)
+    p.ctx.add_frame(ep, 7, 1000, b"\xff\xd8jpeg", 854, 480, utc_now())
+    p.uplink.client.post_evidence({"source_epoch": ep, "sequence": 7}, b"\xff\xd8jpeg")
+    frames = p.ctx.view().frames
+    assert [f.evidence_id for f in frames] == ["evd_" + "a" * 32]
