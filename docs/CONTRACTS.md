@@ -676,6 +676,17 @@ Late or duplicate resolutions for a terminal or other market are recorded and ig
 
 **5d. Takes and episodes.** Each recording take uses the same episode fingerprint, so the operator must **reset the run between takes**. Otherwise the second take is rejected as `DUPLICATE_EPISODE`.
 
+**5e. P4/P5 implementation rulings** (2026-11-14, coordinator, from the backend report):
+- **Proposal responses:** a rejection is recorded and returned with HTTP 201 and status `REJECTED`, plus `reject_code`. A replay returns 200. A schema violation is 422 and is not recorded.
+- **Added values:** reject code `OPERATOR_REJECTED`, response status `EXPIRED`, and an `id` field (`cnd_`/`rsl_`). Operator routes accept either the server ID or the client UUID.
+- **Evidence freshness:** the 90 s limit is rechecked at approval. The operator must therefore approve within 90 s of the oldest cited evidence and within 60 s of the candidate's receipt.
+- **Close anchoring:** `close_at` is the candidate's receipt time plus the clamped `close_in_s`, so a slow approval never extends betting. An operator override counts from approval and stays within [45, 600].
+- **Episodes:** an episode is consumed by a PENDING, SHADOW, OPENED, EXPIRED or operator-rejected candidate. A validation rejection does not consume it, so the worker retries with a new `candidate_id`. Fingerprints are canonicalized: lowercased, with the h2h pair sorted.
+- **Approval error mapping:** EXPIRED and INSUFFICIENT_LEAD → 409 `MARKET_CLOSED` (DEADLINE); MARKET_BUSY → 409 `STALE_MARKET`; SOURCE_NOT_LIVE → 409 `SOURCE_STALE`; STALE_EPOCH → 409; UNPAIRED_SIDES → 422. Approval in OFF or SHADOW mode → 403. `details.reject_code` always carries the §9.17 code.
+- **Resolutions:** a validation failure is IGNORED with a reason code. Evidence and `media_interval.start_ms` must be ≥ `lock_media_ms`. In AUTOMATIC mode, a YES/NO that comes with contradictions becomes `PENDING_APPROVAL` instead of settling. In SHADOW or OFF mode a decision is RECORDED only. AI resolutions act on AI-origin markets only.
+- **Viewer payloads:** `resolution_reason` is null for viewers and shown only to the operator, because it is untrusted model text (D31). Public `opening_evidence_ids` and `resolution_evidence_ids` carry frame `evd_` IDs only.
+- **AI mode:** the code default is OFF. Deployment sets `FAZETIME_AI_MODE_DEFAULT=APPROVAL` (D32). A mode change emits `stream.updated`, and a reset keeps the mode.
+
 **6. Persistence.** Store candidates and resolutions with the model, prompt version, evidence IDs and validation result, as `InferenceTrace` rows, with no secrets. Public market fields `criteria.YES` and `criteria.NO` carry the predicates (side-keyed, §9.3).
 
 ### 9.18 Stripe test top-up contract (v1, for P6)

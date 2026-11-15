@@ -1,6 +1,6 @@
 # FaZeTime API (phase 2)
 
-**TEST MONEY ONLY.** Demo credits in integer minor units (100 = one demo dollar). There are no real payments, no card data and no phone fields. `payment_mode` is `UNAVAILABLE` and `ai_mode` is `OFF`. Fixture markets are labelled `OPERATOR_FIXTURE`.
+**TEST MONEY ONLY.** Demo credits in integer minor units (100 = one demo dollar). There are no real payments, no card data and no phone fields. `payment_mode` is `UNAVAILABLE` unless Stripe test keys load (P6). A new stream starts with `ai_mode` `OFF` (`FAZETIME_AI_MODE_DEFAULT`); the operator sets it with `POST /v1/operator/ai-mode`. Fixture markets are labelled `OPERATOR_FIXTURE`; AI markets `AI_APPROVED` / `AI_AUTOMATIC`.
 
 Source health is derived from media-worker heartbeats (§9.16). It is `STOPPED` with null fields until a worker registers an epoch.
 
@@ -29,7 +29,7 @@ uv run --frozen python -m fazetime_api backup /path/backup.db   # online copy vi
 
 You can also run `uv run --frozen uvicorn fazetime_api.main:create_app --factory --host 127.0.0.1 --port 8000`. Never use `--workers` greater than 1: WebSocket fanout and rate limits are in-process.
 
-Migrations (`0001_initial`, `0002_presence`, `0003_media_worker`) apply at startup and from every CLI command. An applied migration whose file has changed is refused (sha256 check). The data dir defaults to `var/`, holding `var/fazetime.db` and `var/evidence/`. It is gitignored along with `*.db-journal`.
+Migrations (`0001_initial`, `0002_presence`, `0003_media_worker`, `0004_ai`, `0005_topups`) apply at startup and from every CLI command. An applied migration whose file has changed is refused (sha256 check). The data dir defaults to `var/`, holding `var/fazetime.db` and `var/evidence/`. It is gitignored along with `*.db-journal`.
 
 | Env var | Default | Meaning |
 |---|---|---|
@@ -44,6 +44,12 @@ Migrations (`0001_initial`, `0002_presence`, `0003_media_worker`) apply at start
 | `FAZETIME_MIN_LEAD_MS` | `30000` | Minimum `close_at_utc − now` at OPEN. A fixture market's `close_in_s` must be at least this |
 | `FAZETIME_SWEEPER_ENABLED` / `FAZETIME_SWEEPER_INTERVAL_S` | `1` / `1.0` | Durable sweeper |
 | `FAZETIME_LOG_LEVEL` | `INFO` | Tokens, tickets and invite codes are never logged |
+| `FAZETIME_OPERATOR_DIST` | unset | Path to an `apps/operator` build (`dist/` with `index.html`), served same-origin at `/operator/` |
+| `FAZETIME_ALLOW_AUTOMATIC` | `false` | D32 server flag. Without it `POST /v1/operator/ai-mode {mode: AUTOMATIC}` is `403 FORBIDDEN`, and a stored AUTOMATIC acts as APPROVAL. Set only after the P4/P5 quality gate is recorded |
+| `FAZETIME_AI_MODE_DEFAULT` | `OFF` | AI mode of a brand-new stream's first run (`OFF`/`SHADOW`/`APPROVAL`/`AUTOMATIC`). D32 names APPROVAL as the default: set `APPROVAL` on the demo host. A reset keeps the previous run's mode |
+| `FAZETIME_CANDIDATE_EXPIRY_S` | `60` | A PENDING AI candidate becomes EXPIRED this long after receipt |
+| `FAZETIME_EVIDENCE_FRESH_S` | `90` | Evidence cited by a proposal must have been received within this window (rechecked at approval) |
+| (code defaults) | `45`–`600` / `60`–`900` | AI `close_in_s` / `resolve_in_s` bounds (`Settings.ai_close_*`, `ai_resolve_*`): close below 45 s is `INSUFFICIENT_LEAD`, above 600 is clamped; resolve is clamped |
 
 ## Routes
 
@@ -70,7 +76,7 @@ Liveness: `GET /healthz`, unauthenticated, with no internals. OpenAPI: `/openapi
 | `POST /v1/operator/credits` | `{operation_id, user_id, amount_minor 1..100000, memo?}`. FIXTURE_CREDIT, capped at 1,000,000 available |
 | `POST /v1/operator/markets` | `{operation_id, question, yes_label="Yes", no_label="No", close_in_s, resolve_in_s}`. Creates a DRAFT with origin OPERATOR_FIXTURE. At OPEN, `close_at = open + close_in_s` and `resolve_by = close_at + resolve_in_s` |
 | `POST /v1/operator/markets/{id}/open` | `{operation_id}`. DRAFT→OPEN |
-| `POST /v1/operator/markets/{id}/settle` | `{operation_id, winning_side}`. Fixture markets only: EVALUATING, and only before `resolve_by_utc` |
+| `POST /v1/operator/markets/{id}/settle` | `{operation_id, winning_side, note?}` (`note` at most 200 chars, kept in the audit row). Fixture markets only: EVALUATING, and only before `resolve_by_utc`. AI markets settle by approving a resolution |
 | `POST /v1/operator/markets/{id}/void` | `{operation_id, note?}`. VOID with OPERATOR_CANCELLED and refunds |
 | `POST /v1/operator/sessions/revoke` | `{operation_id, user_id}` |
 | `GET /v1/operator/health` | Service pragmas and migrations, sweeper, WebSocket, run, markets including DRAFT, wallets, funding, reconciliation, recent events and audit, presence |
@@ -91,7 +97,7 @@ Issue a token on the API host with `python -m fazetime_api issue-worker-token`. 
 | `POST /v1/worker/heartbeat` | Every 5 s. Returns `{server_time_utc, stream_session_id, current_source_epoch}`. `last_media_end_ms` only moves forward. `worker_state=GAP` marks the epoch as having a gap |
 | `POST /v1/worker/evidence` | Multipart parts `meta` (JSON) and `file` (JPEG). Returns `{evidence_id, deduped}`: 201 if new, 200 if deduped on (`source_epoch`, `sequence`). Same key with a different sha256 is `IDEMPOTENCY_CONFLICT` |
 | `POST /v1/worker/observations` | `{schema_version, stream_id, source_epoch, items[1..50]}`. Returns `{accepted, duplicates, rejected:[{sequence, code}]}`. The server stamps `received_at_utc`. A FRAME needs an `evidence_id` from this epoch; a GAP item marks a gap. Transcript text is stored verbatim as untrusted data |
-| `POST /v1/worker/proposals`, `/resolutions` | Reserved for P4/P5: `503 CAPABILITY_UNAVAILABLE` |
+| `POST /v1/worker/proposals`, `/resolutions` | §9.17, see "AI proposals and resolutions" below |
 | `GET /v1/operator/evidence?since=<utc>&limit=` | Operator only. Recent observations (flagged `untrusted: true`), frame metadata and current health |
 | `GET /v1/operator/evidence/{evidence_id}` | Operator only. Returns the JPEG, or 404 if unknown or pruned |
 
@@ -115,6 +121,30 @@ H="Authorization: Bearer $FAZETIME_WORKER_TOKEN"; API=http://fazetime:8000; SID=
 curl -s -H "$H" -H 'Content-Type: application/json' $API/v1/worker/epochs -d "{\"stream_id\":\"$SID\",\"source_epoch\":\"$EP\",\"source_kind\":\"TWITCH_STREAMLINK\",\"reason\":\"PROCESS_START\",\"variant\":null,\"host_id\":\"pi\",\"started_at_utc\":\"$(date -u +%FT%T.000Z)\"}"
 curl -s -H "$H" -F "meta={\"source_epoch\":\"$EP\",\"sequence\":1,\"kind\":\"FRAME\",\"media_ms\":0,\"width\":640,\"height\":360,\"sha256\":\"$(sha256sum f.jpg|cut -c1-64)\"}" -F file=@f.jpg $API/v1/worker/evidence
 ```
+
+## AI proposals and resolutions (§9.17, P4/P5)
+
+The model only proposes; `fazetime_api/ai.py` validates and decides, and opens, settles or voids only through the
+domain functions in one `BEGIN IMMEDIATE` transaction. Model text (question, predicates, rationale, reason,
+contradictions) is untrusted: stored verbatim, length-bounded, shown to the operator flagged `*_untrusted`, never
+interpreted. Evidence refs (§9.17 item 5c) are `evd_<32 hex>` (a frame) or `<source_epoch>:<sequence>` (an accepted
+transcript observation of the request's epoch). Any other reference is unknown: `STALE_EVIDENCE`. Each take reuses
+the episode fingerprint, so reset the run between takes (item 5d).
+
+| Route | Behaviour |
+|---|---|
+| `POST /v1/worker/proposals` | `{schema_version, stream_id, source_epoch, candidate}`. Checks in contract order: `STALE_EPOCH`, `STALE_EVIDENCE` (unknown, other epoch, GAP, pruned, or received more than 90 s ago), `MARKET_BUSY`, `DUPLICATE_EPISODE`, `UNPAIRED_SIDES`, `SOURCE_NOT_LIVE`, then clamping (`INSUFFICIENT_LEAD` below 45 s), then the mode (`AI_OFF` / SHADOW / PENDING / OPENED as `AI_AUTOMATIC`). Response `{candidate_id, id (cnd_), status, reject_code, market_id, close_in_s, resolve_in_s, expires_at_utc, replayed}`: 201 when first recorded (REJECTED included), 200 on a replay of the same `candidate_id` (current status); a different body is `IDEMPOTENCY_CONFLICT`. A schema violation is `422` and is not recorded |
+| `GET /v1/operator/candidates?status=&limit=` | Newest first for the active run, with resolved evidence (`frame_url`, transcript text), derived `EXPIRED`, `actionable` |
+| `POST /v1/operator/candidates/{id}/approve` | `{operation_id, close_in_s?}`. `id` is the `cnd_` or the client `candidate_id`. Re-runs every check at commit. Close is anchored to receipt (`received + close_in_s`) unless `close_in_s` is given (seconds from approval, same bounds); `close_at − now` must be at least `min_lead_ms`. Errors carry `details.reject_code`: EXPIRED / INSUFFICIENT_LEAD → `409 MARKET_CLOSED` (reason DEADLINE), MARKET_BUSY → `409 STALE_MARKET`, SOURCE_NOT_LIVE → `409 SOURCE_STALE`, STALE_EPOCH → `409 STALE_EPOCH`, UNPAIRED_SIDES → `422`, not PENDING → `409 MARKET_CLOSED` (reason STATE), mode not APPROVAL/AUTOMATIC → `403` |
+| `POST /v1/operator/candidates/{id}/reject` | `{operation_id, reason}`. REJECTED with `OPERATOR_REJECTED`; burns the episode |
+| `POST /v1/operator/ai-mode` | `{operation_id, mode: OFF\|SHADOW\|APPROVAL\|AUTOMATIC}`. AUTOMATIC needs `FAZETIME_ALLOW_AUTOMATIC`. Emits `stream.updated` (modes) |
+| `POST /v1/worker/resolutions` | `{schema_version, stream_id, source_epoch, resolution}`. Always recorded. `IGNORED` with reason `UNKNOWN_MARKET`, `MARKET_TERMINAL`, `NOT_AI_MARKET`, `STALE_MARKET` (not EVALUATING or wrong `rules_version`), `EPOCH_MISMATCH` (not the lock epoch), `NO_LOCK_POSITION`, `STALE_EVIDENCE`, `EVIDENCE_BEFORE_LOCK` (evidence or `media_interval.start_ms` before `lock_media_ms`), `PREDICATE_SUPPORT_MISMATCH`, `DEADLINE`, `DUPLICATE`. WAIT → `RECORDED`. YES/NO/UNRESOLVABLE: AUTOMATIC settles / voids `UNRESOLVABLE` (YES/NO with contradictions → `PENDING_APPROVAL`), APPROVAL → `PENDING_APPROVAL`, SHADOW/OFF → `RECORDED`. 201 first, 200 replay |
+| `GET /v1/worker/market?stream_id=` | §9.17 item 5b, MEDIA_WORKER only: `{schema_version, market}` with `market_id, rules_version, state, origin, question, yes_label, no_label, close_at_utc, resolve_by_utc, lock_source_epoch, lock_media_ms` for the run's nonterminal market, else `null`. No balances or user data |
+| `GET /v1/operator/resolutions?market_id=` | Stored suggestions with evidence and `actionable` |
+| `POST /v1/operator/resolutions/{id}/approve` | `{operation_id}`. Settles or voids exactly as suggested through the fixture settlement path; other pending suggestions become `IGNORED SUPERSEDED`; a second approval is `409 MARKET_CLOSED` |
+
+Every submission and operator decision appends an `inference_traces` row (model, prompt version, evidence refs, AI
+mode, result, code). No prompts, keys or tokens are stored.
 
 ## Invariants and where they are enforced
 

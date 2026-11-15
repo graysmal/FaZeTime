@@ -111,7 +111,8 @@ def test_worker_token_cannot_call_viewer_or_operator_routes(wk):
     h, _, _, _, wh, _ = wk
     assert h.client.get("/v1/me", headers=wh).status_code == 401
     assert h.client.get("/v1/operator/health", headers=wh).status_code == 401
-    assert h.client.post("/v1/worker/proposals", headers=wh).json()["error"]["code"] == "CAPABILITY_UNAVAILABLE"
+    # P4 replaced the 503 stub (§9.17): a worker token reaches body validation, an empty body is 422.
+    assert h.client.post("/v1/worker/proposals", headers=wh).json()["error"]["code"] == "VALIDATION_FAILED"
 
 
 # ---- epochs and health ----------------------------------------------------------------------------------

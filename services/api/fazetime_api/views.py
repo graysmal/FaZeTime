@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import datetime
 
@@ -72,6 +73,34 @@ def wallet_summary(conn: sqlite3.Connection, run_id: str, user_id: str) -> dict:
     }
 
 
+def _json_or_none(value: str | None):
+    return json.loads(value) if value else None
+
+
+def _frame_ids(refs: list[dict] | None) -> list[str] | None:
+    """Public evidence lists carry frame evidence IDs (evd_) only; transcript refs stay operator-side."""
+    if refs is None:
+        return None
+    out: list[str] = []
+    for ref in refs:
+        evidence_id = ref.get("evidence_id")
+        if evidence_id and evidence_id not in out:
+            out.append(evidence_id)
+    return out
+
+
+def ai_fields(row: sqlite3.Row, *, viewer: bool) -> dict:
+    """§9.17 item 6: criteria.YES / criteria.NO carry the predicates, frozen at OPEN. Null for fixture markets.
+    resolution_reason is untrusted model text: operator views only, null in viewer payloads (D31)."""
+    return {
+        "criteria": _json_or_none(row["criteria_json"]),
+        "opening_evidence_ids": _frame_ids(_json_or_none(row["opening_evidence_json"])),
+        "resolution_evidence_ids": _frame_ids(_json_or_none(row["resolution_evidence_json"])),
+        "resolution_mode": row["resolution_mode"],
+        "resolution_reason": None if viewer else row["resolution_reason"],
+    }
+
+
 def public_market(row: sqlite3.Row) -> dict:
     if row["state"] == "DRAFT":
         raise ValueError("DRAFT markets never appear in viewer payloads")
@@ -101,11 +130,7 @@ def public_market(row: sqlite3.Row) -> dict:
         "winning_side": row["winning_side"],
         "void_reason": row["void_reason"],
         "settlement_algorithm": row["settlement_algorithm"],
-        "criteria": None,
-        "opening_evidence_ids": None,
-        "resolution_evidence_ids": None,
-        "resolution_mode": None,
-        "resolution_reason": None,
+        **ai_fields(row, viewer=True),
     }
 
 
@@ -137,14 +162,21 @@ def operator_market(row: sqlite3.Row) -> dict:
         "winning_side": row["winning_side"],
         "void_reason": row["void_reason"],
         "settlement_algorithm": row["settlement_algorithm"],
-        "criteria": None,
-        "opening_evidence_ids": None,
-        "resolution_evidence_ids": None,
-        "resolution_mode": None,
-        "resolution_reason": None,
-        "close_in_s": int(row["close_in_ms"]) // 1000,
+        **ai_fields(row, viewer=False),
+        "close_in_s": max(1, int(row["close_in_ms"]) // 1000),
         "resolve_in_s": int(row["resolve_in_ms"]) // 1000,
         "created_at_utc": row["created_at_utc"],
+    }
+
+
+def operator_ai_detail(row: sqlite3.Row) -> dict:
+    """Operator-only AI provenance: candidate, full evidence refs (incl. transcript refs), cancellation rules."""
+    return {
+        "candidate_id": row["candidate_cnd_id"],
+        "cancellation_conditions": _json_or_none(row["cancellation_json"]),
+        "opening_evidence": _json_or_none(row["opening_evidence_json"]),
+        "resolution_id": row["resolution_rsl_id"],
+        "resolution_evidence": _json_or_none(row["resolution_evidence_json"]),
     }
 
 
@@ -177,10 +209,10 @@ def wager_receipt(row: sqlite3.Row, *, replayed: bool = False) -> dict:
     }
 
 
-def modes(run: sqlite3.Row | None, media_source_kind: str | None = None) -> dict:
+def modes(run: sqlite3.Row | None, media_source_kind: str | None = None, payment_mode: str = "UNAVAILABLE") -> dict:
     return {
         "ai_mode": run["ai_mode"] if run is not None else "OFF",
-        "payment_mode": "UNAVAILABLE",  # Stripe test top-ups arrive in P6
+        "payment_mode": payment_mode,  # STRIPE_TEST only when P6 loaded both test secrets (Settings.payment_mode)
         "media_source_kind": media_source_kind,  # the current epoch's source_kind, null without a worker
     }
 
@@ -265,7 +297,7 @@ def snapshot(
         "server_time_utc": timeutil.fmt(now),
         "event_hwm": max_event_id(conn),
         "stream": stream_info(conn, stream, run, now, settings),
-        "modes": modes(run, health["source_kind"]),
+        "modes": modes(run, health["source_kind"], settings.payment_mode),
         "limits": limits(settings),
         "source_health": health,
         "market": public_market(market) if market is not None else None,

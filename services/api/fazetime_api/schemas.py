@@ -486,6 +486,7 @@ class OpMarketAction(Strict):
 class OpSettleMarket(Strict):
     operation_id: CUuid
     winning_side: Side
+    note: Annotated[str, StringConstraints(max_length=200)] | None = None  # stored in the audit row
 
 
 class OpVoidMarket(Strict):
@@ -496,3 +497,27 @@ class OpVoidMarket(Strict):
 class OpRevokeSessions(Strict):
     operation_id: CUuid
     user_id: UserId
+
+
+# ---- P6 Stripe TEST-mode top-ups (§9.18) ---------------------------------------------------------
+TopupId = _id("top")
+TopupStatus = Literal["CREATED", "PENDING", "CREDITED", "FAILED", "EXPIRED"]
+
+
+class TopupRequest(Strict):
+    operation_id: CUuid
+    amount_minor: StrictInt
+
+
+class TopupReceipt(Strict):
+    schema_version: Literal[1] = 1
+    topup_id: TopupId
+    operation_id: CUuid
+    stream_session_id: RunId  # additive: the run this top-up credits, even after a reset (§9.5)
+    amount_minor: Minor
+    currency: Literal["usd"]
+    status: TopupStatus
+    payment_mode: PaymentMode
+    checkout_url: str | None = None  # only while PENDING; open in a new tab; never log it
+    checkout_expires_at_utc: Utc | None = None
+    replayed: StrictBool

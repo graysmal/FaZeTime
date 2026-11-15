@@ -23,7 +23,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
 from pydantic import Field, StringConstraints, ValidationError
 
-from . import auth, domain, source_health, timeutil, views
+from . import ai, auth, domain, source_health, timeutil, views
 from .deps import Services, body_schema, operator_principal, parse_body, svc_of
 from .domain import Principal
 from .errors import ApiError, validation_fields
@@ -430,10 +430,39 @@ async def post_observations(request: Request, worker: WorkerPrincipal = Depends(
     return JSONResponse(body)
 
 
-@router.post("/proposals")
-@router.post("/resolutions")
-def reserved_p4(worker: WorkerPrincipal = Depends(worker_principal)):
-    raise ApiError("CAPABILITY_UNAVAILABLE", "Reserved for P4/P5; frozen at the start of P4.")
+@router.post("/proposals", openapi_extra=body_schema(ai.ProposalRequest))
+async def post_proposal(request: Request, worker: WorkerPrincipal = Depends(worker_principal)):
+    """§9.17 item 1. 201 when the candidate is first recorded (any status, REJECTED included), 200 on a replay."""
+    svc: Services = svc_of(request)
+    req = await parse_body(request, ai.ProposalRequest, max_bytes=svc.settings.worker_json_max_bytes)
+    body, status = await run_in_threadpool(ai.submit_proposal, svc, req, str(worker.credential_id))
+    svc.hub.notify()
+    return JSONResponse(body, status_code=status)
+
+
+WORKER_MARKET_FIELDS = ("market_id", "rules_version", "state", "origin", "question", "yes_label", "no_label",
+                        "close_at_utc", "resolve_by_utc", "lock_source_epoch", "lock_media_ms")
+
+
+@router.get("/market")
+def worker_market(request: Request, stream_id: str, worker: WorkerPrincipal = Depends(worker_principal)):
+    """§9.17 item 5b: the run's nonterminal market (exactly these fields), or null. No balances, no user data."""
+    svc: Services = svc_of(request)
+    with svc.db.read() as conn:
+        _, run = _stream_and_run(conn, stream_id)
+        row = views.nonterminal_market(conn, run["run_id"])
+        market = {k: row[k] for k in WORKER_MARKET_FIELDS} if row is not None else None
+    return JSONResponse({"schema_version": 1, "market": market}, headers={"Cache-Control": "no-store"})
+
+
+@router.post("/resolutions", openapi_extra=body_schema(ai.ResolutionRequest))
+async def post_resolution(request: Request, worker: WorkerPrincipal = Depends(worker_principal)):
+    """§9.17 item 4. 201 when first recorded (IGNORED included), 200 on a replay of the same resolution_id."""
+    svc: Services = svc_of(request)
+    req = await parse_body(request, ai.ResolutionRequest, max_bytes=svc.settings.worker_json_max_bytes)
+    body, status = await run_in_threadpool(ai.submit_resolution, svc, req, str(worker.credential_id))
+    svc.hub.notify()
+    return JSONResponse(body, status_code=status)
 
 
 @operator_router.get("/evidence")

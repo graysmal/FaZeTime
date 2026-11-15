@@ -79,6 +79,27 @@ class Settings:
     rl_presence: tuple[int, float] = (30, 60.0)
     log_level: str = "INFO"
     operator_dist: str | None = None  # optional apps/operator build served same-origin at /operator/
+    # P6 Stripe TEST-mode top-ups (§9.18). Secrets never live here: fazetime_api.topups reads STRIPE_SECRET_KEY and
+    # STRIPE_WEBHOOK_SECRET from the environment or stripe_env_file at startup, only when payments_enabled.
+    # The dataclass default (used by tests) is False, so payment_mode stays UNAVAILABLE without explicit opt-in.
+    payments_enabled: bool = False
+    stripe_env_file: str | None = None
+    topup_success_url: str = "https://www.twitch.tv/{channel}?fazetime_topup={topup_id}"
+    topup_cancel_url: str = "https://www.twitch.tv/{channel}?fazetime_topup={topup_id}&fazetime_result=cancel"
+    topup_reconcile_min_interval_s: float = 3.0
+    stripe_timeout_s: float = 10.0
+    rl_topup: tuple[int, float] = (10, 60.0)
+    # P4/P5 AI proposals and resolutions (§9.17, D32). AUTOMATIC is refused unless allow_automatic (default off).
+    allow_automatic: bool = False
+    ai_mode_default: str = "OFF"  # mode of a brand-new stream's first run; a reset keeps the previous run's mode
+    candidate_expiry_s: int = 60  # a PENDING candidate EXPIRES this long after receipt
+    evidence_fresh_s: int = 90  # cited evidence must have been received within this window
+    ai_close_min_s: int = 45  # below -> INSUFFICIENT_LEAD
+    ai_close_max_s: int = 600  # above -> clamped
+    ai_resolve_min_s: int = 60  # clamped into [min, max]
+    ai_resolve_max_s: int = 900
+    # Set once by main.create_app from the loaded P6 capability (topups.payment_mode); never read from the env.
+    payment_mode: str = "UNAVAILABLE"
     limits: Limits = field(default_factory=Limits)
 
     def with_overrides(self, **kwargs) -> "Settings":
@@ -97,6 +118,12 @@ def cors_origins(settings: "Settings") -> tuple[str, ...]:
     if settings.cors_origins is not None:
         return settings.cors_origins
     return tuple(o for o in settings.allowed_origins if o.startswith("chrome-extension://"))
+
+
+def _default_stripe_env_file() -> str | None:
+    """The repo-root .env.local (gitignored), if present. Only its STRIPE_* names are read (§9.18)."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", ".env.local")
+    return os.path.normpath(path) if os.path.isfile(path) else None
 
 
 def load_settings() -> Settings:
@@ -121,4 +148,12 @@ def load_settings() -> Settings:
         sweeper_interval_s=_env_float("FAZETIME_SWEEPER_INTERVAL_S", 1.0),
         log_level=_env("FAZETIME_LOG_LEVEL", "INFO"),
         operator_dist=os.environ.get("FAZETIME_OPERATOR_DIST") or None,
+        allow_automatic=_env_bool("FAZETIME_ALLOW_AUTOMATIC", False),
+        ai_mode_default=_env("FAZETIME_AI_MODE_DEFAULT", "OFF").strip().upper(),
+        candidate_expiry_s=_env_int("FAZETIME_CANDIDATE_EXPIRY_S", 60),
+        evidence_fresh_s=_env_int("FAZETIME_EVIDENCE_FRESH_S", 90),
+        payments_enabled=_env_bool("FAZETIME_PAYMENTS_ENABLED", True),
+        stripe_env_file=os.environ.get("FAZETIME_STRIPE_ENV_FILE") or _default_stripe_env_file(),
+        topup_success_url=_env("FAZETIME_TOPUP_SUCCESS_URL", Settings.topup_success_url),
+        topup_cancel_url=_env("FAZETIME_TOPUP_CANCEL_URL", Settings.topup_cancel_url),
     )

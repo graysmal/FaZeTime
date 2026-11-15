@@ -219,6 +219,48 @@ def _wallet_rows(conn, run_id: str) -> list[dict]:
     ]
 
 
+def _payment_mode(svc: Services, run) -> str:
+    """P6: topups.payment_mode(svc) is STRIPE_TEST or UNAVAILABLE (svc.payments, attached by topups.install)."""
+    from . import topups  # local import keeps the operator module free of the payments import chain
+
+    return topups.payment_mode(svc)
+
+
+def _worker_detail(conn, stream_id: str, now) -> dict | None:
+    """Latest media-worker heartbeat as received (server receipt times), for the operator only."""
+    st = conn.execute("SELECT * FROM source_state WHERE stream_id = ?", (stream_id,)).fetchone()
+    if st is None:
+        return None
+    hb = st["last_heartbeat_at_utc"]
+    return {
+        "host_id": st["host_id"],
+        "worker_state": st["worker_state"],
+        "current_source_epoch": st["current_source_epoch"],
+        "heartbeat_epoch": st["heartbeat_epoch"],
+        "last_heartbeat_at_utc": hb,
+        "heartbeat_age_ms": int((now - timeutil.parse(hb)).total_seconds() * 1000) if hb else None,
+        "asr_backlog_ms": st["asr_backlog_ms"],
+        "queue_depth": st["queue_depth"],
+        "last_media_end_ms": st["last_media_end_ms"],
+        "last_input_age_ms": st["last_input_age_ms"],
+        "gap_threshold_ms": st["gap_threshold_ms"],
+        "host_wall_utc": st["host_wall_utc"],
+    }
+
+
+def _market_limits(settings) -> dict:
+    return {
+        "min_lead_ms": settings.min_lead_ms,
+        "fixture_max_close_in_s": settings.max_close_in_s,
+        "fixture_max_resolve_in_s": settings.max_resolve_in_s,
+        "ai_close_in_s": {"min": settings.ai_close_min_s, "max": settings.ai_close_max_s,
+                          "below_min": "INSUFFICIENT_LEAD", "above_max": "CLAMPED"},
+        "ai_resolve_in_s": {"min": settings.ai_resolve_min_s, "max": settings.ai_resolve_max_s, "outside": "CLAMPED"},
+        "candidate_expiry_s": settings.candidate_expiry_s,
+        "evidence_fresh_s": settings.evidence_fresh_s,
+    }
+
+
 @router.get("/health", responses=ERRORS)
 def health(request: Request, principal: Principal = Depends(operator_principal)):
     """Sanitized inspection: run, markets (incl. DRAFT), pools, wallets, reconciliation, recent events."""
@@ -243,8 +285,7 @@ def health(request: Request, principal: Principal = Depends(operator_principal))
                 "pragmas": pragmas,
                 "migrations": migrations,
                 "db_path": svc.db.path,
-                "mode_labels": ["TEST MONEY ONLY", "payment_mode UNAVAILABLE", "ai_mode OFF",
-                                "fixture markets are OPERATOR_FIXTURE"],
+                "mode_labels": [],  # filled below from the live modes
             },
             "sweeper": {
                 "enabled": svc.settings.sweeper_enabled,
@@ -292,6 +333,28 @@ def health(request: Request, principal: Principal = Depends(operator_principal))
                 (run["run_id"],)).fetchone()
             body["funding_source_minor"] = int(funding["balance_minor"]) if funding else 0
         body["presence"] = presence.summary(conn, stream["stream_id"], now, svc.settings) if stream is not None else None
+        from . import ai  # local import: ai imports this module
+
+        sh = body["source_health"]
+        modes = views.modes(run, sh["source_kind"] if sh else None)
+        modes["payment_mode"] = _payment_mode(svc, run)
+        body["modes"] = modes
+        body["ai"] = {
+            "ai_mode": modes["ai_mode"],
+            "effective_ai_mode": ai.effective_mode(run, svc.settings) if run is not None else "OFF",
+            "allow_automatic": svc.settings.allow_automatic,
+            **ai.pending_counts(conn, run["run_id"] if run is not None else None, now),
+        }
+        body["worker"] = _worker_detail(conn, stream["stream_id"], now) if stream is not None else None
+        if sh is not None and body["worker"] is not None:  # the console reads these on source_health if present
+            sh.update({k: body["worker"][k] for k in ("asr_backlog_ms", "queue_depth", "last_heartbeat_at_utc",
+                                                      "heartbeat_age_ms", "host_id")})
+        body["market_limits"] = _market_limits(svc.settings)
+        body["service"]["mode_labels"] = [
+            "TEST MONEY ONLY", f"payment_mode {modes['payment_mode']}", f"ai_mode {modes['ai_mode']}",
+            f"media_source_kind {modes['media_source_kind'] or 'none'}",
+            "fixture markets are OPERATOR_FIXTURE; AI markets are AI_APPROVED / AI_AUTOMATIC",
+        ]
     return JSONResponse(body)
 
 

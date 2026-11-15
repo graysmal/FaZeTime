@@ -135,12 +135,28 @@ def seed_wallet(conn: sqlite3.Connection, run: sqlite3.Row, user: sqlite3.Row, n
     return True
 
 
-def _create_run(conn: sqlite3.Connection, stream_id: str, now: datetime, settings: Settings) -> sqlite3.Row:
+SETTABLE_AI_MODES = ("OFF", "SHADOW", "APPROVAL", "AUTOMATIC")
+
+
+def allowed_ai_mode(mode: str | None, settings: Settings) -> str:
+    """The mode a new run may start in. AUTOMATIC needs the server flag (D32); anything unknown is OFF."""
+    mode = (mode or "OFF").upper()
+    if mode not in SETTABLE_AI_MODES:
+        return "OFF"
+    if mode == "AUTOMATIC" and not settings.allow_automatic:
+        return "APPROVAL"
+    return mode
+
+
+def _create_run(
+    conn: sqlite3.Connection, stream_id: str, now: datetime, settings: Settings, ai_mode: str | None = None
+) -> sqlite3.Row:
     run_id = new_id("run")
     conn.execute(
         "INSERT INTO runs (run_id, stream_id, state, ai_mode, seed_grant_minor, created_at_utc)"
-        " VALUES (?, ?, 'ACTIVE', 'OFF', ?, ?)",
-        (run_id, stream_id, int(settings.seed_grant_minor), _fmt(now)),
+        " VALUES (?, ?, 'ACTIVE', ?, ?, ?)",
+        (run_id, stream_id, allowed_ai_mode(ai_mode or settings.ai_mode_default, settings),
+         int(settings.seed_grant_minor), _fmt(now)),
     )
     ledger.ensure_account(conn, kind="FUNDING_SOURCE", run_id=run_id, now=_fmt(now))
     run = views.get_run(conn, run_id)
@@ -192,7 +208,7 @@ def reset_run(conn: sqlite3.Connection, *, stream_id: str, now: datetime, settin
     )
     if cur.rowcount != 1:
         raise ConcurrentChange("run was not ACTIVE")
-    new = _create_run(conn, stream_id, now, settings)
+    new = _create_run(conn, stream_id, now, settings, ai_mode=old["ai_mode"])  # the operator's AI mode survives a reset
     version = int(stream["aggregate_version"])
     cur = conn.execute(
         "UPDATE streams SET aggregate_version = ? WHERE stream_id = ? AND aggregate_version = ?",
@@ -372,6 +388,70 @@ def open_market(conn: sqlite3.Connection, *, market_id: str, now: datetime, sett
     return updated
 
 
+def pin_evidence(conn: sqlite3.Connection, market_id: str, evidence_refs: list[dict]) -> None:
+    """Frames a market cites survive evidence pruning (§9.16 item 3)."""
+    for evidence_id in sorted({r["evidence_id"] for r in evidence_refs if r.get("evidence_id")}):
+        conn.execute("UPDATE evidence SET pinned_by_market_id = ? WHERE evidence_id = ? AND pinned_by_market_id IS NULL",
+                     (market_id, evidence_id))
+
+
+def open_ai_market(
+    conn: sqlite3.Connection,
+    *,
+    run_id: str,
+    origin: str,
+    cnd_id: str,
+    question: str,
+    yes_label: str,
+    no_label: str,
+    criteria: dict,
+    cancellation: list[str],
+    evidence_refs: list[dict],
+    close_at: datetime,
+    resolve_in_s: int,
+    created_by_user_id: str | None,
+    now: datetime,
+    settings: Settings,
+) -> sqlite3.Row:
+    """Create and open an AI market in one step. The DRAFT -> OPEN guards of §9.3 are rechecked here, at commit,
+    against the real clock: active run, no other nonterminal market, source LIVE, close_at - now >= min_lead_ms."""
+    if origin not in source_health.TWITCH_ORIGINS:
+        raise ValueError("AI markets have origin AI_APPROVED or AI_AUTOMATIC")
+    run = views.get_run(conn, run_id)
+    if run is None or run["state"] != "ACTIVE":
+        raise _wrong_run(conn, run)
+    if views.nonterminal_market(conn, run_id) is not None:
+        raise _stale_market(conn, run_id, "Another market in this run is not terminal yet.")
+    health = source_health.current(conn, run["stream_id"], now, settings)
+    if health["state"] != "LIVE":
+        raise ApiError("SOURCE_STALE", "Twitch source is not LIVE.", details={"source_state": health["state"]})
+    lead_ms = int((close_at - now).total_seconds() * 1000)
+    if lead_ms < max(1, settings.min_lead_ms):
+        raise ApiError("VALIDATION_FAILED", "close_at_utc is too soon (min_lead_ms).",
+                       details={"fields": [{"loc": ["close_in_s"], "msg": f"lead {lead_ms} ms < {settings.min_lead_ms} ms"}]})
+    resolve_by = close_at + timedelta(seconds=int(resolve_in_s))
+    market_id = new_id("mkt")
+    conn.execute(
+        "INSERT INTO markets (market_id, run_id, origin, state, question, yes_label, no_label, rules_version,"
+        " aggregate_version, close_in_ms, resolve_in_ms, created_by_user_id, created_at_utc, candidate_cnd_id,"
+        " criteria_json, cancellation_json, opening_evidence_json)"
+        " VALUES (?, ?, ?, 'DRAFT', ?, ?, ?, 1, 1, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (market_id, run_id, origin, question, yes_label, no_label, lead_ms, int(resolve_in_s) * 1000,
+         created_by_user_id, _fmt(now), cnd_id, json.dumps(criteria, separators=(",", ":")),
+         json.dumps(list(cancellation), separators=(",", ":")), json.dumps(evidence_refs, separators=(",", ":"))),
+    )
+    market = views.get_market(conn, market_id)
+    ledger.ensure_account(conn, kind="MARKET_ESCROW", run_id=run_id, market_id=market_id, now=_fmt(now))
+    updated = _update_market(
+        conn, market, to_state="OPEN",
+        opened_at_utc=_fmt(now), close_at_utc=_fmt(close_at), resolve_by_utc=_fmt(resolve_by),
+    )
+    pin_evidence(conn, market_id, evidence_refs)
+    events.emit_market(conn, market_id, "market.opened", now)
+    log.info("AI market %s OPEN origin=%s candidate=%s lead_ms=%d", market_id, origin, cnd_id, lead_ms)
+    return updated
+
+
 def _accepted_wagers(conn: sqlite3.Connection, market_id: str) -> list[sqlite3.Row]:
     return conn.execute(
         "SELECT * FROM wagers WHERE market_id = ? AND status = 'ACCEPTED' ORDER BY wager_id", (market_id,)
@@ -396,7 +476,8 @@ def _assert_escrow_empty(conn: sqlite3.Connection, market_id: str) -> None:
 
 
 def _void_market(
-    conn: sqlite3.Connection, market: sqlite3.Row, reason: str, now: datetime, *, at_lock: bool = False
+    conn: sqlite3.Connection, market: sqlite3.Row, reason: str, now: datetime, *, at_lock: bool = False,
+    resolution: dict | None = None,
 ) -> sqlite3.Row:
     """Refund every accepted wager exactly once and mark the market VOID, in the caller's transaction."""
     now_s = _fmt(now)
@@ -416,7 +497,7 @@ def _void_market(
                             terminal_at_utc=now_s)
         if wager["user_id"] not in users:
             users.append(wager["user_id"])
-    fields = {"void_reason": reason, "terminal_at_utc": now_s}
+    fields = {"void_reason": reason, "terminal_at_utc": now_s, **(resolution or {})}
     if at_lock:
         fields["locked_at_utc"] = now_s
     updated = _update_market(conn, market, to_state="VOID", **fields)
@@ -485,13 +566,46 @@ def source_gap_if_needed(conn: sqlite3.Connection, market_id: str, now: datetime
 def settle_fixture_market(
     conn: sqlite3.Connection, *, market_id: str, winning_side: str, now: datetime
 ) -> sqlite3.Row:
-    """EVALUATING -> SETTLED before resolve_by_utc. Payouts per ECONOMICS §4, all in this transaction."""
+    """EVALUATING -> SETTLED before resolve_by_utc. Fixture origins only (§9.17 item 5)."""
     market = views.get_market(conn, market_id)
     if market is None:
         raise ApiError("NOT_FOUND", "Unknown market.")
     if market["origin"] not in source_health.FIXTURE_ORIGINS:
         raise ApiError("VALIDATION_FAILED", "Only fixture-origin markets settle through this operator route.",
                        details={"fields": [{"loc": ["market_id"], "msg": "not a fixture market"}]})
+    return _settle_market(conn, market, winning_side, now)
+
+
+def settle_ai_market(
+    conn: sqlite3.Connection, *, market_id: str, winning_side: str, now: datetime, resolution: dict
+) -> sqlite3.Row:
+    """An accepted AI resolution (operator-approved or AUTOMATIC) settles through the same path as fixtures."""
+    market = views.get_market(conn, market_id)
+    if market is None:
+        raise ApiError("NOT_FOUND", "Unknown market.")
+    if market["origin"] not in source_health.TWITCH_ORIGINS:
+        raise ApiError("VALIDATION_FAILED", "Only AI-origin markets settle from an AI resolution.",
+                       details={"fields": [{"loc": ["market_id"], "msg": "not an AI market"}]})
+    return _settle_market(conn, market, winning_side, now, resolution=resolution)
+
+
+def void_ai_unresolvable(conn: sqlite3.Connection, *, market_id: str, now: datetime, resolution: dict) -> sqlite3.Row:
+    """An accepted UNRESOLVABLE resolution: VOID with UNRESOLVABLE, every stake refunded once (§9.3)."""
+    market = views.get_market(conn, market_id)
+    if market is None:
+        raise ApiError("NOT_FOUND", "Unknown market.")
+    if market["state"] not in NONTERMINAL:
+        raise _market_closed(market, "STATE", "The market is already terminal.")
+    if now >= timeutil.parse(market["resolve_by_utc"]):
+        raise _market_closed(market, "DEADLINE", "The resolution deadline has passed; the market will VOID.")
+    return _void_market(conn, market, "UNRESOLVABLE", now, resolution=resolution)
+
+
+def _settle_market(
+    conn: sqlite3.Connection, market: sqlite3.Row, winning_side: str, now: datetime, *, resolution: dict | None = None
+) -> sqlite3.Row:
+    """EVALUATING -> SETTLED before resolve_by_utc. Payouts per ECONOMICS §4, all in this transaction."""
+    market_id = market["market_id"]
     run = views.get_run(conn, market["run_id"])
     if run["state"] != "ACTIVE":
         raise _wrong_run(conn, run)
@@ -528,7 +642,7 @@ def settle_fixture_market(
         if user_id not in bumped:  # in_play fell without a movement: advance balance_version
             ledger.bump_version(conn, int(ledger.wallet_account(conn, run_id, user_id)["account_id"]))
     updated = _update_market(conn, market, to_state="SETTLED", winning_side=winning_side,
-                             settlement_algorithm=ALGORITHM, terminal_at_utc=now_s)
+                             settlement_algorithm=ALGORITHM, terminal_at_utc=now_s, **(resolution or {}))
     _assert_escrow_empty(conn, market_id)
     events.emit_market(conn, market_id, "market.settled", now)
     for wager in wagers:

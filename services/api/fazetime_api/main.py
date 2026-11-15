@@ -20,7 +20,7 @@ from starlette.staticfiles import StaticFiles
 
 import os
 
-from . import api_operator, api_viewer, errors, timeutil, worker, ws
+from . import ai, api_operator, api_viewer, errors, timeutil, topups, worker, ws
 from .config import Settings, cors_origins, load_settings
 from .db import Database
 from .deps import Services
@@ -161,6 +161,11 @@ def create_app(settings: Settings | None = None, clock: timeutil.Clock | None = 
     app.include_router(ws.router)
     app.include_router(worker.router)
     app.include_router(worker.operator_router)
+    topups.install(app)  # P6 §9.18: top-up + Stripe webhook routes; payment_mode from loaded secrets
+    # One payment_mode source for snapshots, stream.updated events and operator health (sweeper included).
+    svc.settings = settings = settings.with_overrides(payment_mode=topups.payment_mode(svc))
+    svc.sweeper.settings = settings
+    app.include_router(ai.operator_router)  # P4/P5 §9.17 operator candidate, AI-mode and resolution routes
     if settings.operator_dist and os.path.isfile(os.path.join(settings.operator_dist, "index.html")):
         app.mount("/operator", OperatorStatic(directory=settings.operator_dist, html=True), name="operator-ui")
         log.info("operator UI mounted at /operator/ from %s", settings.operator_dist)

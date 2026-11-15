@@ -120,7 +120,8 @@ def emit_stream(conn: sqlite3.Connection, stream_id: str, now: datetime, setting
         aggregate_version=int(stream["aggregate_version"]),
         event_type="stream.updated",
         audience="PUBLIC",
-        payload={"stream": views.stream_info(conn, stream, run, now, settings), "modes": views.modes(run)},
+        payload={"stream": views.stream_info(conn, stream, run, now, settings),
+                 "modes": views.modes(run, payment_mode=settings.payment_mode)},
         now=now,
     )
 

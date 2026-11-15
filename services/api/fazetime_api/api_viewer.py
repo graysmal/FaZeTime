@@ -147,14 +147,7 @@ def _unavailable(feature: str) -> ApiError:
     return ApiError("CAPABILITY_UNAVAILABLE", f"{feature} is not available in this build (payment_mode UNAVAILABLE).")
 
 
-@router.post("/v1/topups", tags=["viewer"], responses=ERRORS)
-def create_topup(principal: Principal = Depends(viewer_principal)):
-    raise _unavailable("Stripe test top-up (P6)")
-
-
-@router.get("/v1/topups/{topup_id}", tags=["viewer"], responses=ERRORS)
-def get_topup(topup_id: str, principal: Principal = Depends(viewer_principal)):
-    raise _unavailable("Stripe test top-up (P6)")
+# /v1/topups and /v1/topups/{id} live in fazetime_api/topups.py (P6, CONTRACTS §9.18).
 
 
 @router.post("/v1/redemptions", tags=["viewer"], responses=ERRORS)
