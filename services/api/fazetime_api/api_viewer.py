@@ -9,7 +9,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
 from . import auth, domain, presence, timeutil, views
-from .deps import body_schema, client_key, parse_body, session_principal, svc_of, viewer_principal
+from .deps import bettor_principal, body_schema, client_key, parse_body, session_principal, svc_of, viewer_principal
 from .domain import Principal
 from .errors import ApiError
 from .schemas import (
@@ -73,7 +73,7 @@ def snapshot(stream_id: str, request: Request, principal: Principal = Depends(vi
 
 @router.post("/v1/wagers", status_code=201, tags=["viewer"], openapi_extra=body_schema(WagerRequest),
              responses={201: {"model": WagerReceipt}, 200: {"model": WagerReceipt}, **ERRORS})
-async def place_wager(request: Request, principal: Principal = Depends(viewer_principal)):
+async def place_wager(request: Request, principal: Principal = Depends(bettor_principal)):
     svc = svc_of(request)
     lim = svc.settings.limits
     amount_details = {"min_minor": lim.stake_min_minor, "max_minor": lim.stake_max_minor,

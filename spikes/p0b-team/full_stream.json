@@ -1,0 +1,4 @@
+[
+ {"name": "tiny_t3_bounded", "model": "tiny.en", "threads": 3, "bounded": true, "max_new_tokens": 64},
+ {"name": "base_t3_bounded", "model": "base.en", "threads": 3, "bounded": true, "max_new_tokens": 64}
+]

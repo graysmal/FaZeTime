@@ -1,0 +1,6 @@
+# local runtime data, transcripts, media and models (never commit)
+out/
+models/
+data/
+.venv/
+__pycache__/

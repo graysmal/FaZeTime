@@ -177,11 +177,11 @@ def wager_receipt(row: sqlite3.Row, *, replayed: bool = False) -> dict:
     }
 
 
-def modes(run: sqlite3.Row | None) -> dict:
+def modes(run: sqlite3.Row | None, media_source_kind: str | None = None) -> dict:
     return {
         "ai_mode": run["ai_mode"] if run is not None else "OFF",
         "payment_mode": "UNAVAILABLE",  # Stripe test top-ups arrive in P6
-        "media_source_kind": None,  # no Twitch capture before P3
+        "media_source_kind": media_source_kind,  # the current epoch's source_kind, null without a worker
     }
 
 
@@ -259,14 +259,15 @@ def snapshot(
     if run is None:
         raise LookupError("stream has no active run")
     market = display_market(conn, run["run_id"])
+    health = source_health.current(conn, stream["stream_id"], now, settings)
     return {
         "schema_version": 1,
         "server_time_utc": timeutil.fmt(now),
         "event_hwm": max_event_id(conn),
         "stream": stream_info(conn, stream, run, now, settings),
-        "modes": modes(run),
+        "modes": modes(run, health["source_kind"]),
         "limits": limits(settings),
-        "source_health": source_health.current(conn, stream["stream_id"], now, settings),
+        "source_health": health,
         "market": public_market(market) if market is not None else None,
         "my_position": my_position(conn, market, user_id) if market is not None else None,
         "wallet": wallet_summary(conn, run["run_id"], user_id),
@@ -286,7 +287,7 @@ def me(conn: sqlite3.Connection, principal, now: datetime) -> dict:
             "twitch_channel_login": stream["twitch_channel_login"],
             "stream_session_id": run["run_id"],
         }
-        wallet = wallet_summary(conn, run["run_id"], principal.user_id)
+        wallet = wallet_summary(conn, run["run_id"], principal.user_id) if user["role"] == "VIEWER" else None
     return {
         "schema_version": 1,
         "server_time_utc": timeutil.fmt(now),

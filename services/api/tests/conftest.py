@@ -29,6 +29,7 @@ def make_settings(db_path: str, **overrides) -> Settings:
         sweeper_enabled=False,  # tests drive the sweeper explicitly with the fake clock
         ws_auth_timeout_s=0.5,
         ws_ping_interval_s=30.0,
+        ws_session_recheck_s=0.3,
         rl_enroll=(1000, 60.0),
         rl_wager=(1000, 10.0),
         rl_ws_ticket=(1000, 60.0),

@@ -14,13 +14,17 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from starlette.datastructures import Headers, MutableHeaders
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.cors import CORSMiddleware
+from starlette.staticfiles import StaticFiles
 
-from . import api_operator, api_viewer, errors, timeutil, ws
-from .config import Settings, load_settings
+import os
+
+from . import api_operator, api_viewer, errors, timeutil, worker, ws
+from .config import Settings, cors_origins, load_settings
 from .db import Database
 from .deps import Services
-from .hub import Hub, cors_origin_regex
+from .hub import Hub
 from .ids import new_id
 from .ratelimit import RateLimiter
 from .sweeper import Sweeper
@@ -85,6 +89,23 @@ class EnvelopeCORSMiddleware(CORSMiddleware):
         return JSONResponse(body, status_code=403)
 
 
+class OperatorStatic(StaticFiles):
+    """apps/operator build at /operator/ (same origin: no CORS entry). Unknown extension-less paths are client
+    routes and get index.html; a missing asset (has a '.') stays 404. Responses refuse framing."""
+
+    async def get_response(self, path: str, scope):
+        try:
+            response = await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code != 404 or "." in path.rsplit("/", 1)[-1]:
+                raise
+            response = await super().get_response("index.html", scope)
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+
+
 def create_app(settings: Settings | None = None, clock: timeutil.Clock | None = None) -> FastAPI:
     settings = settings or load_settings()
     clock = clock or timeutil.Clock()
@@ -102,7 +123,12 @@ def create_app(settings: Settings | None = None, clock: timeutil.Clock | None = 
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        os.makedirs(settings.evidence_dir, exist_ok=True)
         applied = await asyncio.to_thread(db.migrate)  # numbered migrations at startup (D28)
+        log.info("ws origins=%s cors origins=%s", ",".join(settings.allowed_origins),
+                 ",".join(cors_origins(settings)) or "(none)")
+        if not any(o.startswith("chrome-extension://") for o in settings.allowed_origins):
+            log.warning("no pinned chrome-extension://<id> in FAZETIME_ALLOWED_ORIGINS; extension-page sockets get 4403")
         if applied:
             log.info("migrations applied: %s", [m.name for m in applied])
         await hub.start()
@@ -133,10 +159,15 @@ def create_app(settings: Settings | None = None, clock: timeutil.Clock | None = 
     app.include_router(api_viewer.router)
     app.include_router(api_operator.router)
     app.include_router(ws.router)
+    app.include_router(worker.router)
+    app.include_router(worker.operator_router)
+    if settings.operator_dist and os.path.isfile(os.path.join(settings.operator_dist, "index.html")):
+        app.mount("/operator", OperatorStatic(directory=settings.operator_dist, html=True), name="operator-ui")
+        log.info("operator UI mounted at /operator/ from %s", settings.operator_dist)
     app.add_middleware(RequestContextMiddleware, clock=clock)
     app.add_middleware(
         EnvelopeCORSMiddleware,
-        allow_origin_regex=cors_origin_regex(settings.allowed_origins),
+        allow_origins=list(cors_origins(settings)),
         allow_methods=["GET", "POST"],
         allow_headers=["authorization", "content-type"],
         expose_headers=["X-Request-ID", "Retry-After"],

@@ -158,7 +158,8 @@ def test_missing_first_frame_closes_4401(world):
 
 
 @pytest.mark.parametrize("origin", ["https://evil.example", "http://www.twitch.tv", "https://www.twitch.tv.evil.example",
-                                    "chrome-extension://abc/def", None])
+                                    "chrome-extension://abc/def", "chrome-extension://abcdefghijklmnopabcdefghijklmnop",
+                                    None])
 def test_disallowed_origin_closes_4403(world, origin):
     h, _, alice, _ = world
     ticket = _ticket(h, alice)["ticket"]
@@ -169,14 +170,45 @@ def test_disallowed_origin_closes_4403(world, origin):
         assert ws_recv(ws)["type"] == "ready"
 
 
-def test_extension_origin_allowed_and_ping_pong(world):
-    h, _, alice, _ = world
-    ticket = _ticket(h, alice)["ticket"]
-    with _connect(h, "chrome-extension://abcdefghijklmnopabcdefghijklmnop") as ws:
-        ws.send_json({"type": "auth", "ticket": ticket})
-        assert ws_recv(ws)["type"] == "ready"
-        ws.send_json({"type": "ping"})
-        assert ws_recv(ws) == {"type": "pong"}
+def test_pinned_extension_origin_allowed_and_ping_pong(db_path, clock):
+    from starlette.testclient import TestClient
+
+    from fazetime_api.main import create_app
+
+    from .conftest import Harness, make_settings
+
+    pinned = "chrome-extension://abcdefghijklmnopabcdefghijklmnop"
+    app = create_app(make_settings(db_path, allowed_origins=("https://www.twitch.tv", pinned)), clock)
+    with TestClient(app) as client:
+        h = Harness(client, clock)
+        operator = h.bootstrap_operator()
+        h.create_stream(operator)
+        alice = h.viewer(operator, "Alice")
+        ticket = _ticket(h, alice)["ticket"]
+        with _connect(h, pinned) as ws:
+            ws.send_json({"type": "auth", "ticket": ticket})
+            assert ws_recv(ws)["type"] == "ready"
+            ws.send_json({"type": "ping"})
+            assert ws_recv(ws) == {"type": "pong"}
+        with _connect(h, "chrome-extension://zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz") as ws:
+            _expect_close(ws, 4403)
+
+
+def test_live_socket_closes_4401_after_revocation_despite_traffic(world):
+    h, operator, alice, bob = world
+    market = h.open_market(operator)
+    ws_cm, ws, _ = _ready(h, alice)
+    try:
+        assert h.client.post("/v1/operator/sessions/revoke", headers=operator.h,
+                             json={"operation_id": op(), "user_id": alice.user_id}).status_code == 200
+        for _ in range(3):
+            h.wager(bob, market, "NO", 100)  # keep public events flowing to alice's socket
+        with pytest.raises(WebSocketDisconnect) as exc:
+            for _ in range(20):
+                ws_recv(ws, timeout=3.0)
+        assert exc.value.code == 4401
+    finally:
+        ws_cm.__exit__(None, None, None)
 
 
 def test_revoked_session_ticket_is_rejected(world):

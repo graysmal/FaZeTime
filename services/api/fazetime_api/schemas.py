@@ -66,6 +66,7 @@ ErrorCode = Literal[
     "UNAUTHENTICATED", "FORBIDDEN", "INVALID_AMOUNT", "INSUFFICIENT_FUNDS", "MARKET_CLOSED", "STALE_MARKET",
     "WRONG_RUN", "IDEMPOTENCY_CONFLICT", "CAPABILITY_UNAVAILABLE", "SOURCE_STALE", "RATE_LIMITED",
     "VALIDATION_FAILED", "SIDE_CONFLICT", "NOT_FOUND", "INTERNAL_ERROR",
+    "STALE_EPOCH",  # worker-only (§9.16); never returned on viewer routes
 ]
 EventType = Literal[
     "stream.updated", "source.health", "market.opened", "pool.updated", "market.locked", "market.evaluating",

@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from . import domain, timeutil
+from . import domain, source_health, timeutil, worker
 from .config import Settings
 from .db import Database
 from .source_health import TWITCH_ORIGINS
@@ -53,7 +53,25 @@ def sweep_once(db: Database, clock, settings: Settings) -> dict:
          _ids(db, f"SELECT market_id FROM markets WHERE state IN ('OPEN', 'LOCKED', 'EVALUATING')"
                   f" AND origin IN ({placeholders})", tuple(sorted(TWITCH_ORIGINS))),
          lambda conn, mid: domain.source_gap_if_needed(conn, mid, clock.now(), settings))
-    result["changed"] = sum(v for k, v in result.items() if k != "errors")
+    # Source health is time-derived: publish source.health when the derived state changes (§9.16 item 5).
+    for stream_id in _ids(db, "SELECT stream_id FROM source_state"):
+        try:
+            with db.write() as conn:
+                if source_health.refresh(conn, stream_id, clock.now(), settings):
+                    result["health_changed"] = result.get("health_changed", 0) + 1
+        except Exception:
+            result["errors"] += 1
+            log.exception("health refresh failed for %s", stream_id)
+    # Bounded evidence dir: time-based pruning (count-based pruning also runs on each upload).
+    try:
+        with db.write() as conn:
+            doomed = worker.prune_evidence(conn, settings, clock.now())
+        worker.delete_files(doomed)
+        result["evidence_pruned"] = len(doomed)
+    except Exception:
+        result["errors"] += 1
+        log.exception("evidence pruning failed")
+    result["changed"] = sum(v for k, v in result.items() if k not in ("errors", "evidence_pruned"))
     return result
 
 

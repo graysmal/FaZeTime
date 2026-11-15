@@ -482,7 +482,7 @@ These are additive rulings. No schema version change.
 5. **`schema_version`:**
    - Required on top-level responses, events and error envelopes.
    - Optional or omitted on embedded objects.
-   - Never in requests.
+   - Never in viewer or operator requests. Worker requests (§9.16, §9.17) may carry `schema_version: 1`.
 6. **`my_position`:** present iff `market` is present. "No position" means `side: null`, `stake_total_minor: 0`, `result: NONE`.
 7. **Receipts:**
    - LOST: `payout_minor = 0`.
@@ -533,7 +533,7 @@ These are additive rulings. No schema version change.
    - `reason`: `PROCESS_START`, `PROCESS_RESTART`, `PTS_DISCONTINUITY`, `AFTER_GAP` or `ADAPTER_SWITCH`
    - `variant` (string or null), `host_id`, `started_at_utc`
 
-   It is idempotent per `source_epoch`, and the epoch becomes the stream's current one. If a market is OPEN, LOCKED or EVALUATING, that market becomes VOID with `SOURCE_GAP` (§9.4).
+   It is idempotent per `source_epoch`, and the epoch becomes the stream's current one. If a **Twitch-origin** market is OPEN, LOCKED or EVALUATING, that market becomes VOID with `SOURCE_GAP` (§9.4). Fixture-origin markets are exempt. The response is 201 when created and 200 on an identical retry.
 
 2. `POST /v1/worker/heartbeat`, sent every 5 s. Request:
    - `schema_version`, `stream_id`

@@ -1,0 +1,24 @@
+[project]
+name = "fazetime-worker"
+version = "0.1.0"
+description = "FaZeTime P3 media worker: Twitch capture (Streamlink -> FFmpeg), local ASR, sampled frames, observations to the API (CONTRACTS 9.16)."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "streamlink==8.6.3",
+    "faster-whisper==1.2.1",
+    "requests>=2.32",
+    "numpy>=2.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q -p no:cacheprovider"

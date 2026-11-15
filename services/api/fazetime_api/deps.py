@@ -70,13 +70,35 @@ def client_key(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+async def read_capped(request: Request, max_bytes: int) -> bytes:
+    """Reject oversize bodies from Content-Length, or while streaming (chunked), before buffering them."""
+    too_large = ApiError("VALIDATION_FAILED", "Request body too large.",
+                         details={"fields": [{"loc": ["body"], "msg": f"at most {max_bytes} bytes"}]})
+    length = request.headers.get("content-length")
+    if length is not None and (not length.isdigit() or int(length) > max_bytes):
+        raise too_large
+    chunks, size = [], 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > max_bytes:
+            raise too_large
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def bettor_principal(principal: Principal = Depends(session_principal)) -> Principal:
+    """D30: only VIEWER-role users wager; operators are FORBIDDEN."""
+    if principal.role != "VIEWER":
+        raise ApiError("FORBIDDEN", "Only viewer accounts can place wagers (D30).")
+    return principal
+
+
 async def parse_body(
-    request: Request, model: type[M], *, amount_field: str | None = None, amount_details: dict | None = None
+    request: Request, model: type[M], *, amount_field: str | None = None, amount_details: dict | None = None,
+    max_bytes: int = MAX_BODY_BYTES,
 ) -> M:
     """Validate a JSON body after auth and rate limiting. extra='forbid' makes user_id a VALIDATION_FAILED."""
-    raw = await request.body()
-    if len(raw) > MAX_BODY_BYTES:
-        raise ApiError("VALIDATION_FAILED", "Request body too large.")
+    raw = await read_capped(request, max_bytes)
     try:
         data = json.loads(raw) if raw else None
     except ValueError:

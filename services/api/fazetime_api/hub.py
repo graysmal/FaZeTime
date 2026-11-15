@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 
 from . import events
 from .db import Database
@@ -19,27 +18,9 @@ from .db import Database
 log = logging.getLogger("fazetime.hub")
 
 
-def origin_allowed(origin: str | None, patterns: tuple[str, ...]) -> bool:
-    if not origin:
-        return False
-    for pattern in patterns:
-        if pattern.endswith("://*"):
-            prefix = pattern[:-1]
-            if origin.startswith(prefix) and re.fullmatch(r"[A-Za-z0-9.-]+(:\d+)?", origin[len(prefix):]):
-                return True
-        elif origin == pattern:
-            return True
-    return False
-
-
-def cors_origin_regex(patterns: tuple[str, ...]) -> str:
-    parts = []
-    for pattern in patterns:
-        if pattern.endswith("://*"):
-            parts.append(re.escape(pattern[:-1]) + r"[A-Za-z0-9.-]+(:\d+)?")
-        else:
-            parts.append(re.escape(pattern))
-    return "^(?:" + "|".join(parts) + ")$" if parts else r"^$"
+def origin_allowed(origin: str | None, allowlist: tuple[str, ...]) -> bool:
+    """Exact match only (review M2): no wildcards, so an unpinned extension ID is rejected."""
+    return bool(origin) and "*" not in origin and origin in allowlist
 
 
 class Subscriber:

@@ -23,7 +23,7 @@ from .settlement import ALGORITHM, StakeLine, compute_payouts
 log = logging.getLogger("fazetime.domain")
 
 NONTERMINAL = ("OPEN", "LOCKED", "EVALUATING")
-WALLET_ROLES = ("VIEWER", "OPERATOR")
+WALLET_ROLES = ("VIEWER",)  # D30: operators have no wallet, seed or raffle weight
 
 
 class ConcurrentChange(RuntimeError):
@@ -145,7 +145,7 @@ def _create_run(conn: sqlite3.Connection, stream_id: str, now: datetime, setting
     ledger.ensure_account(conn, kind="FUNDING_SOURCE", run_id=run_id, now=_fmt(now))
     run = views.get_run(conn, run_id)
     users = conn.execute(
-        "SELECT * FROM users WHERE role IN ('VIEWER', 'OPERATOR') ORDER BY user_id"
+        "SELECT * FROM users WHERE role = 'VIEWER' ORDER BY user_id"
     ).fetchall()
     for user in users:
         seed_wallet(conn, run, user, now)
@@ -439,7 +439,12 @@ def lock_if_due(conn: sqlite3.Connection, market_id: str, now: datetime) -> bool
     if yes == 0 or no == 0:
         _void_market(conn, market, "EMPTY_POOL" if yes == 0 and no == 0 else "ONE_SIDED_POOL", now, at_lock=True)
         return True
-    _update_market(conn, market, to_state="LOCKED", locked_at_utc=_fmt(now), lock_source_epoch=None, lock_media_ms=None)
+    run = views.get_run(conn, market["run_id"])
+    src = conn.execute("SELECT current_source_epoch, last_media_end_ms FROM source_state WHERE stream_id = ?",
+                       (run["stream_id"],)).fetchone()
+    _update_market(conn, market, to_state="LOCKED", locked_at_utc=_fmt(now),
+                   lock_source_epoch=src["current_source_epoch"] if src else None,
+                   lock_media_ms=src["last_media_end_ms"] if src else None)
     events.emit_market(conn, market_id, "market.locked", now)
     return True
 
@@ -548,6 +553,8 @@ def operator_void(conn: sqlite3.Connection, *, market_id: str, now: datetime) ->
 # ------------------------------------------------------------------------------------------------
 def place_wager(conn: sqlite3.Connection, *, principal: Principal, req: WagerRequest, clock, settings: Settings):
     """Returns (receipt, replayed). Raises ApiError for every business rejection (never cached)."""
+    if principal.role != "VIEWER":  # D30, also enforced by the route dependency
+        raise ApiError("FORBIDDEN", "Only viewer accounts can place wagers (D30).")
     now = clock.now()  # read after BEGIN IMMEDIATE acquired the write lock
     req_hash = hash_request("WAGER", req.model_dump(mode="json"))
     # 1. idempotency replay or conflict

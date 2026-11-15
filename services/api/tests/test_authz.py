@@ -165,13 +165,81 @@ def test_unknown_route_and_method_use_envelope(world):
     assert r.status_code == 405 and r.json()["error"]["code"] == "NOT_FOUND"
 
 
-def test_cors_allowlist(world):
-    h, *_ = world
-    ok = h.client.options("/v1/me", headers={"Origin": "https://www.twitch.tv", "Access-Control-Request-Method": "GET",
-                                              "Access-Control-Request-Headers": "authorization"})
-    assert ok.status_code == 200 and ok.headers["access-control-allow-origin"] == "https://www.twitch.tv"
-    ext = h.client.options("/v1/me", headers={"Origin": "chrome-extension://abcdefghijklmnopabcdefghijklmnop",
-                                               "Access-Control-Request-Method": "GET"})
-    assert ext.status_code == 200
-    bad = h.client.options("/v1/me", headers={"Origin": "https://evil.example", "Access-Control-Request-Method": "GET"})
-    _code(bad, 403, "FORBIDDEN")
+PINNED = "chrome-extension://abcdefghijklmnopabcdefghijklmnop"
+
+
+def _preflight(client, origin):
+    return client.options("/v1/me", headers={"Origin": origin, "Access-Control-Request-Method": "GET",
+                                             "Access-Control-Request-Headers": "authorization"})
+
+
+def test_cors_exact_pinned_extension_only(db_path, clock):
+    from starlette.testclient import TestClient
+
+    from fazetime_api.main import create_app
+
+    from .conftest import make_settings
+
+    settings = make_settings(db_path, allowed_origins=("https://www.twitch.tv", PINNED))
+    with TestClient(create_app(settings, clock)) as client:
+        ok = _preflight(client, PINNED)
+        assert ok.status_code == 200 and ok.headers["access-control-allow-origin"] == PINNED
+        for origin in ("chrome-extension://zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz", "https://evil.example",
+                       "https://www.twitch.tv"):  # twitch.tv is CORS-allowed only via FAZETIME_CORS_ORIGINS (L7)
+            _code(_preflight(client, origin), 403, "FORBIDDEN")
+    with TestClient(create_app(settings.with_overrides(cors_origins=("https://www.twitch.tv",)), clock)) as client:
+        assert _preflight(client, "https://www.twitch.tv").status_code == 200
+        _code(_preflight(client, PINNED), 403, "FORBIDDEN")
+
+
+def test_wildcard_origins_are_refused_in_config(monkeypatch):
+    from fazetime_api.config import load_settings
+
+    monkeypatch.setenv("FAZETIME_ALLOWED_ORIGINS", "https://www.twitch.tv,chrome-extension://*")
+    with pytest.raises(ValueError):
+        load_settings()
+
+
+def test_operator_cannot_wager_and_has_no_wallet_d30(world):
+    h, operator, alice, _ = world
+    market = h.open_market(operator)
+    _code(h.wager(operator, market, "YES", 500), 403, "FORBIDDEN")
+    assert h.client.get("/v1/me", headers=operator.h).json()["wallet"] is None
+    assert h.snapshot(operator)["wallet"]["available_minor"] == 0
+    _code(h.credit(operator, operator.user_id, 500), 404, "NOT_FOUND")
+    with h.svc.db.read() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM ledger_accounts a JOIN users u ON u.user_id = a.user_id"
+                            " WHERE u.role = 'OPERATOR'").fetchone()[0] == 0
+    assert h.wager(alice, market, "YES", 500).status_code == 201
+
+
+def test_unmapped_4xx_is_validation_failed_422(db_path, clock):
+    from starlette.exceptions import HTTPException
+    from starlette.testclient import TestClient
+
+    from fazetime_api.main import create_app
+
+    from .conftest import make_settings
+
+    app = create_app(make_settings(db_path), clock)
+
+    def teapot():
+        raise HTTPException(status_code=413)
+
+    app.add_api_route("/v1/test-413", teapot, methods=["GET"])
+    with TestClient(app) as client:
+        _code(client.get("/v1/test-413"), 422, "VALIDATION_FAILED")
+
+
+def test_body_cap_applies_before_buffering(world):
+    h, _, alice, _ = world
+    big = b'{"pad":"' + b"x" * 20_000 + b'"}'
+    r = h.client.post("/v1/wagers", headers={**alice.h, "Content-Type": "application/json"}, content=big)
+    assert "too large" in _code(r, 422, "VALIDATION_FAILED")["message"]
+
+    def chunked():
+        for _ in range(40):
+            yield b"x" * 1024
+
+    r = h.client.post("/v1/wagers", headers={**alice.h, "Content-Type": "application/json"}, content=chunked())
+    assert "too large" in _code(r, 422, "VALIDATION_FAILED")["message"]

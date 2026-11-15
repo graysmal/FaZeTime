@@ -110,7 +110,17 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                 if isinstance(frame, dict) and frame.get("type") == "ping":
                     sub.control({"type": "pong"})
 
-        tasks = {asyncio.create_task(sender()), asyncio.create_task(receiver())}
+        async def session_watch() -> None:
+            def still_valid():
+                with svc.db.read() as conn:
+                    return auth.session_valid(conn, principal.session_id, svc.clock.now())
+            while True:
+                await asyncio.sleep(settings.ws_session_recheck_s)
+                if not await asyncio.to_thread(still_valid):
+                    await _close(ws, CLOSE_AUTH)
+                    return
+
+        tasks = {asyncio.create_task(sender()), asyncio.create_task(receiver()), asyncio.create_task(session_watch())}
         done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         for task in pending:
             task.cancel()

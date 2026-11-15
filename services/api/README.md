@@ -1,22 +1,27 @@
 # FaZeTime API (phase 2)
 
-**TEST MONEY ONLY.** Demo credits in integer minor units (100 = one demo dollar). There are no real payments, no card data and no phone fields. `payment_mode` is `UNAVAILABLE` and `ai_mode` is `OFF`. Source health is `STOPPED` until P3. Fixture markets are labelled `OPERATOR_FIXTURE`.
+**TEST MONEY ONLY.** Demo credits in integer minor units (100 = one demo dollar). There are no real payments, no card data and no phone fields. `payment_mode` is `UNAVAILABLE` and `ai_mode` is `OFF`. Fixture markets are labelled `OPERATOR_FIXTURE`.
+
+Source health is derived from media-worker heartbeats (§9.16). It is `STOPPED` with null fields until a worker registers an epoch.
 
 The API is one FastAPI process with one SQLite file, using stdlib `sqlite3`, explicit SQL and numbered migrations (D13, D23, D28). Contract: `docs/CONTRACTS.md` §9 (v1). Money rules: `docs/ECONOMICS.md` §2–4.
 
 ## Versions (resolved in `uv.lock`)
 
 - Python 3.12 via uv. Measured on `latpop`: CPython 3.12.3 with SQLite 3.45.1.
-- Runtime: fastapi 0.163.0, starlette 1.10.0, pydantic 2.14.3, uvicorn 0.54.0, websockets 17.4.
+- Runtime: fastapi 0.163.0, starlette 1.10.0, pydantic 2.14.3, uvicorn 0.54.0, websockets 17.4, python-multipart 0.0.33. python-multipart is pure Python and is needed for the §9.16 multipart frame upload.
+- Measured on the Pi `fazetime`: aarch64, Debian 13, uv-managed CPython 3.12.16, which bundles **SQLite 3.53.1**.
 - Dev: pytest 9.2.0, httpx2 2.16.0 (used by the Starlette test client).
 - FastAPI's built-in OpenTelemetry hooks are disabled in `create_app`.
 
-## Commands (run from `services/api/`)
+## Commands (run from `services/api/`; the tree digest above is sha256 over all files except README.md, .venv, __pycache__ and var)
 
 ```bash
 uv sync --frozen                                  # install exactly what uv.lock pins
 uv run --frozen pytest                            # full suite (real SQLite files in tmp dirs)
 uv run --frozen python -m fazetime_api bootstrap-operator   # prints ONE operator invite to this terminal only
+uv run --frozen python -m fazetime_api issue-worker-token --label pi-capture  # prints ONE fzk_ MEDIA_WORKER token
+uv run --frozen python -m fazetime_api revoke-worker-tokens                   # revokes every worker token
 uv run --frozen python -m fazetime_api serve      # uvicorn, 1 process, FAZETIME_HOST:FAZETIME_PORT (127.0.0.1:8000)
 uv run --frozen python -m fazetime_api reconcile  # ledger reconciliation JSON (exit 1 if not ok)
 uv run --frozen python -m fazetime_api backup /path/backup.db   # online copy via sqlite3 backup API
@@ -24,13 +29,17 @@ uv run --frozen python -m fazetime_api backup /path/backup.db   # online copy vi
 
 You can also run `uv run --frozen uvicorn fazetime_api.main:create_app --factory --host 127.0.0.1 --port 8000`. Never use `--workers` greater than 1: WebSocket fanout and rate limits are in-process.
 
-Migrations apply at startup and from every CLI command. An applied migration whose file has changed is refused (sha256 check). The database is `var/fazetime.db` by default, which is gitignored along with `*.db-journal`.
+Migrations (`0001_initial`, `0002_presence`, `0003_media_worker`) apply at startup and from every CLI command. An applied migration whose file has changed is refused (sha256 check). The data dir defaults to `var/`, holding `var/fazetime.db` and `var/evidence/`. It is gitignored along with `*.db-journal`.
 
 | Env var | Default | Meaning |
 |---|---|---|
-| `FAZETIME_DB_PATH` | `var/fazetime.db` | SQLite file on local persistent disk |
+| `FAZETIME_DATA_DIR` | `var` | Holds `fazetime.db` and `evidence/`. On the Pi: `~/fazetime-data` |
+| `FAZETIME_DB_PATH` / `FAZETIME_EVIDENCE_DIR` | `<data dir>/fazetime.db` / `<data dir>/evidence` | Explicit overrides |
+| `FAZETIME_EVIDENCE_KEEP_FRAMES` / `FAZETIME_EVIDENCE_KEEP_S` | `600` / `1800` | Evidence bounds (see below) |
+| `FAZETIME_HEALTH_LIVE_MAX_S` / `FAZETIME_HEALTH_STALE_MAX_S` / `FAZETIME_HEALTH_BACKLOG_MAX_MS` | `12` / `30` / `12000` | Health thresholds (§9.4, §9.16 item 5) |
 | `FAZETIME_HOST` / `FAZETIME_PORT` | `127.0.0.1` / `8000` | Bind address. `serve` refuses `0.0.0.0` unless `--allow-all-interfaces` |
-| `FAZETIME_ALLOWED_ORIGINS` | `https://www.twitch.tv,chrome-extension://*` | CORS and WebSocket Origin allowlist (exact origins or `scheme://*`) |
+| `FAZETIME_ALLOWED_ORIGINS` | `https://www.twitch.tv` | Comma-separated **exact** origins for the WebSocket Origin check. Wildcards are refused at startup (review M2). Add the pinned `chrome-extension://<id>` reported by the extension worker. An unpinned extension ID gets 4403 |
+| `FAZETIME_CORS_ORIGINS` | the `chrome-extension://` entries of the list above | Exact CORS origins. twitch.tv is CORS-allowed only if listed here, because API calls come from the extension background (L7) |
 | `FAZETIME_SEED_GRANT_MINOR` | `2000` | SEED_GRANT per user per run |
 | `FAZETIME_MIN_LEAD_MS` | `30000` | Minimum `close_at_utc − now` at OPEN. A fixture market's `close_in_s` must be at least this |
 | `FAZETIME_SWEEPER_ENABLED` / `FAZETIME_SWEEPER_INTERVAL_S` | `1` / `1.0` | Durable sweeper |
@@ -67,6 +76,46 @@ Liveness: `GET /healthz`, unauthenticated, with no internals. OpenAPI: `/openapi
 | `GET /v1/operator/health` | Service pragmas and migrations, sweeper, WebSocket, run, markets including DRAFT, wallets, funding, reconciliation, recent events and audit, presence |
 | `GET /v1/operator/ledger?run_id=` | Transactions with entries, plus reconciliation |
 
+## Media-worker routes (§9.16)
+
+Issue a token on the API host with `python -m fazetime_api issue-worker-token`. Set it on the worker host as `FAZETIME_WORKER_TOKEN` and send it as `Authorization: Bearer fzk_…`. Only its hash is stored.
+
+- Viewer and operator sessions get `403 FORBIDDEN` on `/v1/worker/*`, and a worker token gets `401` on viewer and operator routes.
+- JSON bodies are limited to 256 KB, and frames to 300 KB JPEG (SOI/EOI checked; sha256 must match).
+- Data for an epoch that is not current gets `409 STALE_EPOCH`, with `details.current_source_epoch`.
+- Worker data can change source health. It has no route to balances, wagers or settlement.
+
+| Route | Behaviour |
+|---|---|
+| `POST /v1/worker/epochs` | `{schema_version, stream_id, source_epoch, source_kind, reason, variant, host_id, started_at_utc}`. Returns 201 if created, 200 on an identical retry. Re-registering a superseded epoch gets `STALE_EPOCH`. A new epoch becomes current, and a nonterminal **Twitch-origin** market is voided with `SOURCE_GAP` (fixture markets are exempt) |
+| `POST /v1/worker/heartbeat` | Every 5 s. Returns `{server_time_utc, stream_session_id, current_source_epoch}`. `last_media_end_ms` only moves forward. `worker_state=GAP` marks the epoch as having a gap |
+| `POST /v1/worker/evidence` | Multipart parts `meta` (JSON) and `file` (JPEG). Returns `{evidence_id, deduped}`: 201 if new, 200 if deduped on (`source_epoch`, `sequence`). Same key with a different sha256 is `IDEMPOTENCY_CONFLICT` |
+| `POST /v1/worker/observations` | `{schema_version, stream_id, source_epoch, items[1..50]}`. Returns `{accepted, duplicates, rejected:[{sequence, code}]}`. The server stamps `received_at_utc`. A FRAME needs an `evidence_id` from this epoch; a GAP item marks a gap. Transcript text is stored verbatim as untrusted data |
+| `POST /v1/worker/proposals`, `/resolutions` | Reserved for P4/P5: `503 CAPABILITY_UNAVAILABLE` |
+| `GET /v1/operator/evidence?since=<utc>&limit=` | Operator only. Recent observations (flagged `untrusted: true`), frame metadata and current health |
+| `GET /v1/operator/evidence/{evidence_id}` | Operator only. Returns the JPEG, or 404 if unknown or pruned |
+
+**Health is LIVE** when, for the current epoch, a heartbeat arrived no more than 12 s ago, it reported `LIVE`, `last_media_end_ms` advanced within the last 12 s, and `asr_backlog_ms` is at most 12,000. Otherwise:
+
+| State | When |
+|---|---|
+| GAP | A gap was reported in this epoch |
+| STOPPED | The heartbeat and epoch registration are more than 30 s old, or media is more than 30 s old, or the worker says STOPPED |
+| CONNECTING | A new epoch with no media yet |
+| STALE | Anything in between |
+
+Health is computed on read, so wagers and snapshots never use a stale cache. The sweeper publishes one `source.health` event per state or epoch change (aggregate `SOURCE` with `aggregate_id = stream_id`).
+
+**Evidence bounds.** The API keeps a frame only while it is among the newest 600 and younger than 30 minutes. Frames pinned by a market (`pinned_by_market_id`, set by P4/P5) are always kept. Pruning runs on upload and in the sweeper. File paths are built from server-validated IDs only.
+
+Worker smoke with curl (token in a variable, never on the command line of a shared shell):
+
+```bash
+H="Authorization: Bearer $FAZETIME_WORKER_TOKEN"; API=http://fazetime:8000; SID=<stream_id>; EP=ep_$(python3 -c 'import uuid;print(uuid.uuid4().hex)')
+curl -s -H "$H" -H 'Content-Type: application/json' $API/v1/worker/epochs -d "{\"stream_id\":\"$SID\",\"source_epoch\":\"$EP\",\"source_kind\":\"TWITCH_STREAMLINK\",\"reason\":\"PROCESS_START\",\"variant\":null,\"host_id\":\"pi\",\"started_at_utc\":\"$(date -u +%FT%T.000Z)\"}"
+curl -s -H "$H" -F "meta={\"source_epoch\":\"$EP\",\"sequence\":1,\"kind\":\"FRAME\",\"media_ms\":0,\"width\":640,\"height\":360,\"sha256\":\"$(sha256sum f.jpg|cut -c1-64)\"}" -F file=@f.jpg $API/v1/worker/evidence
+```
+
 ## Invariants and where they are enforced
 
 - **Integer money:** STRICT tables. Payouts are computed in Python ints (`settlement.py`). Balances use compare-and-set updates with Python-computed values (`ledger.post`).
@@ -89,7 +138,7 @@ Liveness: `GET /healthz`, unauthenticated, with no internals. OpenAPI: `/openapi
 - **Before the transaction:** authentication, then rate limit, then validation.
 - **Outbox:** events are written in the mutation's transaction, and their payloads are validated before commit. The hub only reads committed rows.
 
-## Manual smoke (2026-11-15 03:24 UTC, latpop, 127.0.0.1)
+## Manual smoke (2026-11-15 03:53 UTC, latpop, 127.0.0.1, tree sha256 1c0896c4065a4b6a uncommitted on top of 6930352)
 
 The commands are below. `scripts/smoke.py` keeps tokens and invite codes in memory and prints only sanitized fields.
 
@@ -109,58 +158,61 @@ create stream/run                            HTTP 201  {'created': True, 'run_st
 invite + enroll Alice                        HTTP 201  {'role': 'VIEWER', 'available_minor': 2000}
 invite + enroll Bob                          HTTP 201  {'role': 'VIEWER', 'available_minor': 2000}
 create fixture market                        HTTP 201  {'state': 'DRAFT', 'origin': 'OPERATOR_FIXTURE'}
-open market                                  HTTP 200  {'state': 'OPEN', 'close_at_utc': '2026-11-15T03:25:09.755Z'}
+open market                                  HTTP 200  {'state': 'OPEN', 'close_at_utc': '2026-11-15T03:53:18.209Z'}
 Alice wagers YES 500                         HTTP 201  {'status': 'ACCEPTED', 'available_after': 1500}
 Alice replays same operation_id              HTTP 200  {'replayed': True, 'same_wager': True}
 Bob wagers NO 700                            HTTP 201  {'status': 'ACCEPTED', 'available_after': 1300}
 Bob tries other side                         HTTP 409  SIDE_CONFLICT
-waiting 32.5s for close_at + sweeper ...
+waiting 32.4s for close_at + sweeper ...
 late wager after close                       HTTP 409  ('MARKET_CLOSED', 'STATE')
 snapshot after lock                          HTTP 200  {'state': 'EVALUATING', 'pool': {'yes_minor': 500, 'no_minor': 700, 'total_minor': 1200, 'simulated_minor': 0, 'wager_count': 2}}
 settle YES                                   HTTP 200  {'state': 'SETTLED', 'winning_side': 'YES'}
-snapshot Alice                               HTTP 200  {'result': 'WON', 'payout_total_minor': 1200, 'available_minor': 2700, 'in_play_minor': 0, 'event_hwm': 18}
-snapshot Bob                                 HTTP 200  {'result': 'LOST', 'payout_total_minor': 0, 'available_minor': 1300, 'in_play_minor': 0, 'event_hwm': 18}
-operator health reconciliation               HTTP 200  {'ok': True, 'accounts_checked': 5, 'transactions_checked': 6, 'markets_checked': 1, 'problems': []}
+snapshot Alice                               HTTP 200  {'result': 'WON', 'payout_total_minor': 1200, 'available_minor': 2700, 'in_play_minor': 0, 'event_hwm': 17}
+snapshot Bob                                 HTTP 200  {'result': 'LOST', 'payout_total_minor': 0, 'available_minor': 1300, 'in_play_minor': 0, 'event_hwm': 17}
+operator health reconciliation               HTTP 200  {'ok': True, 'accounts_checked': 4, 'transactions_checked': 5, 'markets_checked': 1, 'problems': []}
 operator health service                      HTTP 200  {'sqlite': '3.45.1', 'pragmas': {'journal_mode': 'delete', 'synchronous': 2, 'foreign_keys': 1, 'busy_timeout': 5000}, 'sweeper_runs>0': True}
-ledger transactions (reason, entries sum)    HTTP 200  [('SEED_GRANT', 0), ('SEED_GRANT', 0), ('SEED_GRANT', 0), ('WAGER_STAKE', 0), ('WAGER_STAKE', 0), ('PAYOUT', 0)]
+ledger transactions (reason, entries sum)    HTTP 200  [('SEED_GRANT', 0), ('SEED_GRANT', 0), ('WAGER_STAKE', 0), ('WAGER_STAKE', 0), ('PAYOUT', 0)]
 viewer calls operator route                  HTTP 403  FORBIDDEN
-Alice WS frames: [('ready', 4), ('market.opened', 2), ('pool.updated', 3), ('wager.updated', 1), ('wallet.changed', 2), ('pool.updated', 4), ('market.locked', 5), ('market.evaluating', 6), ('market.settled', 7), ('wager.updated', 2), ('wallet.changed', 3)]
+Alice WS frames: [('ready', 3), ('market.opened', 2), ('pool.updated', 3), ('wager.updated', 1), ('wallet.changed', 2), ('pool.updated', 4), ('market.locked', 5), ('market.evaluating', 6), ('market.settled', 7), ('wager.updated', 2), ('wallet.changed', 3)]
 ```
 
-The money adds up. The pool was 1,200, and the sole winner (Alice, 500 YES) received the gross 1,200, so her net is +700. Bob lost 700. Total demo money is still 3 × 2,000 seeds = 6,000 (2,700 + 1,300 + 2,000).
+The money adds up. The pool was 1,200, and the sole winner (Alice, 500 YES) received the gross 1,200, so her net is +700. Bob lost 700. Total demo money is still 2 viewer seeds × 2,000 = 4,000 (2,700 + 1,300). Under D30 the operator holds no wallet.
 
-**Rerun on final code.** A fresh DB had migrations 0001 and 0002 applied at startup. The results were identical: Alice WON with 2,700, Bob LOST with 1,300, reconciliation ok, and the same 11 WS frames. The server log had 0 tracebacks.
-
-**Restart check.** I stopped the server and started it again on the same DB. Afterwards reconciliation was ok, the market was still `SETTLED/YES`, the wallets were unchanged (Alice 2,700, Bob 1,300) and the event history was intact. A WS client that dropped TCP abruptly left 0 tracebacks in the server log.
+**Restart check** (earlier P2 tree, committed as 6c14f85). I stopped the server and started it again on the same DB. Afterwards reconciliation was ok, the market was still `SETTLED/YES`, the wallets were unchanged (Alice 2,700, Bob 1,300) and the event history was intact. A WS client that dropped TCP abruptly left 0 tracebacks in the server log.
 
 **Secret scan.** `grep -cE "fzs_|fzw_|XXXX-XXXX-XXXX"` over both server logs found 0 matches.
 
-## Raspberry Pi 5 (aarch64, Debian/Raspberry Pi OS 64-bit)
+## Raspberry Pi 5 runbook (host `fazetime`, aarch64, Debian 13)
 
-The coordinator verified that uv-managed CPython 3.12.16 on the Pi installs aarch64 wheels. pydantic-core, uvicorn and websockets publish manylinux aarch64 wheels; the rest is pure Python. Nothing here compiles from source.
+Use key auth only: `ssh fazetime@fazetime`. No passwords, no sudo. Git isn't guaranteed on the Pi, so copy with tar.
 
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh        # if uv is missing
-cd ~/FaZeTime/services/api
-uv python install 3.12                                  # uv-managed CPython 3.12.x (aarch64)
-uv sync --frozen                                        # same lock as the laptop
-uv run --frozen pytest -q                               # run the suite ON THE PI before the demo
-uv run --frozen python -c "import sqlite3; print(sqlite3.sqlite_version)"   # record it; WAL stays off regardless
-FAZETIME_DB_PATH=$HOME/fazetime-data/fazetime.db FAZETIME_HOST=<pi-tailnet-ip> \
-  uv run --frozen python -m fazetime_api serve
+# laptop: copy the service (no venv, no data)
+cd services && tar --exclude=.venv --exclude=__pycache__ --exclude=var -czf - api \
+  | ssh fazetime@fazetime 'mkdir -p ~/fazetime/services && tar -C ~/fazetime/services -xzf -'
+# Pi: toolchain + deps + tests (uv is at ~/.local/bin/uv)
+ssh fazetime@fazetime 'cd ~/fazetime/services/api && ~/.local/bin/uv python install 3.12 && ~/.local/bin/uv sync --frozen \
+  && ~/.local/bin/uv run --frozen pytest -o addopts="" -p no:cacheprovider -q'
+# Pi: run / inspect / stop (binds ONLY to `tailscale ip -4`, port 8000; data in ~/fazetime-data)
+ssh fazetime@fazetime '~/fazetime/services/api/scripts/pi_run.sh start'     # setsid+nohup, log ~/fazetime-data/api.log
+ssh fazetime@fazetime '~/fazetime/services/api/scripts/pi_run.sh status'
+ssh fazetime@fazetime '~/fazetime/services/api/scripts/pi_run.sh stop'      # TERM to the process group, no SIGKILL
+# laptop: reachability over the tailnet
+curl -s http://fazetime:8000/healthz
 ```
 
-- Bind to the Pi's Tailscale IP (100.x), or 127.0.0.1 behind a local proxy. Never 0.0.0.0 on venue Wi-Fi.
-- Put the DB on local persistent storage, not tmpfs or a network share. Back it up with `python -m fazetime_api backup`.
-- uv-managed CPython bundles its own SQLite. It may differ from the system's 3.46.1; `GET /v1/operator/health` reports the version in use.
-- If the extension calls the API from a `https://www.twitch.tv` content script, CORS allows that origin, and Private Network Access preflights are answered. Mixed content (an http API from an https page) is a P0-F network question that this service does not solve.
+- The DB is `~/fazetime-data/fazetime.db`, and frames live in `~/fazetime-data/evidence/`. Back up with `cd ~/fazetime/services/api && FAZETIME_DATA_DIR=~/fazetime-data .venv/bin/python -m fazetime_api backup ~/fazetime-data/backup-$(date +%s).db`.
+- **The coordinator bootstraps the production operator invite.** Do it on the Pi itself: `FAZETIME_DATA_DIR=~/fazetime-data .venv/bin/python -m fazetime_api bootstrap-operator`. Mint the worker token the same way with `issue-worker-token`.
+- uv-managed CPython bundles SQLite 3.53.1, not the system's 3.46.1. WAL stays off regardless (D23). `GET /v1/operator/health` reports the version in use.
+- `pi_run.sh` defaults `FAZETIME_ALLOWED_ORIGINS=https://www.twitch.tv,chrome-extension://hodaaffdhncidmaccebmionoljljfefe`. That is the pinned extension ID, verified by the extension's two-browser e2e. With this setting CORS allows only the extension origin.
+- **Operator UI.** If `FAZETIME_OPERATOR_DIST` (default `~/fazetime/apps/operator/dist`) contains an `index.html`, the build is served same-origin at `http://fazetime:8000/operator/`, so no CORS entry is needed. Extension-less client routes fall back to `index.html`; missing assets stay 404. `/v1/*` and `/openapi.json` are unaffected. Copy a build with `tar -C apps/operator -czf - dist | ssh fazetime@fazetime 'mkdir -p ~/fazetime/apps/operator && tar -C ~/fazetime/apps/operator -xzf -'`, then `pi_run.sh restart`.
+- `pi_run.sh` refuses to start without a 100.x Tailscale address. Override with `FAZETIME_HOST`; never use 0.0.0.0 on venue Wi-Fi.
+- Mixed content (an http API from the https Twitch page) is an extension/P0-F concern. The extension's service worker with host permissions is not subject to page CORS; only its pinned origin needs to be in `FAZETIME_ALLOWED_ORIGINS`.
 
-## Notes for the P1 adapter
+## Contract rulings
 
-- WALLET events use `aggregate_id = user_id` (matching the fixture). `balance_version` restarts at 1 in each run, so key versions by `(stream_session_id, aggregate_id)` and refetch on `stream.updated` with a new run.
-- `balance_version` also advances when `in_play_minor` changes without a ledger movement (a losing stake). Use the version, not balance equality, for ordering.
-- Market `aggregate_version` is 1 at DRAFT, so a viewer's first event is `market.opened` with version 2. Never assume versions start at 1.
-- WS: send `{"type":"auth","ticket"}` within 5 s. You get `ready` (with `event_hwm`, `stream_id`, `server_time_utc`), then events. Send `{"type":"ping"}` to get `{"type":"pong"}`; the server sends `{"type":"ping"}` every 25 s. `{"type":"resync"}` means refetch the snapshot. Closes: 4401 for auth (including a revoked session), 4403 for origin or role.
-- `wagering_paused` is true only when the current OPEN market is Twitch-origin and the source is not LIVE. Fixture markets are never paused by source health.
-- Validation errors use `details.fields[].loc` with the `"body"` prefix, for example `["body","user_id"]`.
-- Error envelopes also carry `schema_version: 1`, which is additive. An unknown HTTP method returns 405 with code `NOT_FOUND`.
+The wire behaviour clients depend on is ruled in **docs/CONTRACTS.md §9.15** (v1 clarifications) and §9.16 (media worker). This README does not restate them. Server-specific defaults not covered there:
+
+- D30: OPERATOR-role users cannot wager (403 FORBIDDEN), receive no seed grant or wallet, and are never raffle-eligible. Viewers and operators enroll with separate invites.
+- Live sockets re-check their session on a fixed timer (`ws_session_recheck_s`, 30 s) regardless of traffic, and close with 4401 after revocation or expiry.
+- Bodies above the cap (16 KB viewer, 256 KB worker JSON) are rejected from Content-Length, or while streaming, before they are buffered. Any unmapped 4xx returns `VALIDATION_FAILED` 422.

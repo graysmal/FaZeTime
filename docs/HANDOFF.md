@@ -34,7 +34,12 @@ All work in the main checkout on disjoint paths and do not commit.
 
 ## Next assignments, after the current reports
 
-1. **Backend:** the P4/P5 routes from §9.17, plus P6 wiring: a topups table, the webhook route with the raw body, and fulfillment inside the transaction, following the Stripe adapter's report. Then a review.
+1. **Backend (queued gaps from the operator console, commit `bed549e`):**
+   - an optional settle `note` (at most 200 chars) recorded in the audit row;
+   - operator health returns `modes`, worker detail (`asr_backlog_ms`, `queue_depth`, heartbeat age, `host_id`) and the market limits (minimum lead, close/resolve bounds);
+   - a self-logout route that revokes only the current session;
+   - `FAZETIME_OPERATOR_DIST` in the README environment table.
+   Then the P4/P5 routes from §9.17, plus P6 wiring: a topups table, the webhook route with the raw body, and fulfillment inside the transaction, following the Stripe adapter's report. Then a review.
 2. **Media:** the Gemini proposer and resolver from §9.17 (`gemini-3.5-flash-lite`, structured output, few frames), tested against the owner's recordings.
 3. **Extension:** P6-E, the Stripe Checkout handoff in Wallet, once the backend routes exist.
 4. **Coordinator:** the P0 gate record; then commit and push each accepted increment.
@@ -74,3 +79,5 @@ All work in the main checkout on disjoint paths and do not commit.
 - Never run `cpu_threads=4` on the Pi alongside other load.
 - Never use wildcard extension origins.
 - Never commit third-party media or transcripts.
+- Never write key-shaped literals in tests, even obviously fake ones (`sk_test_…`, `rk_live_…`, `whsec_…`). GitHub push protection blocks them in this public repo. Split them with adjacent literals, for example `"sk" "_test_FIXTURE…"`. Never use the "allow secret" bypass.
+- `STRIPE_WEBHOOK_SECRET` (CLI listener, `--device-name fazetime-api`) is now in `.env.local`. **P6 wiring is not done yet.** It goes to the backend owner after its current task, following CONTRACTS §9.18 and the integration steps in spikes/p6-stripe/README.md.

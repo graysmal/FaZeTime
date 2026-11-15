@@ -2,6 +2,7 @@
 
   uv run python -m fazetime_api bootstrap-operator   # first operator invite (single use, 24 h)
   uv run python -m fazetime_api serve                 # uvicorn, ONE process, FAZETIME_HOST/PORT
+  uv run python -m fazetime_api issue-worker-token    # MEDIA_WORKER fzk_ token, printed once
   uv run python -m fazetime_api reconcile             # ledger reconciliation as JSON
   uv run python -m fazetime_api backup PATH           # online backup via sqlite3 backup API
 """
@@ -44,6 +45,35 @@ def cmd_bootstrap(args) -> int:
     return 0
 
 
+def cmd_issue_worker_token(args) -> int:
+    from .ids import new_worker_token, sha256_hex
+
+    db = _db(args)
+    now = timeutil.Clock().now()
+    token = new_worker_token()
+    with db.write() as conn:
+        conn.execute("INSERT INTO worker_credentials (token_hash, role, label, created_at_utc) VALUES (?, 'MEDIA_WORKER', ?, ?)",
+                     (sha256_hex(token), args.label, timeutil.fmt(now)))
+        domain.audit(conn, actor_user_id=None, actor_kind="CLI", action="CLI_ISSUE_WORKER_TOKEN", now=now,
+                     target_type="WORKER_CREDENTIAL", detail={"label": args.label, "role": "MEDIA_WORKER"})
+    # Terminal only: put it in the worker host's FAZETIME_WORKER_TOKEN; never commit or log it.
+    print("FaZeTime MEDIA_WORKER token (shown once; set as FAZETIME_WORKER_TOKEN on the worker host):")
+    print(token)
+    return 0
+
+
+def cmd_revoke_worker_tokens(args) -> int:
+    db = _db(args)
+    now = timeutil.Clock().now()
+    with db.write() as conn:
+        count = conn.execute("UPDATE worker_credentials SET revoked_at_utc = ? WHERE revoked_at_utc IS NULL",
+                             (timeutil.fmt(now),)).rowcount
+        domain.audit(conn, actor_user_id=None, actor_kind="CLI", action="CLI_REVOKE_WORKER_TOKENS", now=now,
+                     detail={"revoked": count})
+    print(f"revoked {count} worker credential(s)")
+    return 0
+
+
 def cmd_reconcile(args) -> int:
     db = _db(args)
     with db.read() as conn:
@@ -80,6 +110,10 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("bootstrap-operator").set_defaults(fn=cmd_bootstrap)
     sub.add_parser("reconcile").set_defaults(fn=cmd_reconcile)
+    issue = sub.add_parser("issue-worker-token")
+    issue.add_argument("--label", default="media-worker")
+    issue.set_defaults(fn=cmd_issue_worker_token)
+    sub.add_parser("revoke-worker-tokens").set_defaults(fn=cmd_revoke_worker_tokens)
     backup = sub.add_parser("backup")
     backup.add_argument("dest")
     backup.set_defaults(fn=cmd_backup)

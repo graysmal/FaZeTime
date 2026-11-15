@@ -26,6 +26,7 @@ HTTP_STATUS: dict[str, int] = {
     "IDEMPOTENCY_CONFLICT": 409,
     "SOURCE_STALE": 409,
     "SIDE_CONFLICT": 409,
+    "STALE_EPOCH": 409,  # worker-only (§9.16)
     "INVALID_AMOUNT": 422,
     "VALIDATION_FAILED": 422,
     "RATE_LIMITED": 429,
@@ -145,7 +146,10 @@ def install(app: FastAPI) -> None:
     async def _http(request: Request, exc: StarletteHTTPException):
         mapping = {401: "UNAUTHENTICATED", 403: "FORBIDDEN", 404: "NOT_FOUND", 405: "NOT_FOUND", 429: "RATE_LIMITED"}
         code = mapping.get(exc.status_code)
-        if code is None:
-            code = "INTERNAL_ERROR" if exc.status_code >= 500 else "VALIDATION_FAILED"
-        status = exc.status_code if code != "INTERNAL_ERROR" else 500
+        if code is not None:
+            status = exc.status_code
+        elif exc.status_code >= 500:
+            code, status = "INTERNAL_ERROR", 500
+        else:  # any other 4xx (400, 413, 415, ...) is VALIDATION_FAILED 422 (§9.10)
+            code, status = "VALIDATION_FAILED", 422
         return error_response(request, ApiError(code, status=status))

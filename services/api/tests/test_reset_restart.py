@@ -43,8 +43,9 @@ def test_reset_voids_refunds_archives_seeds_and_old_keys_replay(world):
                                (market["market_id"],)).fetchone()[0]
         assert refunds == 2
     assert _wallet(h, old_run, alice.user_id)[0] == 2000 and _wallet(h, old_run, bob.user_id)[0] == 2000
-    for actor in (alice, bob, operator):
+    for actor in (alice, bob):
         assert _wallet(h, new_run, actor.user_id) == (2000, 1)  # fresh SEED_GRANT in the new run
+    assert _wallet(h, new_run, operator.user_id) is None  # D30: operators are never seeded
     replay = h.wager(alice, market, "YES", 500, operation_id=key)  # old key replays even after reset
     assert replay.status_code == 200 and {**replay.json(), "replayed": False} == original
     stale = h.wager(alice, market, "YES", 500)

@@ -103,7 +103,7 @@ def enroll(conn: sqlite3.Connection, *, req: EnrollRequest, now: datetime, setti
     stream = views.get_stream(conn)
     if stream is not None:
         run = views.get_active_run(conn, stream["stream_id"])
-        if run is not None:
+        if run is not None and user["role"] == "VIEWER":  # D30: operators get no seed grant
             seed_wallet(conn, run, user, now)  # enroll into the active run: SEED_GRANT once
     principal = Principal(user_id, user["role"], bool(user["is_bot"]), session_id, timeutil.fmt(expires))
     return {

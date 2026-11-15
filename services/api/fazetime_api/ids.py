@@ -33,6 +33,11 @@ def new_session_token() -> str:
     return f"fzs_{raw}"
 
 
+def new_worker_token() -> str:
+    raw = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("ascii").rstrip("=")
+    return f"fzk_{raw}"
+
+
 def new_ws_ticket() -> str:
     raw = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("ascii").rstrip("=")
     return f"fzw_{raw}"
