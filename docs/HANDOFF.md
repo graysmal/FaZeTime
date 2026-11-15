@@ -2,15 +2,15 @@
 
 - **Timestamp / coordinator:** 2026-11-15 ~04:05 CT. Coordinator session in the Claude Code desktop app (Opus 5.5 `claude-opus-5-5`).
 - **Deadline:** 12:00 CT Sun 2026-11-15. Feature freeze 09:00; rehearsals 09:00–12:00. The owner already filed a Devpost placeholder and edits it before 12:00.
-- **Branch:** `hackathon-build`, pushed to `origin` (graysmal/FaZeTime, a **PUBLIC** repo).
-  - Run `git log -1` for the SHA. This handoff is the commit after `2ffc73b`.
+- **Branch:** **`master`**. `hackathon-build` was fast-forward merged into it at ~04:10 CT (owner request), and the two were identical then. Work on `master` from here. Pushed to `origin` (graysmal/FaZeTime, a **PUBLIC** repo).
+  - Run `git log -1` for the SHA.
   - The owner authorized committing and pushing reviewed increments.
   - Scan every staged diff for names, phone numbers, IDs, private IPs and keys. No key-shaped literals, even in tests.
 - **In-flight work:** NONE.
   - **Pi worker:** stopped. `worker.env` is back on the team channel `fazegavin1234`; the D40 test has ended.
   - **Pi API:** running at `http://fazetime:8000`, tailnet only.
 - **Owner preference:** use **ultracode** (Workflow multi-agent orchestration) for substantive work (saved in auto-memory). Keep the $0 spend rule.
-- **Owner's next step:** a **new chat to overhaul the UI**, on top of the AI-proposal/resolution MVP and the betting MVP below.
+- **Owner's next step:** a new chat with the owner's own directions (UI work). The owner's instructions there take precedence over anything here.
 
 ## What exists
 
