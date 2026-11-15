@@ -576,5 +576,99 @@ These are additive rulings. No schema version change.
    - `GET /v1/operator/evidence/{evidence_id}` returns the JPEG.
    - Both are operator-only.
 
-7. **Reserved, to be frozen at the start of P4:** `POST /v1/worker/proposals` and `POST /v1/worker/resolutions`.
+7. **Proposals and resolutions:** `POST /v1/worker/proposals` and `POST /v1/worker/resolutions` are frozen in §9.17.
+
+### 9.17 AI proposal, approval and resolution contract (v1, for P4/P5)
+
+The model only proposes. The backend validates and decides. Model text is untrusted data.
+
+**Template `H2H_WINNER_V1`**
+- One announced head-to-head challenge between two named subjects, for example "Will FaZeGavin win the 1v1 against FaZeNeville?".
+- `YES` means subject A wins and `NO` means subject B wins.
+- Draws, no-contest, an abandoned fight, or an unclear winner fall under the cancellation conditions and lead to VOID.
+
+**1. `POST /v1/worker/proposals`** (MEDIA_WORKER role)
+
+Request: `{schema_version, stream_id, source_epoch, candidate}`, where `candidate` has:
+- `candidate_id` (client UUID), `template_id`
+- `episode_fingerprint`: the normalized subjects plus challenge, for example `h2h:fazegavin|fazeneville:minecraft-1v1`
+- `question` (at most 200 chars)
+- `yes {label, predicate}` and `no {label, predicate}`
+- `subjects [A, B]`
+- `evidence_ids`: 1–20 observation or evidence IDs from the current epoch
+- `announced_at_media_ms`
+- `suggested_close_in_s` and `suggested_resolve_in_s`
+- `cancellation_conditions[]`
+- `rationale` (at most 300 chars)
+- `model` and `prompt_version`
+
+The backend validates, in order. Each failure has the reject code shown:
+
+| Check | Reject code |
+|---|---|
+| Schema, and the epoch is current | `STALE_EPOCH` |
+| The evidence exists, belongs to this epoch, and was received within the last 90 s | `STALE_EVIDENCE` |
+| No market in the run is nonterminal | `MARKET_BUSY` |
+| `episode_fingerprint` is not already used or rejected in this run | `DUPLICATE_EPISODE` |
+| Labels and predicates are paired by side | `UNPAIRED_SIDES` |
+| Source health is `LIVE` | `SOURCE_NOT_LIVE` |
+
+After those checks the backend clamps `close_in_s` to [45, 600] and `resolve_in_s` to [60, 900]. A `close_in_s` below 45 is rejected with `INSUFFICIENT_LEAD`.
+
+What happens next depends on the AI mode:
+- `OFF`: the candidate is dropped with `AI_OFF`.
+- `SHADOW`: the candidate is stored, and is never opened.
+- `APPROVAL`: it is stored as a pending candidate for the operator.
+- `AUTOMATIC` (only when allowed, D32): it opens immediately as an `AI_AUTOMATIC` market.
+
+Response: `{candidate_id, status: PENDING|SHADOW|OPENED|REJECTED, reject_code, market_id}`. It is idempotent on `candidate_id`.
+
+**2. Operator candidate routes**
+- `GET /v1/operator/candidates` returns pending, shadow and recent candidates, with evidence references and frame URLs.
+- `POST /v1/operator/candidates/{id}/approve {operation_id, close_in_s?}` opens an `AI_APPROVED` market.
+  - It re-runs every validation at commit, and checks the minimum lead against the real clock.
+  - A candidate becomes `EXPIRED` once it is more than 60 s past `announced` receipt without approval.
+- `POST /v1/operator/candidates/{id}/reject {operation_id, reason}`.
+
+**3. AI mode**
+- `POST /v1/operator/ai-mode {operation_id, mode: OFF|SHADOW|APPROVAL|AUTOMATIC}`.
+- `AUTOMATIC` is refused with `FORBIDDEN` unless the server flag allows it.
+- The current mode appears in `snapshot.modes.ai_mode`. The viewer UI does not display it (D31); the operator console does.
+
+**4. `POST /v1/worker/resolutions`** (MEDIA_WORKER role)
+
+Request: `{schema_version, stream_id, source_epoch, resolution}`, where `resolution` has:
+- `resolution_id` (client UUID)
+- `market_id` and `rules_version`
+- `decision`: `YES`, `NO`, `WAIT` or `UNRESOLVABLE`
+- `evidence_ids` (at least 1)
+- `media_interval {start_ms, end_ms}`
+- `predicate_support {YES: bool, NO: bool}`
+- `contradictions[]`
+- `reason` (at most 300 chars)
+- `model` and `prompt_version`
+
+The backend validates:
+- The market is `EVALUATING` and `rules_version` matches; otherwise `STALE_MARKET`.
+- `source_epoch` equals the market's lock epoch. An epoch change has already voided the market per §9.4.
+- All the evidence comes after `lock_media_ms`.
+- `predicate_support` agrees with the decision: YES needs YES-only support, and NO needs NO-only support.
+
+Then the decision is handled by mode:
+
+| Decision | `AUTOMATIC` | `APPROVAL` |
+|---|---|---|
+| `WAIT` | Recorded only | Recorded only |
+| `YES` / `NO` | Settles | Stored as a suggestion awaiting the operator |
+| `UNRESOLVABLE` | `VOID UNRESOLVABLE` | Stored as a suggestion awaiting the operator |
+
+Late or duplicate resolutions for a terminal or other market are recorded and ignored. Response: `{resolution_id, status: RECORDED|SETTLED|VOIDED|PENDING_APPROVAL|IGNORED, reason}`.
+
+**5. Operator resolution routes**
+- `GET /v1/operator/resolutions?market_id=` lists the stored suggestions.
+- `POST /v1/operator/resolutions/{id}/approve {operation_id}` settles or voids the market exactly as suggested.
+- `POST /v1/operator/markets/{id}/settle` stays fixture-only. For AI markets the operator either approves a suggestion or voids with a reason (`OPERATOR_CANCELLED`).
+- At `resolve_by_utc`, the sweeper voids the market with `RESOLUTION_TIMEOUT` (§9.3).
+
+**6. Persistence.** Store candidates and resolutions with the model, prompt version, evidence IDs and validation result, as `InferenceTrace` rows, with no secrets. Public market fields `criteria.YES` and `criteria.NO` carry the predicates (side-keyed, §9.3).
 
