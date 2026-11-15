@@ -174,6 +174,7 @@ class PublicMarket(Strict):
     resolution_evidence_ids: list[EvidenceId] | None = None
     resolution_mode: str | None = None
     resolution_reason: str | None = None
+    expected_result_at_utc: Utc | None = None  # §9.20 item 2 (additive): close_at_utc + the worker's estimate
 
     @model_validator(mode="after")
     def _terminal_fields(self):
@@ -217,6 +218,7 @@ class OperatorMarket(Strict):
     resolution_evidence_ids: list[EvidenceId] | None = None
     resolution_mode: str | None = None
     resolution_reason: str | None = None
+    expected_result_at_utc: Utc | None = None  # §9.20 item 2 (additive): close_at_utc + the worker's estimate
     close_in_s: Pos | None = None
     resolve_in_s: Pos | None = None
     created_at_utc: Utc | None = None

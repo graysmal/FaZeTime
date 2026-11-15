@@ -11,6 +11,10 @@ Posting (§9.17 item 1, §9.19): ``GENERIC_BINARY_V1`` with ``suggested_close_in
 ``FAZETIME_AI_EVIDENCE_REFS=frames+transcripts``). Network/5xx/429 retries resend the same body. A validation
 rejection does not consume the episode (§9.17 item 5e): STALE_EVIDENCE is re-posted once at once with fresh
 evidence and a new ``candidate_id``; other non-consuming codes pause and leave the episode to the next trigger.
+
+§9.20: ``generic.expected_result_in_s`` is the same "remaining" figure the lead check uses (history first, else the
+model's ``seconds_to_outcome``) minus the betting window, clamped to [0, 900]. The labelled, untrusted Twitch
+context line (title, category, channel) rides in the prompt's DATA section.
 """
 from __future__ import annotations
 
@@ -82,6 +86,21 @@ def params_for(p: dict) -> tuple[str, dict]:
     return kind, {"duration_s": p["duration_s"]}
 
 
+def remaining_s(red, now_ms: int, sto) -> float | None:
+    """Seconds from ``now_ms`` until the outcome is expected. Once the stream has history it decides (this stream's
+    median earlier episode duration minus the current episode's age); otherwise the model's ``seconds_to_outcome``."""
+    e = red.cur
+    prior = red.prior_duration_ms()
+    if prior and e is not None:
+        return (prior - (now_ms - e.start_ms)) / 1000
+    return None if sto is None else float(sto)
+
+
+def expected_result_in_s(remaining: float | None, close_s: int) -> int | None:
+    """§9.20 item 2: seconds from betting close (lock) until the result is expected, clamped to [0, 900]."""
+    return None if remaining is None else tp.clamp_eta(remaining - close_s)
+
+
 def check_proposal(p: dict, red, now_ms: int, close_s: int, handles: set, *, min_lead_s: int,
                    horizon_s: int) -> str | None:
     """Deterministic gate (spike ``check_proposal`` plus the §9.19 slot rules). Returns a reject code or None."""
@@ -98,14 +117,12 @@ def check_proposal(p: dict, red, now_ms: int, close_s: int, handles: set, *, min
         return "MALFORMED"
     # Lead: the model's own time estimate is unreliable, so once the stream has history it decides (report:
     # lines come from history, not from the model). A result that still lands near lock voids at resolution.
-    prior = red.prior_duration_ms()
-    prior_left = (prior - (now_ms - e.start_ms)) / 1000 if prior else None
-    remaining = prior_left if prior_left is not None else sto
+    remaining = remaining_s(red, now_ms, sto)
     if remaining < close_s + min_lead_s:
         return "INSUFFICIENT_LEAD"
     if red.last_template and p["template"] == red.last_template:
         return "REPEAT_TEMPLATE"
-    if min(sto, prior_left if prior_left is not None else sto) > close_s + horizon_s:
+    if min(sto, remaining) > close_s + horizon_s:
         return "HORIZON_TOO_LONG"
     cited = p.get("evidence") or []
     if not cited or any(h not in handles for h in cited):
@@ -155,7 +172,7 @@ class GenericProposer:
     def _pause(self, seconds: float, kind: str):
         self.paused_until, self.pause_kind = self.clock() + seconds, kind
 
-    def tick(self, view, red, last_obs: dict | None) -> str:
+    def tick(self, view, red, last_obs: dict | None, stream_line: str = "") -> str:
         e = red.cur
         if view.epoch is None or red.epoch != view.epoch or e is None or e.phase != "IN_PROGRESS":
             return "NO_EPISODE"
@@ -183,7 +200,7 @@ class GenericProposer:
         frames = self._frames(view, now_ms, now)
         if not frames:
             return "NO_FRAME_EVIDENCE"
-        return self._count(self._propose(view, red, e, now_ms, recent[-24:], frames, cue))
+        return self._count(self._propose(view, red, e, now_ms, recent[-24:], frames, cue, stream_line))
 
     def _fresh_frames(self, view, now) -> list:
         return [f for f in view.frames if f.evidence_id and f.ack_mono is not None
@@ -220,10 +237,10 @@ class GenericProposer:
                    if t.ack_mono is not None and now - t.ack_mono <= self.cfg.ai_evidence_max_age_s]
         return list(dict.fromkeys(ev))[:20]
 
-    def _propose(self, view, red, e, now_ms, recent, frames, cue) -> str:
+    def _propose(self, view, red, e, now_ms, recent, frames, cue, stream_line: str = "") -> str:
         handles = {f"T{i}": t for i, t in enumerate(recent, 1)} | {f"F{i}": f for i, f in enumerate(frames, 1)}
         prompt = proposer_prompt(red, now_ms, transcript_lines(recent), [f.media_ms for f in frames], self.close_s,
-                                 cue, self.cfg.ai_min_lead_after_lock_s, self.cfg.ai_max_horizon_s)
+                                 cue, self.cfg.ai_min_lead_after_lock_s, self.cfg.ai_max_horizon_s, stream_line)
         before = (e.proposer_calls, e.last_proposer_ms)
         e.proposer_calls += 1
         e.last_proposer_ms = now_ms
@@ -263,12 +280,15 @@ class GenericProposer:
 
     def _post_new(self, view, red, e, kind, params, p, frames, cited_tr, now_ms, meta, retry_stale: bool) -> str:
         evidence = self._evidence(view, frames, cited_tr)
+        eta = expected_result_in_s(remaining_s(red, now_ms, p["seconds_to_outcome"]), self.close_s)
+        send_eta = bool(getattr(self.cfg, "ai_result_eta", True))
+        meta = meta | ({"expected_result_in_s": eta} if send_eta else {})
         code, cand = tp.make_candidate(
             source_epoch=view.epoch, kind=kind, unit=red.unit, params=params, episode_start_media_ms=e.start_ms,
             success_cue=p["success_cue"], failure_cue=p["failure_cue"], evidence_ids=evidence,
             announced_at_media_ms=now_ms, close_in_s=self.close_s, resolve_in_s=self.resolve_s,
             margin_s=self.cfg.ai_fairness_margin_s, band_s=self.cfg.ai_duration_band_s, rationale=p["reason"],
-            model=self.model)
+            model=self.model, expected_result_in_s=eta, send_eta=send_eta)
         if code:
             return self._log("REJECT:" + code, view, **meta)
         body = {"schema_version": 1, "stream_id": self.stream_id, "source_epoch": view.epoch, "candidate": cand}

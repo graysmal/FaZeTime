@@ -288,6 +288,8 @@ export interface PublicMarket {
   /** Exclusive: a wager is accepted only if the server commit time is < close_at_utc. */
   close_at_utc: Utc;
   resolve_by_utc: Utc;
+  /** §9.20 item 2: when the AI expects the result; null when unknown. Viewers get it only after lock. */
+  expected_result_at_utc?: Utc | null;
   locked_at_utc: Utc | null;
   terminal_at_utc: Utc | null;
   pool: Pool;

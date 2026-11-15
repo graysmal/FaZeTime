@@ -21,6 +21,7 @@ import {
   deriveDemoState,
   errorSentence,
   isAiMarket,
+  isResultPending,
   msUntil,
   poolLine,
   resultText,
@@ -175,13 +176,35 @@ function OpenCard({ m, serverNowMs }: { m: OperatorMarket; serverNowMs: number |
   );
 }
 
-function ClosedCard({ m }: { m: OperatorMarket }) {
+/** Three softly pulsing dots (decorative; static under prefers-reduced-motion). */
+function WatchDots() {
+  return (
+    <span className="watch-dots" aria-hidden="true">
+      <span />
+      <span />
+      <span />
+    </span>
+  );
+}
+
+function ClosedCard({ m, serverNowMs }: { m: OperatorMarket; serverNowMs: number | null }) {
+  // §9.20 item 2: past the expected result time with no result yet, say the AI is still watching.
+  const watching = isResultPending(m, serverNowMs);
   return (
     <Card state="closed">
       <h2 className="demo-question" data-testid="demo-question">
         {m.question}
       </h2>
-      <div className="demo-status">Betting closed. Waiting for the result.</div>
+      {watching ? (
+        <div className="demo-status demo-watching" data-testid="demo-watching">
+          <WatchDots />
+          AI is watching for the result…
+        </div>
+      ) : (
+        <div className="demo-status" data-testid="demo-closed-status">
+          Betting closed. Waiting for the result.
+        </div>
+      )}
       <div className="demo-pool">{poolLine(m)}</div>
     </Card>
   );
@@ -489,7 +512,7 @@ export function DemoView({ client }: { client: OperatorClient }) {
       card = <OpenCard m={state.market} serverNowMs={serverNowMs} />;
       break;
     case 'closed':
-      card = <ClosedCard m={state.market} />;
+      card = <ClosedCard m={state.market} serverNowMs={serverNowMs} />;
       break;
     case 'suggestion':
       card = <SuggestionCard client={client} m={state.market} r={state.resolution} onDone={refresh} />;

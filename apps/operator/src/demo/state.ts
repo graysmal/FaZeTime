@@ -138,6 +138,25 @@ export function serverNow(serverTimeUtc: string | null | undefined, okAt: number
   return Number.isNaN(t) ? null : t + Math.max(0, now - okAt);
 }
 
+const RESULT_PENDING_STATES = new Set(['LOCKED', 'EVALUATING']);
+
+/**
+ * §9.20 item 2: true once an AI market is LOCKED or EVALUATING, its expected_result_at_utc has passed by the server
+ * clock estimate, and there is no result yet. Then the card says "AI is watching for the result…" (true: the
+ * observer keeps sampling). Absent or null expected_result_at_utc, an unknown server clock, or a non-AI market
+ * (the contract sends null for fixtures): false, so the card stays as it was. Display only.
+ */
+export function isResultPending(
+  m: Pick<OperatorMarket, 'state' | 'origin' | 'winning_side' | 'void_reason' | 'expected_result_at_utc'>,
+  serverNowMs: number | null,
+): boolean {
+  if (!RESULT_PENDING_STATES.has(m.state) || !AI_ORIGINS.has(m.origin)) return false;
+  if (m.winning_side || m.void_reason) return false;
+  if (typeof m.expected_result_at_utc !== 'string' || serverNowMs === null) return false;
+  const at = Date.parse(m.expected_result_at_utc);
+  return !Number.isNaN(at) && serverNowMs >= at;
+}
+
 export function msUntil(utc: string | null | undefined, serverNowMs: number | null): number | null {
   if (!utc || serverNowMs === null) return null;
   const t = Date.parse(utc);

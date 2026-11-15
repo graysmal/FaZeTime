@@ -844,11 +844,11 @@ These additions are for operator visibility and viewer UX. None of them changes 
 
 **2. Expected result time.**
 - `generic` (§9.19) gains an optional `expected_result_in_s`: an integer from 0 to 900, or null. It is the worker's estimate of seconds from betting close (lock) until the result is known. It comes from the proposer's `seconds_to_outcome` minus the betting window, or from this stream's earlier round durations when there are any.
-- The public market view adds **`expected_result_at_utc`** = `close_at_utc` + `expected_result_in_s` (null when unknown, and for H2H and fixture markets).
+- The public market view adds **`expected_result_at_utc`** = max(`close_at_utc`, candidate receipt + clamped `close_in_s` + `expected_result_in_s`). It is null when unknown, and for H2H and fixture markets. Viewers get it only while LOCKED or EVALUATING, because during OPEN an estimate would hint the AI's view of a duration bet. Operator views always carry it. (Review rulings, 2026-11-15.)
 - **Viewer and console behaviour:** once the market is LOCKED or EVALUATING, and that time has passed with no result yet, the UI shows a pending-result state: **"AI is watching for the result…"** with a subtle animation. This is truthful: the observer keeps sampling the stream. The UI never claims a decision is being made before one exists.
 
 **3. Stream context.**
 - The worker reads the Twitch title, category and author from Streamlink's `--json` metadata, at start and then every 5 minutes.
 - It adds them to the observer and proposer prompts as **untrusted** context ("Stream title (untrusted): …; Category: …"). The category may seed the activity name.
-- Each change is posted as a `STREAM` activity item, so the console shows them.
+- Each change is written as a local `stream_context` record in the worker's `ai_trace.jsonl`. Nothing is posted to the API, because item 1 was withdrawn. Kill switches: `FAZETIME_AI_STREAM_CONTEXT=0`, and `FAZETIME_AI_RESULT_ETA=0`, which leaves out `expected_result_in_s` for an older API.
 - The Twitch "About" description is not available from Streamlink and is out of scope.

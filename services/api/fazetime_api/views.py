@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from . import ledger, source_health, timeutil
 from .config import Settings
@@ -12,6 +12,8 @@ from .schemas import SETTLEMENT_ALGORITHM, UNRESOLVED_REASONS
 
 NONTERMINAL = ("OPEN", "LOCKED", "EVALUATING")
 TERMINAL = ("SETTLED", "VOID")
+GENERIC_TEMPLATE = "GENERIC_BINARY_V1"  # §9.19; mirrors ai.TEMPLATE_GENERIC (ai imports views)
+EXPECTED_RESULT_MAX_S = 900  # §9.20 item 2 bound on generic.expected_result_in_s
 
 
 def get_stream(conn: sqlite3.Connection, stream_id: str | None = None) -> sqlite3.Row | None:
@@ -101,7 +103,31 @@ def ai_fields(row: sqlite3.Row, *, viewer: bool) -> dict:
     }
 
 
-def public_market(row: sqlite3.Row) -> dict:
+def expected_result_at(conn: sqlite3.Connection, row: sqlite3.Row) -> str | None:
+    """§9.20 item 2: close_at_utc + generic.expected_result_in_s when the market's originating candidate is
+    GENERIC_BINARY_V1 and carries that estimate; null otherwise (H2H, fixture and manual markets, no estimate).
+    Only this derived time reaches viewers; the generic object itself never does (§9.19 item 6)."""
+    cnd_id = row["candidate_cnd_id"]
+    if cnd_id is None or row["close_at_utc"] is None:
+        return None
+    cand = conn.execute("SELECT template_id, generic_json, received_at_utc, close_in_s FROM ai_candidates"
+                        " WHERE cnd_id = ?", (cnd_id,)).fetchone()
+    if cand is None or cand["template_id"] != GENERIC_TEMPLATE or cand["generic_json"] is None:
+        return None
+    spec = json.loads(cand["generic_json"])
+    seconds = spec.get("expected_result_in_s") if isinstance(spec, dict) else None
+    if type(seconds) is not int or not 0 <= seconds <= EXPECTED_RESULT_MAX_S:
+        return None
+    close_at = timeutil.parse(row["close_at_utc"])
+    # The worker estimates from the proposal (its lock = receipt + close_in_s). In APPROVAL mode close_at is counted
+    # from approval, so anchor to receipt + window + estimate, never before close (review finding, 2026-11-15).
+    anchored = close_at
+    if cand["received_at_utc"] and cand["close_in_s"] is not None:
+        anchored = timeutil.parse(cand["received_at_utc"]) + timedelta(seconds=int(cand["close_in_s"]) + seconds)
+    return timeutil.fmt(max(close_at, anchored))
+
+
+def public_market(row: sqlite3.Row, conn: sqlite3.Connection) -> dict:
     if row["state"] == "DRAFT":
         raise ValueError("DRAFT markets never appear in viewer payloads")
     yes, no = int(row["yes_minor"]), int(row["no_minor"])
@@ -118,6 +144,7 @@ def public_market(row: sqlite3.Row) -> dict:
         "opened_at_utc": row["opened_at_utc"],
         "close_at_utc": row["close_at_utc"],
         "resolve_by_utc": row["resolve_by_utc"],
+        "expected_result_at_utc": expected_result_at(conn, row) if row["state"] in ("LOCKED", "EVALUATING") else None,  # §9.20 item 2; viewers only after lock
         "locked_at_utc": row["locked_at_utc"],
         "terminal_at_utc": row["terminal_at_utc"],
         "pool": {
@@ -134,7 +161,7 @@ def public_market(row: sqlite3.Row) -> dict:
     }
 
 
-def operator_market(row: sqlite3.Row) -> dict:
+def operator_market(row: sqlite3.Row, conn: sqlite3.Connection) -> dict:
     """Operator-only view: the PublicMarket fields (DRAFT allowed) plus the draft durations."""
     yes, no = int(row["yes_minor"]), int(row["no_minor"])
     return {
@@ -150,6 +177,7 @@ def operator_market(row: sqlite3.Row) -> dict:
         "opened_at_utc": row["opened_at_utc"],
         "close_at_utc": row["close_at_utc"],
         "resolve_by_utc": row["resolve_by_utc"],
+        "expected_result_at_utc": expected_result_at(conn, row),  # §9.20 item 2
         "locked_at_utc": row["locked_at_utc"],
         "terminal_at_utc": row["terminal_at_utc"],
         "pool": {
@@ -302,7 +330,7 @@ def snapshot(
         "modes": modes(run, health["source_kind"], settings.payment_mode, settings.open_access),
         "limits": limits(settings),
         "source_health": health,
-        "market": public_market(market) if market is not None else None,
+        "market": public_market(market, conn) if market is not None else None,
         "my_position": my_position(conn, market, user_id) if market is not None else None,
         "wallet": wallet_summary(conn, run["run_id"], user_id),
         "raffle": None,
@@ -340,6 +368,7 @@ def me(conn: sqlite3.Connection, principal, now: datetime) -> dict:
 __all__ = [
     "SETTLEMENT_ALGORITHM",
     "display_market",
+    "expected_result_at",
     "get_active_run",
     "get_market",
     "get_run",

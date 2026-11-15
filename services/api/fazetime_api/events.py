@@ -61,7 +61,7 @@ def emit_market(conn: sqlite3.Connection, market_id: str, event_type: str, now: 
         aggregate_version=int(row["aggregate_version"]),
         event_type=event_type,
         audience="PUBLIC",
-        payload=views.public_market(row),
+        payload=views.public_market(row, conn),
         now=now,
     )
 

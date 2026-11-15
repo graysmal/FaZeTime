@@ -12,7 +12,7 @@ import uuid
 
 TEMPLATE_ID = "GENERIC_BINARY_V1"
 SPEC_VERSION = "gen-1"
-PROPOSER_PROMPT_VERSION = "generic-proposer-1.0"
+PROPOSER_PROMPT_VERSION = "generic-proposer-1.1"  # 1.1: optional stream-context line (§9.20)
 RESOLVER_PROMPT_VERSION = "generic-resolver-1.0"
 KINDS = ("EPISODE_OUTCOME", "END_VALUE_AT_LEAST", "SAY_PHRASE", "DURATION_OVER")
 VISUAL_KINDS = ("EPISODE_OUTCOME", "END_VALUE_AT_LEAST")
@@ -21,6 +21,7 @@ WIN_VERBS = {"win": "wins", "clear": "clears", "complete": "completes", "beat": 
 PARAM_KEYS = {"EPISODE_OUTCOME": {"win_verb"}, "END_VALUE_AT_LEAST": {"label", "threshold"},
               "SAY_PHRASE": {"phrase"}, "DURATION_OVER": {"duration_s"}}
 TEXT_MAX = 200  # question and predicates (API Text200)
+ETA_MAX_S = 900  # generic.expected_result_in_s range is [0, 900] (§9.20 item 2)
 CUE_MAX = 160
 PHRASE_MAX_CHARS = 32
 _PHRASE = re.compile(r"[a-z']+(?: [a-z']+){0,2}")
@@ -54,7 +55,8 @@ def validate_params(kind: str, params: dict) -> str | None:
         lab, thr = params["label"], params["threshold"]
         if not isinstance(lab, str) or not 1 <= len(lab) <= 40 or lab != lab.strip():
             return "BAD_LABEL"
-        if isinstance(thr, bool) or not isinstance(thr, (int, float)) or not math.isfinite(thr) or thr == 0:
+        if (isinstance(thr, bool) or not isinstance(thr, (int, float)) or not math.isfinite(thr) or thr == 0
+                or abs(thr) > 2 ** 53):  # the API bounds thresholds to +/-2**53 (CONTRACTS 9.19 item 8)
             return "BAD_THRESHOLD"
         return None
     if kind == "SAY_PHRASE":
@@ -117,10 +119,20 @@ def fingerprint(source_epoch: str, episode_start_media_ms: int, kind: str) -> st
 
 
 def generic_object(kind: str, unit: str, params: dict, episode_start_media_ms: int, success_cue: str,
-                   failure_cue: str) -> dict:
-    return {"spec_version": SPEC_VERSION, "kind": kind, "unit": unit[:20], "params": dict(params),
-            "episode_start_media_ms": int(episode_start_media_ms), "success_cue": sanitize(success_cue, CUE_MAX),
-            "failure_cue": sanitize(failure_cue, CUE_MAX)}
+                   failure_cue: str, expected_result_in_s: int | None = None, send_eta: bool = True) -> dict:
+    g = {"spec_version": SPEC_VERSION, "kind": kind, "unit": unit[:20], "params": dict(params),
+         "episode_start_media_ms": int(episode_start_media_ms), "success_cue": sanitize(success_cue, CUE_MAX),
+         "failure_cue": sanitize(failure_cue, CUE_MAX)}
+    if send_eta:  # §9.20 item 2 (optional key): seconds from lock until the result is expected, or null
+        g["expected_result_in_s"] = clamp_eta(expected_result_in_s)
+    return g
+
+
+def clamp_eta(v) -> int | None:
+    """An int in [0, 900], or None (§9.20 item 2)."""
+    if v is None or isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+        return None
+    return int(max(0, min(ETA_MAX_S, round(v))))
 
 
 def sanitize(text, limit: int) -> str:
@@ -130,7 +142,8 @@ def sanitize(text, limit: int) -> str:
 def make_candidate(*, source_epoch: str, kind: str, unit: str, params: dict, episode_start_media_ms: int,
                    success_cue: str, failure_cue: str, evidence_ids: list, announced_at_media_ms: int,
                    close_in_s: int, resolve_in_s: int, margin_s: int, band_s: int, rationale: str,
-                   model: str) -> tuple[str | None, dict | None]:
+                   model: str, expected_result_in_s: int | None = None,
+                   send_eta: bool = True) -> tuple[str | None, dict | None]:
     """(reject code, None) or (None, candidate) in the exact §9.19 shape."""
     code = validate_params(kind, params)
     if code:
@@ -150,7 +163,8 @@ def make_candidate(*, source_epoch: str, kind: str, unit: str, params: dict, epi
         "suggested_close_in_s": int(close_in_s), "suggested_resolve_in_s": int(resolve_in_s),
         "cancellation_conditions": cancellation(kind, unit, margin_s, band_s),
         "rationale": sanitize(rationale, 300), "model": model[:64], "prompt_version": PROPOSER_PROMPT_VERSION,
-        "generic": generic_object(kind, unit, params, episode_start_media_ms, success_cue, failure_cue),
+        "generic": generic_object(kind, unit, params, episode_start_media_ms, success_cue, failure_cue,
+                                  expected_result_in_s, send_eta),
     }
 
 

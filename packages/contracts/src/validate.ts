@@ -263,6 +263,7 @@ const marketShape = {
   opened_at_utc: utc,
   close_at_utc: utc,
   resolve_by_utc: utc,
+  expected_result_at_utc: optional(nullable(utc)), // §9.20 item 2 (viewers: only after lock)
   locked_at_utc: nullable(utc),
   terminal_at_utc: nullable(utc),
   pool: poolV,

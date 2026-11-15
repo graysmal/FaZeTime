@@ -152,7 +152,7 @@ async def create_market(request: Request, principal: Principal = Depends(operato
             no_label=req.no_label, close_in_s=req.close_in_s, resolve_in_s=req.resolve_in_s, now=now,
             settings=svc.settings,
         )
-        return {"market": views.operator_market(row)}, "MARKET", row["market_id"], {}
+        return {"market": views.operator_market(row, conn)}, "MARKET", row["market_id"], {}
 
     return await _mutation(request, principal, OpCreateMarket, "OP_CREATE_FIXTURE_MARKET", handler)
 
@@ -161,7 +161,7 @@ async def create_market(request: Request, principal: Principal = Depends(operato
 async def open_market(market_id: str, request: Request, principal: Principal = Depends(operator_principal)):
     def handler(svc, conn, req, now):
         row = domain.open_market(conn, market_id=market_id, now=now, settings=svc.settings)
-        return {"market": views.operator_market(row)}, "MARKET", market_id, {}
+        return {"market": views.operator_market(row, conn)}, "MARKET", market_id, {}
 
     return await _mutation(request, principal, OpMarketAction, "OP_OPEN_MARKET", handler,
                            path={"market_id": market_id}, status=200)
@@ -171,7 +171,7 @@ async def open_market(market_id: str, request: Request, principal: Principal = D
 async def settle_market(market_id: str, request: Request, principal: Principal = Depends(operator_principal)):
     def handler(svc, conn, req: OpSettleMarket, now):
         row = domain.settle_fixture_market(conn, market_id=market_id, winning_side=req.winning_side, now=now)
-        return {"market": views.operator_market(row)}, "MARKET", market_id, {}
+        return {"market": views.operator_market(row, conn)}, "MARKET", market_id, {}
 
     return await _mutation(request, principal, OpSettleMarket, "OP_SETTLE_FIXTURE_MARKET", handler,
                            path={"market_id": market_id}, status=200)
@@ -181,7 +181,7 @@ async def settle_market(market_id: str, request: Request, principal: Principal =
 async def void_market(market_id: str, request: Request, principal: Principal = Depends(operator_principal)):
     def handler(svc, conn, req: OpVoidMarket, now):
         row = domain.operator_void(conn, market_id=market_id, now=now)
-        return {"market": views.operator_market(row)}, "MARKET", market_id, {}
+        return {"market": views.operator_market(row, conn)}, "MARKET", market_id, {}
 
     return await _mutation(request, principal, OpVoidMarket, "OP_VOID_MARKET", handler,
                            path={"market_id": market_id}, status=200)
@@ -325,7 +325,7 @@ def health(request: Request, principal: Principal = Depends(operator_principal))
             body["stream"] = views.stream_info(conn, stream, run, now, svc.settings)
             body["run"] = dict(run)
             body["source_health"] = source_health.current(conn, stream["stream_id"], now, svc.settings)
-            body["markets"] = [views.operator_market(r) for r in conn.execute(
+            body["markets"] = [views.operator_market(r, conn) for r in conn.execute(
                 "SELECT * FROM markets WHERE run_id = ? ORDER BY rowid DESC LIMIT 10", (run["run_id"],)).fetchall()]
             body["wallets"] = _wallet_rows(conn, run["run_id"])
             funding = conn.execute(

@@ -87,6 +87,7 @@ class FakeApi:
         return self.err(404, "NOT_FOUND")
 
     GENERIC_KEYS = {"spec_version", "kind", "unit", "params", "episode_start_media_ms", "success_cue", "failure_cue"}
+    GENERIC_OPTIONAL = {"expected_result_in_s"}  # §9.20 item 2: an int in [0, 900], or null
     PARAM_KEYS = {"EPISODE_OUTCOME": {"win_verb"}, "END_VALUE_AT_LEAST": {"label", "threshold"},
                   "SAY_PHRASE": {"phrase"}, "DURATION_OVER": {"duration_s"}}
     CANDIDATE_KEYS = {"candidate_id", "template_id", "episode_fingerprint", "question", "yes", "no", "subjects",
@@ -106,8 +107,13 @@ class FakeApi:
         if set(c) != self.CANDIDATE_KEYS or c.get("template_id") != "GENERIC_BINARY_V1":
             return self.err(422, "VALIDATION_FAILED", "candidate fields")
         g = c["generic"]
-        if (not isinstance(g, dict) or set(g) != self.GENERIC_KEYS or g["spec_version"] != "gen-1"
-                or set(g["params"]) != self.PARAM_KEYS.get(g["kind"], {None}) or len(c["subjects"]) > 1):
+        eta = g.get("expected_result_in_s") if isinstance(g, dict) else None
+        if (not isinstance(g, dict) or not self.GENERIC_KEYS <= set(g) <= self.GENERIC_KEYS | self.GENERIC_OPTIONAL
+                or g["spec_version"] != "gen-1" or set(g["params"]) != self.PARAM_KEYS.get(g["kind"], {None})
+                or len(c["subjects"]) > 1
+                or not (eta is None or (type(eta) is int and 0 <= eta <= 900))
+                or (g["kind"] == "END_VALUE_AT_LEAST" and isinstance(g["params"].get("threshold"), (int, float))
+                    and abs(g["params"]["threshold"]) > 2 ** 53)):
             return self.err(422, "VALIDATION_FAILED", "generic")
         if b["source_epoch"] != self.current:
             return self.err(409, "STALE_EPOCH")

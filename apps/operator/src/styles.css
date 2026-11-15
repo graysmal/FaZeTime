@@ -1161,3 +1161,44 @@ label.inline-field input {
 .demo-reset .demo-error {
   font-size: 15px;
 }
+
+/* §9.20 item 2: "AI is watching for the result…" with three softly pulsing dots. */
+.demo-watching {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+.watch-dots {
+  display: inline-flex;
+  gap: 6px;
+}
+.watch-dots > span {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.3;
+  animation: watch-pulse 1.4s ease-in-out infinite;
+}
+.watch-dots > span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.watch-dots > span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@keyframes watch-pulse {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .watch-dots > span {
+    animation: none;
+    opacity: 0.6;
+  }
+}

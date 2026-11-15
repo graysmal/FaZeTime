@@ -42,6 +42,12 @@ export interface OperatorMarket {
   close_in_s: number;
   resolve_in_s: number;
   created_at_utc: string;
+  /**
+   * §9.20 item 2: close_at_utc + generic.expected_result_in_s, the worker's estimate of when the result is known.
+   * Optional and nullable (null when unknown, and for H2H and fixture markets; absent on older servers).
+   * Display only: it never settles anything.
+   */
+  expected_result_at_utc?: string | null;
 }
 
 export interface Reconciliation {
@@ -239,6 +245,8 @@ export interface AiGeneric {
   episode_start_media_ms: number;
   success_cue?: string | null;
   failure_cue?: string | null;
+  /** §9.20 item 2: estimated seconds from lock until the result is known, 0..900, or null. Optional (older servers). */
+  expected_result_in_s?: number | null;
 }
 
 export interface AiCandidate {

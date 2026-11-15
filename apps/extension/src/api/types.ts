@@ -28,6 +28,17 @@ export type ApiResult<T> =
   | { ok: false; kind: 'http'; status: number; error: ErrorEnvelope }
   | { ok: false; kind: 'unknown'; message: string };
 
+// --- CONTRACTS 9.20 item 2 (additive, optional): the expected result time on the public market view. ---
+
+/**
+ * `expected_result_at_utc` = close_at_utc + the worker's expected_result_in_s; null when unknown, and for H2H and
+ * fixture markets; absent on older servers. Display only: it never settles or authorizes anything. Kept here, not
+ * in @fazetime/contracts, because the validator already passes unknown keys through.
+ */
+export interface MarketResultEta {
+  expected_result_at_utc?: string | null;
+}
+
 // --- P1-local MOCK shapes (NOT contract v1). Redemption stays a P1 mock. ---
 
 export interface TopUpRequest {

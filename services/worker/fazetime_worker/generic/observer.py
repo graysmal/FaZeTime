@@ -80,7 +80,8 @@ class Observer:
         self.counts[k] = self.counts.get(k, 0) + 1
         return k
 
-    def tick(self, view, red) -> str:
+    def tick(self, view, red, stream_line: str = "") -> str:
+        """``stream_line``: the labelled, untrusted Twitch context line (§9.20 item 3), or ''."""
         if view.epoch is None or view.epoch != self.epoch:
             return "NO_EPOCH"
         if self.busy():
@@ -100,7 +101,7 @@ class Observer:
         trs = [t for t in view.transcripts if t.sequence > self.last_tr_seq and t.text.strip()]
         trs = trs[-MAX_TRANSCRIPT_WINDOWS:]
         frame_ms = [f.media_ms for f in sent]
-        prompt = observer_prompt(red.snapshot(newest.media_ms), transcript_lines(trs), frame_ms)
+        prompt = observer_prompt(red.snapshot(newest.media_ms), transcript_lines(trs), frame_ms, stream_line)
         images = [f.jpeg for f in sent]
         self.last_frame_ms = newest.media_ms
         self.last_tr_seq = max([t.sequence for t in view.transcripts] + [self.last_tr_seq])

@@ -67,7 +67,10 @@ class EpisodeOutcomeParams(Strict):
 
 class EndValueParams(Strict):
     label: Label  # 1-40 chars
-    threshold: StrictInt | Annotated[float, Field(strict=True, allow_inf_nan=False)]  # a JSON number, never a bool
+    # a JSON number, never a bool; bounded to the exactly-representable float range (coordinator ruling,
+    # 2026-11-15: an unbounded int could overflow the 0006 4096-byte JSON check and surface as a 500, not a 422)
+    threshold: (Annotated[StrictInt, Field(ge=-(2**53), le=2**53)]
+                | Annotated[float, Field(strict=True, allow_inf_nan=False, ge=-(2.0**53), le=2.0**53)])
 
 
 _PHRASE_WORD = r"[A-Za-z']*[A-Za-z][A-Za-z']*"  # letters and apostrophes, at least one letter
@@ -115,9 +118,12 @@ class GenericSpec(Strict):
     kind: Literal["EPISODE_OUTCOME", "END_VALUE_AT_LEAST", "SAY_PHRASE", "DURATION_OVER"]
     unit: Annotated[str, StringConstraints(min_length=1, max_length=20)]
     params: GenericParams
-    episode_start_media_ms: NonNeg
+    episode_start_media_ms: Annotated[StrictInt, Field(ge=0, le=2**53)]
     success_cue: Annotated[str, StringConstraints(max_length=160)]
     failure_cue: Annotated[str, StringConstraints(max_length=160)]
+    # §9.20 item 2 (optional): the worker's estimate of seconds from betting close until the result is known.
+    # Viewers see only the derived public expected_result_at_utc. Absent and null mean "unknown" (generic_payload).
+    expected_result_in_s: Annotated[StrictInt, Field(ge=0, le=900)] | None = None
 
     @model_validator(mode="after")
     def _params_match_kind(self):
@@ -436,11 +442,24 @@ def _terms_of(row: sqlite3.Row) -> dict:
             "template_id": row["template_id"], "generic": _generic_of(row)}
 
 
+def generic_payload(spec: GenericSpec) -> dict:
+    """The generic object as stored (generic_json) and hashed. An absent or null expected_result_in_s (§9.20 item 2)
+    is left out, so objects without it keep the exact bytes and request hashes they had before §9.20."""
+    data = spec.model_dump(mode="json")
+    if data.get("expected_result_in_s") is None:
+        data.pop("expected_result_in_s", None)
+    return data
+
+
 def _proposal_hash(req: ProposalRequest) -> str:
-    """§9.7 request hash. An absent generic object is left out, so H2H hashes match rows stored before §9.19."""
+    """§9.7 request hash. An absent generic object is left out, so H2H hashes match rows stored before §9.19; an
+    absent expected_result_in_s is left out of generic (generic_payload), so generic hashes match rows from before
+    §9.20."""
     payload = req.model_dump(mode="json")
-    if payload["candidate"].get("generic") is None:
+    if req.candidate.generic is None:
         payload["candidate"].pop("generic", None)
+    else:
+        payload["candidate"]["generic"] = generic_payload(req.candidate.generic)
     return request_hash(payload)
 
 
@@ -585,7 +604,7 @@ def submit_proposal(svc: Services, req: ProposalRequest, actor_ref: str) -> tupl
     c = req.candidate
     req_hash = _proposal_hash(req)
     fingerprint = canonical_fingerprint(c.episode_fingerprint)
-    generic = c.generic.model_dump(mode="json") if c.generic is not None else None
+    generic = generic_payload(c.generic) if c.generic is not None else None
     terms = {"question": c.question, "subjects": list(c.subjects), "yes_label": c.yes.label,
              "yes_predicate": c.yes.predicate, "no_label": c.no.label, "no_predicate": c.no.predicate,
              "template_id": c.template_id, "generic": generic}
@@ -612,20 +631,15 @@ def submit_proposal(svc: Services, req: ProposalRequest, actor_ref: str) -> tupl
                 code, resolve_in_s = "INSUFFICIENT_LEAD", None
         status, market_id = "REJECTED", None
         cnd_id = new_id("cnd")
+        automatic = False
         if code is None:
             if mode == "SHADOW":
                 status = "SHADOW"
-            elif mode == "APPROVAL":
-                status = "PENDING"
-            elif mode == "AUTOMATIC":
-                market = domain.open_ai_market(
-                    conn, run_id=run["run_id"], origin="AI_AUTOMATIC", cnd_id=cnd_id, question=c.question,
-                    yes_label=c.yes.label, no_label=c.no.label,
-                    criteria={"YES": c.yes.predicate, "NO": c.no.predicate},
-                    cancellation=list(c.cancellation_conditions), evidence_refs=refs,
-                    close_at=now + timedelta(seconds=close_in_s), resolve_in_s=resolve_in_s,
-                    created_by_user_id=None, now=now, settings=settings)
-                status, market_id = "OPENED", market["market_id"]
+            elif mode in ("APPROVAL", "AUTOMATIC"):
+                # AUTOMATIC is recorded PENDING here and opened right below, in this same transaction (the approval
+                # path's PENDING -> OPENED step), so the candidate row and its generic terms already exist when
+                # market.opened is built (§9.20 item 2: expected_result_at_utc).
+                status, automatic = "PENDING", mode == "AUTOMATIC"
             else:  # OFF (and the P1-only FIXTURE mode): dropped, recorded for the trace
                 code = "AI_OFF"
         received = _fmt(now)
@@ -642,9 +656,22 @@ def submit_proposal(svc: Services, req: ProposalRequest, actor_ref: str) -> tupl
              c.announced_at_media_ms, c.suggested_close_in_s, c.suggested_resolve_in_s, close_in_s, resolve_in_s,
              _dumps(list(c.cancellation_conditions)), c.rationale, c.model, c.prompt_version, mode, status, code,
              market_id, received, _fmt(now + timedelta(seconds=settings.candidate_expiry_s)),
-             received if status in ("OPENED", "REJECTED") else None,
+             received if status == "REJECTED" else None,
              _dumps(generic) if generic is not None else None),
         )
+        if automatic:
+            market = domain.open_ai_market(
+                conn, run_id=run["run_id"], origin="AI_AUTOMATIC", cnd_id=cnd_id, question=c.question,
+                yes_label=c.yes.label, no_label=c.no.label,
+                criteria={"YES": c.yes.predicate, "NO": c.no.predicate},
+                cancellation=list(c.cancellation_conditions), evidence_refs=refs,
+                close_at=now + timedelta(seconds=close_in_s), resolve_in_s=resolve_in_s,
+                created_by_user_id=None, now=now, settings=settings)
+            cur = conn.execute("UPDATE ai_candidates SET status = 'OPENED', market_id = ?, decided_at_utc = ?"
+                               " WHERE cnd_id = ? AND status = 'PENDING'", (market["market_id"], received, cnd_id))
+            if cur.rowcount != 1:
+                raise domain.ConcurrentChange("candidate changed concurrently")
+            status, market_id = "OPENED", market["market_id"]
         _trace(conn, kind="PROPOSAL", subject_id=cnd_id, client_id=c.candidate_id, stream_id=req.stream_id,
                run_id=run["run_id"], market_id=market_id, source_epoch=req.source_epoch, model=c.model,
                prompt_version=c.prompt_version, evidence_ids=list(c.evidence_ids), ai_mode=mode, result=status,
@@ -897,7 +924,7 @@ async def approve_candidate(candidate_ref: str, request: Request, principal: Pri
                validation={"revalidated": True, "close_at_utc": _fmt(close_at), "override_close_in_s": req.close_in_s},
                actor_kind="OPERATOR", actor_ref=principal.user_id, now=now)
         row = _get_candidate(conn, cand["cnd_id"])
-        body = {"candidate": candidate_view(conn, row, now), "market": views.operator_market(market)}
+        body = {"candidate": candidate_view(conn, row, now), "market": views.operator_market(market, conn)}
         return body, "AI_CANDIDATE", cand["cnd_id"], {}
 
     return await api_operator._mutation(request, principal, OpApproveCandidate, "OP_APPROVE_CANDIDATE", handler,
@@ -1010,7 +1037,7 @@ async def approve_resolution(resolution_ref: str, request: Request, principal: P
                code="OPERATOR_APPROVED", validation={"decision": rsl["decision"]}, actor_kind="OPERATOR",
                actor_ref=principal.user_id, now=now)
         body = {"resolution": resolution_view(conn, _get_resolution(conn, rsl["rsl_id"]), now),
-                "market": views.operator_market(updated)}
+                "market": views.operator_market(updated, conn)}
         return body, "AI_RESOLUTION", rsl["rsl_id"], {}
 
     return await api_operator._mutation(request, principal, OpApproveResolution, "OP_APPROVE_RESOLUTION", handler,

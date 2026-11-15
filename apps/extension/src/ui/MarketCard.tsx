@@ -21,7 +21,7 @@ import {
   parseDollarsToMinor,
   sharePercent,
 } from '../lib/money';
-import { formatCountdown, remainingMs } from '../lib/time';
+import { awaitsExpectedResult, formatCountdown, remainingMs, resultPending } from '../lib/time';
 import { isBusy } from '../state/betFlow';
 import { describeError } from '../state/errorCopy';
 import { useEnv, useNow, usePanel } from './hooks';
@@ -111,7 +111,8 @@ export function MarketCard({ surface }: { surface: 'panel' | 'overlay' }) {
   const snap = st.snapshot;
   const market = snap?.market ?? null;
   const pos = snap?.my_position ?? null;
-  const now = useNow(1000, market?.state === 'OPEN');
+  // Tick while OPEN (countdown) and while an AI market waits for its expected result time (CONTRACTS 9.20 item 2).
+  const now = useNow(1000, market?.state === 'OPEN' || awaitsExpectedResult(market));
   const [side, setSide] = useState<Side | null>(null);
   const [stakeText, setStakeText] = useState<string | null>(null);
   const marketId = market?.market_id;
@@ -148,6 +149,8 @@ export function MarketCard({ surface }: { surface: 'panel' | 'overlay' }) {
   const estimate = chosen && stake !== null && !stakeProblem ? estimateGrossReturn(stake, market.pool, chosen) : null;
   const { yes_minor, no_minor, total_minor, simulated_minor, wager_count } = market.pool;
   const banner = bannerCopy(market, pos);
+  // CONTRACTS 9.20 item 2: past the expected result time, still LOCKED/EVALUATING, no result yet.
+  const watching = resultPending(market, now, st.offsetMs);
   const stepBy = (dir: 1 | -1) => {
     const base = stake ?? limits.stake_default_minor;
     const next = Math.min(limits.stake_max_minor, Math.max(limits.stake_min_minor, base + dir * limits.stake_step_minor));
@@ -247,8 +250,23 @@ export function MarketCard({ surface }: { surface: 'panel' | 'overlay' }) {
         </div>
       )}
 
-      {market.state === 'LOCKED' && <p className="ft-hint">Betting closed. Waiting for the result.</p>}
-      {market.state === 'EVALUATING' && <p className="ft-hint">Determining the outcome from the stream. Unclear results are refunded, never guessed.</p>}
+      {watching ? (
+        <p className="ft-hint ft-hint--watching" role="status">
+          <span className="ft-watch" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </span>
+          AI is watching for the result…{market.state === 'EVALUATING' && ' Unclear results are refunded, never guessed.'}
+        </p>
+      ) : (
+        <>
+          {market.state === 'LOCKED' && <p className="ft-hint">Betting closed. Waiting for the result.</p>}
+          {market.state === 'EVALUATING' && (
+            <p className="ft-hint">Determining the outcome from the stream. Unclear results are refunded, never guessed.</p>
+          )}
+        </>
+      )}
 
       {isOpen && (
         <div className="ft-bet">

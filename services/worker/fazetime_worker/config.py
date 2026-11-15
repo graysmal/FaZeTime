@@ -129,6 +129,10 @@ class Config:
     ai_end_detection_slack_s: int = 15
     ai_max_horizon_s: int = 300  # outcome confirmable within this long after lock; resolve_in_s = window + this
     ai_duration_band_s: int = 15  # DURATION_OVER voids within this band of the line
+    # §9.20 (generic profile). ETA: send generic.expected_result_in_s (0 omits the key, for an API without §9.20).
+    ai_result_eta: bool = True
+    # Twitch title/category from `streamlink --json` every 5 min as untrusted prompt context (never in TEST_FIXTURE)
+    ai_stream_context: bool = True
     streamlink_bin: str = "streamlink"
     ffmpeg_bin: str = "ffmpeg"
 
@@ -287,4 +291,6 @@ def from_env() -> Config:
     c.ai_max_horizon_s = int(_env("FAZETIME_AI_MAX_HORIZON_S", c.ai_max_horizon_s))
     c.ai_duration_band_s = int(_env("FAZETIME_AI_DURATION_BAND_S", c.ai_duration_band_s))
     c.ai_end_detection_slack_s = int(_env("FAZETIME_AI_END_DETECTION_SLACK_S", c.ai_end_detection_slack_s))
+    c.ai_result_eta = b(_env("FAZETIME_AI_RESULT_ETA", "1"))
+    c.ai_stream_context = b(_env("FAZETIME_AI_STREAM_CONTEXT", "1"))
     return c

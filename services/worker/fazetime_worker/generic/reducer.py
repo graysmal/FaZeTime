@@ -112,6 +112,9 @@ class Reducer:
         self.last_t_ms: int | None = None  # media time of the newest applied observation
         self.n_obs = 0
         self.recent: deque = deque(maxlen=20)  # (t_ms, screen, boundary): status/debug only, no free text
+        # Twitch category (§9.20 item 3, untrusted stream context): names the activity only while no observer
+        # answer has named one. Set by the AI runtime each tick; never used for any decision.
+        self.category: str | None = None
         self._next_idx = 1
 
     # ---- reads ----------------------------------------------------------------------------------------
@@ -126,7 +129,9 @@ class Reducer:
 
     @property
     def activity(self) -> str:
-        return self.activity_votes.most_common(1)[0][0] if self.activity_votes else "unknown"
+        if self.activity_votes:
+            return self.activity_votes.most_common(1)[0][0]
+        return self.category or "unknown"
 
     @property
     def unit(self) -> str:
@@ -140,7 +145,9 @@ class Reducer:
 
     def snapshot(self, now_ms: int) -> str:
         e = self.cur
-        lines = [f"activity: {self.activity}; unit of play: {self.unit}"]
+        seeded = not self.activity_votes and bool(self.category)
+        lines = [f"activity: {self.activity}" + (" (from the stream category, unconfirmed)" if seeded else "")
+                 + f"; unit of play: {self.unit}"]
         if e is None:
             lines.append("episode: none seen yet")
         else:
