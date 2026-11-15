@@ -1,6 +1,6 @@
 # Current handoff (final checkpoint before switching to a new chat)
 
-- **Timestamp / coordinator:** 2026-11-15 ~01:11 CT (updated mid-work on D37; see "Current work" below). Coordinator session in the Claude Code desktop app (Opus 5.5 `claude-opus-5-5`).
+- **Timestamp / coordinator:** 2026-11-15 ~02:50 CT (D37 integrated and deployed; see "Current work" below). Coordinator session in the Claude Code desktop app (Opus 5.5 `claude-opus-5-5`).
 - **Deadline:** 12:00 CT Sun 2026-11-15. Feature freeze 09:00; rehearsals 09:00–12:00.
 - **Branch:** `hackathon-build`, pushed to `origin` (graysmal/FaZeTime, a **PUBLIC** repo). Run `git log -1` for the SHA.
   - The owner authorized committing and pushing reviewed increments.
@@ -90,7 +90,24 @@ Phase state:
   - Only Peggle has been tested.
 - **Paid fallback (D38, deferred):** Vultr Serverless Inference, only with a fresh owner OK.
 - **Sponsor deck scan:** Gemini's free tier is the only card-free multimodal option. Vultr Serverless Inference is per-token ($0.55 per million in, $2.75 per million out). The owner confirmed the Devpost placeholder was submitted before midnight; the final edit is due before 12:00.
-- **Next:** owner decision on integration. Proposed path, in the report's build order:
+- **Integration DONE and DEPLOYED** (owner: "Yes, integrate"):
+  - **Commits:** `761616a` (CONTRACTS §9.19), `5df12ac` (API and console), `a2d272e` (worker, plus end-to-end fixes).
+  - **Pi API:** restarted at ~02:38 CT and migration 0006 applied. Backup: `~/fazetime-data/backup-pre-d37-033756.db`, timestamped in Pi local time.
+  - **Pi `worker.env`:** has a D37 block:
+    - `FAZETIME_AI_PROFILE=generic`
+    - observer chain `gemini-3.1-flash-lite,gemini-3.5-flash-lite`
+    - `FAZETIME_AI_DAILY_BUDGET=420` per model
+    - `FAZETIME_AI_RESOLVER_RESERVE=0.1`
+    - The previous file is `worker.env.pre-d37`. Remove the D37 lines to return to H2H.
+  - **Console:** generic approvals send `close_in_s`, so the 35 s window counts from approval. The card shows the kind and the rules.
+  - **Local end-to-end** (TEST_FIXTURE; `spikes/p4-generic/e2e_operator.py`, evidence in `docs/evidence/p4/P4-generic-fixture-replay.md`): run 4 settled a correct YES. The runs found and fixed:
+    - the uplink skipping the evidence tap;
+    - no reader fallback;
+    - a fairness gap, fixed with a 15 s end-detection slack and a 40 s minimum lead.
+- **Next (owner, Twitch gate):** stream any game through OBS to the team channel and start the worker (`scripts/run_pi.sh`). On the console (`/operator/`), approve the AI's bet within its countdown; two viewers bet; approve the AI's result.
+  - Leave at least 2 min of play per round, so a bet can lock at least 40 s before the result.
+  - Record one positive and one negative outcome in `docs/evidence/p3-p5/`.
+- **Earlier plan (kept for reference):**
   - Port `spikes/p4-generic` into `services/worker/fazetime_worker/generic/` as a worker profile.
   - Make an additive CONTRACTS §9.17 change: generic template IDs carrying the frozen spec and its hash; one subject or none instead of the H2H pair; a generic episode fingerprint; the window floor lowered to 35 s (D39).
   - Have the console show the generic question and rules.
