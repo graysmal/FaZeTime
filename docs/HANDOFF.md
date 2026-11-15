@@ -41,13 +41,14 @@ The two `services/api` workers share `main.py`, `ids.py`, `config.py` and `schem
 - **Pi `fazetime`** (key-auth `ssh fazetime@fazetime`; never a password or sudo):
   - **API:** `http://fazetime:8000` (tailnet IP only), code digest `99feda70f09dc5f6`, equivalent to `dcd699e`. Data in `~/fazetime-data`. Control: `services/api/scripts/pi_run.sh start|stop|status|restart`.
   - **Origins:** `https://www.twitch.tv` and `chrome-extension://hodaaffdhncidmaccebmionoljljfefe`.
-  - **Not yet done on the Pi:**
-    - `bootstrap-operator`: the coordinator runs it, and gives the owner's code via a local file, never in chat or the repo.
-    - `issue-worker-token`.
-    - Create the stream for `fazegavin1234` (operator route).
-    - Copy `apps/operator/dist` and set `FAZETIME_OPERATOR_DIST`.
-    - Redeploy after the P4/P5/P6 merge.
-  - **Worker:** venv and tiny/base models installed at `~/fazetime/services/worker`; not running. `worker.env` is not created yet.
+  - **DONE ~23:15 CT:**
+    - Redeployed the AI and top-up API (commit `76508bd`). `~/fazetime-data/api.env` (600) sets `FAZETIME_AI_MODE_DEFAULT=APPROVAL` and the Stripe env file `~/fazetime-data/stripe.env` (600).
+    - Health: ai_mode APPROVAL, payment_mode STRIPE_TEST, automatic not allowed.
+    - The operator console is served at `http://fazetime:8000/operator/`.
+    - Stream `fazegavin1234` is created (`str_dcf14fde37d544be9b1bac9668938eae`).
+    - **The owner's operator invite** is in `~/Documents/fazetime-operator-invite.txt` (600). A second, automation operator session is in the coordinator's scratchpad.
+    - **Stripe listener** runs on the laptop via `infra/stripe/start_listener.sh` → `http://fazetime:8000/v1/webhooks/stripe`. Its log is private.
+  - **Worker:** `~/fazetime-data/worker.env` (600) holds the API base, worker token, stream ID, channel, Gemini key, streamlink path and models dir. `fazetime_worker check` reports no problems. **Not running yet**; start it with `scripts/run_pi.sh` when the owner streams. Remote ASR wiring is pending the Vultr worker.
   - **Vultr budget guard:** runs via `~/fazetime/infra/vultr/start_guard.sh` (crontab `@reboot`), log `~/fazetime-data/vultr-guard.log`.
 - **Vultr:**
   - VM `fazetime-asr`: tailnet MagicDNS `fazetime-asr`, plan `voc-c-8c-16gb-150s-amd`, $0.219/h, tag `fazetime`.
