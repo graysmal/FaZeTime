@@ -2481,3 +2481,125 @@ button:disabled {
     animation: none;
   }
 }
+
+/* ---- FaZe over-video pill: high contrast so it never melts into the stream (owner request) ---- */
+.ft-overlay[data-theme='faze'] {
+  filter: drop-shadow(0 0 7px rgba(228, 0, 43, 0.85)) drop-shadow(0 4px 12px rgba(0, 0, 0, 0.85));
+}
+.ft-overlay[data-theme='faze'] .ft-pill {
+  gap: 10px;
+  padding: 4px 12px 4px 4px;
+  background: #0a0a0d;
+  border: 2px solid var(--ft-red);
+  backdrop-filter: none;
+  color: #fff;
+  font-family: var(--ft-font-body);
+  font-weight: 900;
+  font-size: 13px;
+  box-shadow: inset 0 0 14px rgba(228, 0, 43, 0.35);
+}
+.ft-overlay[data-theme='faze'] .ft-pill-brand {
+  padding: 5px 9px 4px;
+  background: var(--ft-red);
+  color: #fff;
+  font-size: 14px;
+  clip-path: var(--chamfer-sm);
+}
+.ft-overlay[data-theme='faze'] .ft-pill-brand b {
+  color: #0a0a0d;
+  text-shadow: none;
+}
+.ft-overlay[data-theme='faze'] .ft-pill-title {
+  color: #fff;
+  text-shadow: 0 1px 2px #000;
+}
+.ft-overlay[data-theme='faze'] .ft-pill-time {
+  padding: 2px 8px;
+  background: rgba(228, 0, 43, 0.22);
+  border: 1px solid var(--ft-red);
+  color: #fff;
+  font-size: 14px;
+  clip-path: var(--chamfer-sm);
+}
+.ft-overlay[data-theme='faze'] .ft-pill:hover {
+  background: #15050a;
+}
+.ft-overlay[data-theme='faze'] .ft-pill[data-open='true'] {
+  animation: ft-pill-pulse 1.8s ease-in-out infinite;
+}
+@keyframes ft-pill-pulse {
+  50% {
+    box-shadow: inset 0 0 22px rgba(255, 31, 75, 0.6);
+    border-color: #ff1f4b;
+  }
+}
+.ft-overlay[data-theme='faze'] .ft-drop {
+  border: 2px solid var(--ft-red);
+  background:
+    linear-gradient(180deg, rgba(10, 10, 13, 0.94), rgba(10, 10, 13, 0.97)),
+    var(--ft-diamond, none) center / cover no-repeat,
+    #0a0a0d;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ft-overlay[data-theme='faze'] .ft-pill[data-open='true'] {
+    animation: none;
+  }
+}
+
+/* ---- Θ ornaments: owl of Athena watermark, laurel-wreathed avatar, amphora treasury ---- */
+.ft-owl-mark {
+  position: absolute;
+  right: 10px;
+  bottom: 18px;
+  width: 74px;
+  color: #1f3550;
+  opacity: 0.1;
+  --ft-owl-face: #ece3d3;
+  --ft-owl-beak: #1f3550;
+}
+.ft-owl {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.ft-avatar-wrap {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+[data-theme='odyssey'] .ft-laurel {
+  color: var(--ft-gold);
+  flex: none;
+}
+[data-theme='odyssey'] .ft-profile-top {
+  padding: 0 10px;
+}
+.ft-amphora {
+  vertical-align: -2px;
+  margin-right: 5px;
+  color: var(--ft-gold);
+  --ft-owl-face: #f4eee3;
+}
+.ft-root .ft-theme-opt .omega,
+[data-theme='odyssey'] .ft-root .ft-theme-opt .omega,
+[data-theme='odyssey'] .ft-theme-opt .omega {
+  font-size: 1.5em;
+  font-weight: 400;
+}
+
+/* Θ profile header: laurel-wreathed avatar on top, name and tag centred underneath (fits the narrow card). */
+[data-theme='odyssey'] .ft-profile-top {
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 14px;
+}
+[data-theme='odyssey'] .ft-profile-names {
+  max-width: 100%;
+}
+[data-theme='odyssey'] .ft-profile-name {
+  max-width: 100%;
+}
+.ft-verified {
+  white-space: nowrap;
+}

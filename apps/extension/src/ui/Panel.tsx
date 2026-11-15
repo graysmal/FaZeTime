@@ -1,12 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import type { ErrorCode, Modes } from '@fazetime/contracts';
-import { checkTopUp, describeAmountProblem, formatMinor, parseDollarsToMinor } from '../lib/money';
+import { checkTopUp, currencySymbol, describeAmountProblem, formatMinor, parseDollarsToMinor, setDisplayCurrency } from '../lib/money';
 import type { PanelNotice, Placement } from '../content/mount';
 import { describeTopUp } from '../state/topupCopy';
 import type { RedeemItem } from '../api/types';
 import { MarketCard } from './MarketCard';
 import { glazeFromEvent, glazeOnHover, THEME_KEY, themeAttr, type ThemeName } from './theme';
 import { OdysseySky, ThemeSwitch } from './ThemeSwitch';
+import { Amphora, Laurel, setOracleFlavour } from './OdysseyDecor';
 import { PANEL_OPEN_KEY, PROFILE_KEY, panelHeightKey, useEnv, usePanel, useStoredValue, type Profile } from './hooks';
 
 export const PANEL_MIN_PX = 160;
@@ -105,6 +106,8 @@ export function Panel(props: { host: HTMLElement; placement: Placement; notice: 
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [theme, setTheme] = useStoredValue<ThemeName>(THEME_KEY, 'calm');
+  setDisplayCurrency(theme === 'enrage' ? 'DRACHMA' : 'USD'); // before children render
+  setOracleFlavour(theme === 'enrage');
   const headRef = useRef<HTMLElement>(null);
   // While collapsing, keep the body rendered so the height animation has something to hide.
   const [closing, setClosing] = useState(false);
@@ -246,7 +249,17 @@ export function Panel(props: { host: HTMLElement; placement: Placement; notice: 
           <nav className="ft-tabs" role="tablist" aria-label="FaZeTime sections" style={{ ['--ft-tab-i' as string]: TABS.indexOf(tab) }}>
             {TABS.map((t) => (
               <button key={t} type="button" role="tab" aria-selected={tab === t} className="ft-tab" onClick={() => selectTab(t)}>
-                {t === 'market' ? 'Market' : t === 'wallet' ? 'Wallet' : 'Redeem'}
+                {theme === 'enrage'
+                  ? t === 'market'
+                    ? 'Agora'
+                    : t === 'wallet'
+                      ? 'Treasury'
+                      : 'Voyage'
+                  : t === 'market'
+                    ? 'Market'
+                    : t === 'wallet'
+                      ? 'Wallet'
+                      : 'Redeem'}
               </button>
             ))}
             <span className="ft-tab-ink" aria-hidden="true" />
@@ -329,6 +342,8 @@ export function ProfileCard({
   const st = usePanel();
   const [profile] = useStoredValue<Profile | null>(PROFILE_KEY, null);
   const [verifyHint, setVerifyHint] = useState<string | null>(null);
+  const [cardTheme] = useStoredValue<ThemeName>(THEME_KEY, 'calm');
+  const odysseyCard = cardTheme === 'enrage';
   const name = profile?.display_name || st.backend?.displayName || null;
   const verified = mode === 'live' ? st.backend?.mode === 'LIVE' && st.backend.enrolled : Boolean(profile);
   const w = st.snapshot?.wallet;
@@ -357,8 +372,12 @@ export function ProfileCard({
         </svg>
       </button>
       <div className="ft-profile-top">
-        <div className="ft-avatar" aria-hidden="true">
-          <span>{initialsFor(name)}</span>
+        <div className="ft-avatar-wrap">
+          {odysseyCard && <Laurel size={50} />}
+          <div className="ft-avatar" aria-hidden="true">
+            <span>{initialsFor(name)}</span>
+          </div>
+          {odysseyCard && <Laurel size={50} flip />}
         </div>
         <div className="ft-profile-names">
           <b className="ft-profile-name">{name ?? 'No name yet'}</b>
@@ -497,12 +516,17 @@ function ResizeHandle({ host, height, onChange }: { host: HTMLElement; height: n
 export function WalletTab() {
   const { controller, mode } = useEnv();
   const st = usePanel();
+  const [walletTheme] = useStoredValue<ThemeName>(THEME_KEY, 'calm');
+  const odysseyWallet = walletTheme === 'enrage';
   const w = st.snapshot?.wallet;
   return (
     <div>
       <div className="ft-wallet-grid">
         <div className="ft-stat">
-          <span>Available</span>
+          <span>
+            {odysseyWallet && <Amphora size={14} />}
+            Available
+          </span>
           <b className="ft-money">{w ? formatMinor(w.available_minor) : '…'}</b>
         </div>
         <div className="ft-stat">
@@ -921,6 +945,7 @@ export function TopUpDialog() {
             {describeAmountProblem(problem, limits.topup_min_minor, limits.topup_max_minor, limits.topup_step_minor)}
           </div>
         )}
+        {currencySymbol() === '₯' && <p className="ft-fine">1 ₯ = $1 in test credits.</p>}
         <button
           type="button"
           className="ft-primary"
@@ -1072,6 +1097,7 @@ export function StripeTopUpDialog() {
             {describeAmountProblem(problem, limits.topup_min_minor, limits.topup_max_minor, limits.topup_step_minor)}
           </div>
         )}
+        {currencySymbol() === '₯' && <p className="ft-fine">1 ₯ = $1 in test credits. Stripe's checkout page shows dollars.</p>}
         <button
           type="button"
           className="ft-primary"

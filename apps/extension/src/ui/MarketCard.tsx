@@ -20,9 +20,11 @@ import {
   minorToInput,
   parseDollarsToMinor,
   sharePercent,
+  currencySymbol,
 } from '../lib/money';
 import { awaitsExpectedResult, formatCountdown, remainingMs, resultPending } from '../lib/time';
 import { isBusy } from '../state/betFlow';
+import { aiName } from './OdysseyDecor';
 import { describeError } from '../state/errorCopy';
 import { useEnv, useNow, usePanel } from './hooks';
 
@@ -125,7 +127,7 @@ export function MarketCard({ surface }: { surface: 'panel' | 'overlay' }) {
   if (!market)
     return (
       <div className="ft-market">
-        <p className="ft-q">No market open right now.</p>
+        <p className="ft-q">{aiName() === 'AI' ? 'No market open right now.' : 'No prophecy yet. The Oracle watches the stream.'}</p>
         <p className="ft-hint">The next prediction appears here as soon as it opens.</p>
       </div>
     );
@@ -257,7 +259,7 @@ export function MarketCard({ surface }: { surface: 'panel' | 'overlay' }) {
             <span />
             <span />
           </span>
-          AI is watching for the result…{market.state === 'EVALUATING' && ' Unclear results are refunded, never guessed.'}
+          {aiName()} is watching for the result…{market.state === 'EVALUATING' && ' Unclear results are refunded, never guessed.'}
         </p>
       ) : (
         <>
@@ -287,7 +289,7 @@ export function MarketCard({ surface }: { surface: 'panel' | 'overlay' }) {
               <button type="button" aria-label="Decrease stake" onClick={() => stepBy(-1)} disabled={busy}>
                 −
               </button>
-              <span>$</span>
+              <span>{currencySymbol()}</span>
               <input
                 aria-label="Stake in demo dollars"
                 inputMode="decimal"

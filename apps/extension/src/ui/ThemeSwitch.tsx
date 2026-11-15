@@ -2,6 +2,7 @@
 // Cosmetic only: stored in extension storage so the panel and the over-video dropdown (and other tabs) agree.
 import { useEffect, useRef } from 'react';
 import { startPixelSky } from './pixelSky';
+import { Owl } from './OdysseyDecor';
 import type { ThemeName } from './theme';
 
 export function ThemeSwitch({ theme, onChange }: { theme: ThemeName; onChange: (t: ThemeName) => void }) {
@@ -61,6 +62,9 @@ export function OdysseySky() {
         ))}
       </div>
       <div className="ft-flash" />
+      <div className="ft-owl-mark">
+        <Owl />
+      </div>
     </div>
   );
 }

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { formatCountdown, remainingMs } from '../lib/time';
+import { setDisplayCurrency } from '../lib/money';
+import { setOracleFlavour } from './OdysseyDecor';
 import { MarketCard } from './MarketCard';
 import { glazeFromEvent, glazeOnHover, THEME_KEY, themeAttr, type ThemeName } from './theme';
 import { useEnv, useFullscreen, useNow, usePanel, useStoredValue } from './hooks';
@@ -14,6 +16,8 @@ export function Overlay({ host }: { host: HTMLElement }) {
   const [expanded, setExpanded] = useState(false);
   const [maxHeight, setMaxHeight] = useState(320);
   const [theme] = useStoredValue<ThemeName>(THEME_KEY, 'calm');
+  setDisplayCurrency(theme === 'enrage' ? 'DRACHMA' : 'USD');
+  setOracleFlavour(theme === 'enrage');
   const market = st.snapshot?.market ?? null;
   const now = useNow(1000, market?.state === 'OPEN');
 
@@ -35,12 +39,13 @@ export function Overlay({ host }: { host: HTMLElement }) {
 
   if (fullscreen) return null;
   const remaining = market ? remainingMs(market.close_at_utc, now, st.offsetMs) : 0;
-  const title = market ? market.question : 'No market open';
+  const title = market ? market.question : theme === 'enrage' ? 'No prophecy yet' : 'No market open';
   return (
     <div className="ft-overlay" data-theme={themeAttr(theme)} onKeyDown={(e) => e.key === 'Escape' && setExpanded(false)} onClickCapture={(e) => glazeFromEvent(e.target)} onPointerOver={(e) => glazeOnHover(e)}>
       <button
         type="button"
         className="ft-pill"
+        data-open={market?.state === 'OPEN'}
         aria-expanded={expanded}
         aria-label={mode === 'live' ? 'FaZeTime market' : 'FaZeTime market (MOCK)'}
         onClick={() => setExpanded((v) => !v)}

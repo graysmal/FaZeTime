@@ -151,3 +151,30 @@ describe('diamond glaze on hover', () => {
     expect(b.classList.contains('ft-glaze')).toBe(false);
   });
 });
+
+describe('Θ display currency and wording (owner request 2026-11-15)', () => {
+  it('shows drachmas at 1:1 only when switched, and still parses either symbol to the same cents', async () => {
+    const { formatMinor, parseDollarsToMinor, setDisplayCurrency, currencySymbol } = await import('../src/lib/money');
+    try {
+      expect(formatMinor(2000)).toBe('$20.00');
+      setDisplayCurrency('DRACHMA');
+      expect(currencySymbol()).toBe('₯');
+      expect(formatMinor(2000)).toBe('₯20.00');
+      expect(formatMinor(-150)).toBe('-₯1.50');
+      expect(parseDollarsToMinor('₯12.50')).toBe(1250);
+      expect(parseDollarsToMinor('$12.50')).toBe(1250);
+    } finally {
+      setDisplayCurrency('USD');
+    }
+    expect(formatMinor(2000)).toBe('$20.00');
+  });
+
+  it('calls the AI "the Oracle" only in the Odyssey theme', async () => {
+    const { aiName, setOracleFlavour } = await import('../src/ui/OdysseyDecor');
+    expect(aiName()).toBe('AI');
+    setOracleFlavour(true);
+    expect(aiName()).toBe('The Oracle');
+    setOracleFlavour(false);
+    expect(aiName()).toBe('AI');
+  });
+});

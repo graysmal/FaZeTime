@@ -2,18 +2,31 @@
 import type { Limits, Pool, Side } from '@fazetime/contracts';
 
 /** "$1,234.05" for 123405 demo cents. Display only. */
+/**
+ * Display currency (owner request, 2026-11-15): the Odyssey (Θ) theme shows drachmas at 1 ₯ = $1. Display only:
+ * every amount stays in integer cents end to end, and the server, Stripe and the ledger never see a drachma.
+ */
+export type DisplayCurrency = 'USD' | 'DRACHMA';
+let displayCurrency: DisplayCurrency = 'USD';
+export function setDisplayCurrency(c: DisplayCurrency): void {
+  displayCurrency = c;
+}
+export function currencySymbol(): string {
+  return displayCurrency === 'DRACHMA' ? '₯' : '$';
+}
+
 export function formatMinor(minor: number): string {
   if (!Number.isSafeInteger(minor)) return '$?';
   const sign = minor < 0 ? '-' : '';
   const abs = Math.abs(minor);
   const dollars = Math.trunc(abs / 100);
   const cents = abs % 100;
-  return `${sign}$${dollars.toLocaleString('en-US')}.${cents.toString().padStart(2, '0')}`;
+  return `${sign}${currencySymbol()}${dollars.toLocaleString('en-US')}.${cents.toString().padStart(2, '0')}`;
 }
 
 /** Parse a user-typed dollar amount ("5", "5.5", "$5.50") into integer cents without floats. */
 export function parseDollarsToMinor(input: string): number | null {
-  const s = input.trim().replace(/^\$/, '').replace(/,/g, '');
+  const s = input.trim().replace(/^[$₯]/, '').replace(/,/g, '');
   const m = /^(\d{1,7})(?:\.(\d{0,2}))?$/.exec(s);
   if (!m) return null;
   const dollars = Number.parseInt(m[1] ?? '0', 10);
