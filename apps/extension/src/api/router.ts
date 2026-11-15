@@ -179,10 +179,15 @@ export function attachPopupHandler(adapter: BackendAdapter, runtime: MessageRunt
       }
       if (!adapter.enroll) return httpError('CAPABILITY_UNAVAILABLE', 'Enrollment exists only in live builds.');
       const p = isPlainObject(m.params) ? m.params : {};
-      if (typeof p.invite_code !== 'string' || typeof p.display_name !== 'string')
-        return httpError('VALIDATION_FAILED', 'Invite code and display name are required.');
+      // D35: the name and the invite code are optional (name-only join; an empty name gets a default).
+      if (p.display_name !== undefined && p.display_name !== null && typeof p.display_name !== 'string')
+        return httpError('VALIDATION_FAILED', 'The display name must be text.');
+      if (p.invite_code !== undefined && p.invite_code !== null && typeof p.invite_code !== 'string')
+        return httpError('VALIDATION_FAILED', 'The invite code must be text.');
+      const code = typeof p.invite_code === 'string' && p.invite_code.trim() !== '' ? p.invite_code : null;
       const login = typeof p.claimed_twitch_login === 'string' && p.claimed_twitch_login.trim() !== '' ? p.claimed_twitch_login : null;
-      return adapter.enroll({ invite_code: p.invite_code, display_name: p.display_name, claimed_twitch_login: login });
+      const displayName = typeof p.display_name === 'string' ? p.display_name : '';
+      return adapter.enroll({ invite_code: code, display_name: displayName, claimed_twitch_login: login });
     })()
       .catch(() => httpError('INTERNAL_ERROR', 'The background failed.'))
       .then(sendResponse);

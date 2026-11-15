@@ -7,7 +7,9 @@
 //   normal (9.15(14)). The snapshot is refetched ONLY on (re)connect, a run change or a server resync.
 //   my_position is derived from wager.updated receipts; a state is pushed to tabs only when consistent.
 // - Polling fallback while the socket is not live: 2 s while a market is OPEN, 10 s otherwise.
-// - 401 anywhere clears the session and asks the user to re-enroll.
+// - D35 open access: a missing/expired session or a 401 triggers ONE silent name-only re-join with the stored
+//   name (single-flight, rate-limited), then the failed request is retried once. Only when the server refuses
+//   name-only enroll (invite-only) is the session cleared and the user asked to join in the popup.
 // - P6 Stripe test top-ups (9.18): POST /v1/topups (retry the SAME key on RATE_LIMITED, INTERNAL_ERROR or
 //   an unknown outcome), open the Stripe-hosted Checkout URL with chrome.tabs.create (never logged,
 //   stored or posted to a tab), persist the pending top-up, and poll GET /v1/topups/{id} every 3 s
@@ -24,6 +26,7 @@ import {
   streamSnapshotV,
   validate,
   type DomainEvent,
+  type EnrollRequest,
   type EnrollResponse,
   type ErrorEnvelope,
   type Me,
@@ -57,7 +60,11 @@ import {
   type TopUpRequest,
   type TopUpTracking,
 } from '../api/types';
+import { defaultDisplayName, refusesNameOnly } from '../lib/join';
 import { DEMO_CATALOG } from '../mock/catalog';
+
+/** POST /v1/enroll body. D35 makes invite_code optional; contracts v1 `EnrollRequest` still requires it. */
+type EnrollBody = Omit<EnrollRequest, 'invite_code'> & { invite_code?: string };
 
 export interface SessionRecord {
   token: string;
@@ -96,6 +103,15 @@ export interface LiveStore {
   /** P6: the tracked top-up (optional; tests may keep it in memory). */
   getTopUp?(): Promise<TopUpRecord | null>;
   setTopUp?(record: TopUpRecord | null): Promise<void>;
+  /** D35: the name of the last successful join, for silent re-join. Not a secret (optional; in memory if absent). */
+  getJoinProfile?(): Promise<JoinProfile | null>;
+  setJoinProfile?(profile: JoinProfile | null): Promise<void>;
+}
+
+/** What a silent re-join sends again: the display name and label the server accepted last time. */
+export interface JoinProfile {
+  display_name: string;
+  claimed_twitch_login: string | null;
 }
 
 export interface WsLike {
@@ -134,6 +150,9 @@ export interface LiveOptions {
 const OPEN_TOPUP: readonly string[] = ['CREATED', 'PENDING'];
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const TOPUP_FAST_WINDOW_MS = 15 * 60_000;
+/** At most one silent re-join attempt per window, so a broken server cannot cause an enroll storm. */
+const REJOIN_MIN_INTERVAL_MS = 10_000;
+
 /** The server marks EXPIRED on a reconcile after Stripe expires the session, so keep watching a bit. */
 const TOPUP_EXPIRY_GRACE_MS = 3 * 60_000;
 const TOPUP_NO_EXPIRY_CAP_MS = 30 * 60_000;
@@ -202,6 +221,14 @@ export class LiveBackend implements BackendAdapter {
   private current: StreamSnapshot | null = null;
   private offsetMs = 0;
   private reenroll = false;
+  /** D35: last accepted name, for silent re-join. Cleared by an explicit sign-out. */
+  private joinProfile: JoinProfile | null = null;
+  private rejoinInFlight: Promise<boolean> | null = null;
+  private lastRejoinAt = Number.NEGATIVE_INFINITY;
+  /** The server refused name-only enroll (invite-only): no more silent attempts until a popup join works. */
+  private rejoinRefused = false;
+  /** Silent re-joins that produced a new session (diagnostics and tests). */
+  rejoins = 0;
   private link: LinkState = 'IDLE';
   private message: string | null = null;
   private demand = 0;
@@ -242,13 +269,20 @@ export class LiveBackend implements BackendAdapter {
 
   private async init(): Promise<void> {
     this.session = await this.opts.store.getSession().catch(() => null);
+    this.joinProfile = (await this.opts.store.getJoinProfile?.().catch(() => null)) ?? null;
+    // Sessions stored before D35 have no join profile: reuse the session's display name.
+    if (!this.joinProfile && this.session) this.joinProfile = { display_name: this.session.display_name, claimed_twitch_login: null };
+    let expired = false;
     if (this.session && Date.parse(this.session.expires_at_utc) <= this.now()) {
       this.session = null;
-      this.reenroll = true;
+      expired = true;
       await this.opts.store.setSession(null).catch(() => undefined);
     }
-    this.setLink(this.session ? 'IDLE' : 'NEEDS_ENROLL', this.reenroll ? 'Your session expired. Re-enroll with a new invite.' : null);
+    // An expired session with a known name re-joins silently (below); otherwise the user joins in the popup.
+    this.reenroll = expired && !this.joinProfile;
+    this.setLink(this.session ? 'IDLE' : 'NEEDS_ENROLL', this.reenroll ? 'Your session expired. Join again in the FaZeTime popup.' : null);
     await this.restoreTopUp();
+    if (expired && this.joinProfile) queueMicrotask(() => void this.silentRejoin().then((ok) => ok || this.markJoinNeeded()));
   }
 
   // ---------------------------------------------------------------- status / listeners
@@ -291,13 +325,16 @@ export class LiveBackend implements BackendAdapter {
   }
 
   // ---------------------------------------------------------------- HTTP
-  private async call<T>(method: 'GET' | 'POST', path: string, body?: unknown, auth = true): Promise<ApiResult<T>> {
+  private async call<T>(method: 'GET' | 'POST', path: string, body?: unknown, auth = true, mayRejoin = true): Promise<ApiResult<T>> {
     await this.ready;
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (body !== undefined) headers['Content-Type'] = 'application/json';
+    let tokenUsed: string | null = null;
     if (auth) {
-      if (!this.session) return httpError('UNAUTHENTICATED', 'Not enrolled. Open the FaZeTime popup and enter your invite code.');
-      headers.Authorization = `Bearer ${this.session.token}`;
+      if (!this.session && !(mayRejoin && (await this.silentRejoin())))
+        return httpError('UNAUTHENTICATED', 'Not signed in. Open the FaZeTime popup and join.');
+      tokenUsed = this.session!.token;
+      headers.Authorization = `Bearer ${tokenUsed}`;
     }
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), this.opts.requestTimeoutMs ?? 8000);
@@ -324,54 +361,126 @@ export class LiveBackend implements BackendAdapter {
     }
     if (res.ok) return { ok: true, status: res.status, body: json as T };
     if (isEnvelope(json)) {
-      if (res.status === 401 && auth) await this.onUnauthorized();
+      if (res.status === 401 && tokenUsed !== null) {
+        // The server applied nothing (auth runs first), so one retry with a fresh session is safe. A concurrent
+        // re-join may already have replaced the token; otherwise re-join silently with the stored name.
+        if (mayRejoin && ((this.session !== null && this.session.token !== tokenUsed) || (await this.silentRejoin(tokenUsed))))
+          return this.call<T>(method, path, body, auth, false);
+        await this.onUnauthorized(tokenUsed);
+      }
       return { ok: false, kind: 'http', status: res.status, error: json };
     }
     return unknownOutcome(`HTTP ${res.status} without a typed error; the outcome is unknown.`);
   }
 
-  private async onUnauthorized(): Promise<void> {
+  private async onUnauthorized(tokenUsed?: string): Promise<void> {
     if (!this.session) return;
-    this.opts.log?.('session rejected (401); asking the user to re-enroll');
+    if (tokenUsed !== undefined && this.session.token !== tokenUsed) return; // Already replaced by a re-join.
+    this.opts.log?.('session rejected (401) and no silent re-join; asking the user to join');
     this.session = null;
     this.me = null;
-    this.reenroll = true;
     await this.opts.store.setSession(null).catch(() => undefined);
     this.closeSocket();
     this.stopPolling();
-    this.setLink('NEEDS_ENROLL', 'Your session ended. Re-enroll with a new invite code in the FaZeTime popup.');
+    this.markJoinNeeded();
   }
 
-  // ---------------------------------------------------------------- enrollment (popup -> background)
-  async enroll(input: EnrollInput): Promise<ApiResult<{ me: Me }>> {
-    await this.ready;
+  private markJoinNeeded(): void {
+    if (this.session) return;
+    this.reenroll = true;
+    this.setLink('NEEDS_ENROLL', 'Your session ended. Join again in the FaZeTime popup.');
+  }
+
+  /**
+   * D35: one name-only enroll with the stored name, shared by every caller that needs it (single-flight).
+   * Resolves true when a new session is in place. Never prompts: if the server is invite-only it records that
+   * and the popup asks for a code only after the user presses Join. `staleToken`: re-join only if this token
+   * is still the current one (a 401 for an already replaced session just retries).
+   */
+  private silentRejoin(staleToken?: string): Promise<boolean> {
+    if (this.rejoinInFlight) return this.rejoinInFlight;
+    if (staleToken !== undefined && this.session && this.session.token !== staleToken) return Promise.resolve(true);
+    const profile = this.joinProfile;
+    if (!profile || this.rejoinRefused || this.now() - this.lastRejoinAt < REJOIN_MIN_INTERVAL_MS) return Promise.resolve(false);
+    this.lastRejoinAt = this.now();
+    this.rejoinInFlight = (async () => {
+      const r = await this.requestEnroll({ display_name: profile.display_name, claimed_twitch_login: profile.claimed_twitch_login });
+      if (!r.ok) {
+        if (refusesNameOnly(r)) this.rejoinRefused = true;
+        this.opts.log?.(refusesNameOnly(r) ? 'silent re-join refused: the server is invite-only' : 'silent re-join failed');
+        return false;
+      }
+      this.rejoins += 1;
+      this.opts.log?.('session replaced by a silent re-join');
+      await this.adoptSession(r.body, false);
+      return true;
+    })()
+      .catch(() => false)
+      .finally(() => {
+        this.rejoinInFlight = null;
+      });
+    return this.rejoinInFlight;
+  }
+
+  /** POST /v1/enroll. No invite code: the field is OMITTED (name-only, D35). Returns the validated response. */
+  private async requestEnroll(input: EnrollInput): Promise<ApiResult<EnrollResponse>> {
     const device_id = await this.opts.store.getDeviceId();
-    const req = {
-      invite_code: input.invite_code.trim(),
-      display_name: input.display_name.trim(),
+    const code = input.invite_code?.trim() ?? '';
+    const req: EnrollBody = {
+      ...(code !== '' ? { invite_code: code } : {}),
+      display_name: input.display_name.trim() || defaultDisplayName(),
       claimed_twitch_login: input.claimed_twitch_login?.trim() || null,
       device_id,
     };
     const r = await this.call<EnrollResponse>('POST', '/v1/enroll', req, false);
     if (!r.ok) return r;
     if (!validate(enrollResponseV, r.body).ok) return httpError('VALIDATION_FAILED', 'Unexpected enrollment response.');
-    const { me } = r.body;
+    return r;
+  }
+
+  /** Installs a session from an enroll response (popup join or silent re-join). The token stays here. */
+  private async adoptSession(body: EnrollResponse, fromPopup: boolean): Promise<Me> {
+    const { me } = body;
+    const userChanged = this.session?.user_id !== me.user.user_id;
     this.session = {
-      token: r.body.session_token,
-      session_id: r.body.session_id,
-      expires_at_utc: r.body.expires_at_utc,
+      token: body.session_token,
+      session_id: body.session_id,
+      expires_at_utc: body.expires_at_utc,
       user_id: me.user.user_id,
       display_name: me.user.display_name,
       role: me.user.role,
     };
     await this.opts.store.setSession(this.session);
+    this.joinProfile = { display_name: me.user.display_name, claimed_twitch_login: me.user.claimed_twitch_login };
+    await this.opts.store.setJoinProfile?.(this.joinProfile)?.catch(() => undefined);
     this.me = me;
-    this.current = null;
     this.reenroll = false;
+    this.rejoinRefused = false;
+    if (fromPopup || userChanged) {
+      // A different account: drop the cached wallet/position and versions, and the socket subscribed for the
+      // old one (only when established; an in-flight connect picks up the new token by itself).
+      this.current = null;
+      this.versions.clear();
+      if (this.wsPhase === 'live') this.closeSocket();
+    }
     this.setLink('IDLE', null);
     this.ensureLink();
     if (this.topup && this.topup.user_id !== me.user.user_id) await this.setTopUpRecord(null);
     else this.scheduleTopUpPoll(0);
+    if (!fromPopup && userChanged && this.demand > 0) void this.fetchSnapshot();
+    return me;
+  }
+
+  // ---------------------------------------------------------------- enrollment (popup -> background)
+  /**
+   * Popup "Join" (D35): name-only unless the popup passes the invite code it asked for after the server
+   * refused name-only enroll (401). An empty name gets a default ("Viewer 1234").
+   */
+  async enroll(input: EnrollInput): Promise<ApiResult<{ me: Me }>> {
+    await this.ready;
+    const r = await this.requestEnroll(input);
+    if (!r.ok) return r;
+    const me = await this.adoptSession(r.body, true);
     return { ok: true, status: 201, body: { me } }; // The token never leaves the background.
   }
 
@@ -380,6 +489,9 @@ export class LiveBackend implements BackendAdapter {
     this.session = null;
     this.me = null;
     this.current = null;
+    // An explicit sign-out must stay signed out: forget the name, so nothing re-joins silently.
+    this.joinProfile = null;
+    await this.opts.store.setJoinProfile?.(null)?.catch(() => undefined);
     await this.opts.store.setSession(null);
     this.closeSocket();
     this.stopPolling();
@@ -865,7 +977,7 @@ export class LiveBackend implements BackendAdapter {
 
   private async createTopUpOnce(req: TopUpRequest, forceOpen: boolean): Promise<ApiResult<TopUpTracking>> {
     await this.ready;
-    if (!this.session) return httpError('UNAUTHENTICATED', 'Not enrolled. Open the FaZeTime popup and enter your invite code.');
+    if (!this.session && !(await this.silentRejoin())) return httpError('UNAUTHENTICATED', 'Not signed in. Open the FaZeTime popup and join.');
     if (typeof req?.operation_id !== 'string' || !UUID_RE.test(req.operation_id) || !Number.isSafeInteger(req.amount_minor))
       return httpError('VALIDATION_FAILED', 'A top-up needs a lowercase UUID operation_id and an integer amount_minor.');
     const body = { operation_id: req.operation_id, amount_minor: req.amount_minor };
@@ -877,7 +989,7 @@ export class LiveBackend implements BackendAdapter {
       same
         ? { ...prev!, status: prev!.topup_id ? prev!.status : 'SUBMITTING', watching: true, dismissed: false, checkout_blocked: false, updated_at_ms: now }
         : {
-            user_id: this.session.user_id,
+            user_id: this.session!.user_id,
             operation_id: body.operation_id,
             amount_minor: body.amount_minor,
             topup_id: null,
@@ -1073,7 +1185,8 @@ export class LiveBackend implements BackendAdapter {
   }
 
   async presence(input: PresenceInput): Promise<ApiResult<PresenceAck>> {
-    if (!this.session) return httpError('UNAUTHENTICATED', 'Not enrolled.');
+    await this.ready;
+    if (!this.session && !(await this.silentRejoin())) return httpError('UNAUTHENTICATED', 'Not signed in.');
     const sid = await this.streamId();
     if (!sid.ok) return sid;
     return this.call<PresenceAck>('POST', '/v1/presence', {

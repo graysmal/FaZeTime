@@ -18,7 +18,7 @@ export function describeError(body: ErrorBody, labelFor: (side: Side) => string 
   const det = d(body);
   switch (body.code) {
     case 'UNAUTHENTICATED':
-      return { title: 'Session expired', detail: 'Enroll again with a new invite code.', action: 'NONE' };
+      return { title: 'Session expired', detail: 'Open the FaZeTime toolbar popup and press Join.', action: 'NONE' };
     case 'FORBIDDEN':
       return { title: 'Not allowed', detail: 'This session cannot do that.', action: 'NONE' };
     case 'INVALID_AMOUNT':

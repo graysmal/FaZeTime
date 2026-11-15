@@ -85,10 +85,11 @@ Chrome on this laptop is a Flatpak and can only read folders such as `~/Document
    - `~/Documents/fazetime-extension-live` (live, local API);
    - `~/Documents/fazetime-extension-live-pi` (live, Pi API).
 2. Check that the card shows the ID `hodaaffdhncidmaccebmionoljljfefe`.
-3. **Live builds:** click the toolbar icon and enter an invite code, a display name and an optional Twitch login.
-   - The popup sends these to the background, which calls `POST /v1/enroll` and keeps the session token in background storage.
+3. **Live builds (D35 open access):** click the toolbar icon and press **Join**. "Your name" and the Twitch name are optional; an empty name becomes "Viewer 1234".
+   - The popup sends these to the background, which calls `POST /v1/enroll` name-only (no `invite_code` field) and keeps the session token in background storage.
+   - Only if the server refuses name-only enroll (401, invite-only; or an older API that requires `invite_code`) does the popup show an "Invite code" field and retry with it.
    - The popup, content scripts and the page never receive the token, and it is never logged.
-   - A 401 at any point clears the session, and the panel and popup ask you to re-enroll.
+   - A 401 or an expired session triggers one silent name-only re-join with the stored name (single-flight, at most one attempt per 10 s), then the request is retried once. Only if that fails do the panel and popup ask you to join again. An explicit Sign out forgets the name, so nothing re-joins.
 4. Open `https://www.twitch.tv/fazegavin1234` (live) or any channel page (mock).
 
 ## Live adapter behaviour (CONTRACTS 9.9, 9.15)

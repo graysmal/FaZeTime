@@ -137,8 +137,8 @@ export function Panel(props: { host: HTMLElement; placement: Placement; notice: 
           {st.backend?.mode === 'LIVE' && !st.backend.enrolled && (
             <div className="ft-notice ft-notice--warn">
               {st.backend.reenroll
-                ? 'Your session ended. Open the FaZeTime toolbar popup and enroll again with a new invite code.'
-                : 'Sign in: open the FaZeTime toolbar popup and enter your invite code.'}
+                ? 'Your session ended. Open the FaZeTime toolbar popup and press Join.'
+                : 'Open the FaZeTime toolbar popup and press Join.'}
             </div>
           )}
           {st.backend?.mode === 'LIVE' && st.backend.enrolled && (st.backend.link === 'POLLING' || st.backend.link === 'ORIGIN_REJECTED') && (

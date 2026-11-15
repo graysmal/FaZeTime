@@ -6,11 +6,17 @@ body {
   font-family: Inter, Roobert, 'Helvetica Neue', Helvetica, Arial, sans-serif;
   font-size: 13px;
 }
-main {
-  padding: 14px;
+main,
+form {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+main {
+  padding: 14px;
+}
+form {
+  margin: 0;
 }
 header {
   display: flex;

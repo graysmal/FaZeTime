@@ -216,7 +216,7 @@ export class PanelController {
         const code = result.error.error.code;
         issue =
           code === 'UNAUTHENTICATED'
-            ? 'Not enrolled. Open the FaZeTime toolbar popup and enter your invite code.'
+            ? 'Not signed in. Open the FaZeTime toolbar popup and press Join.'
             : code === 'NOT_FOUND'
               ? 'No stream is set up on the server yet.'
               : describeError(result.error.error).title;

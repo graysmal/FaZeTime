@@ -203,7 +203,11 @@ export interface PresenceInput {
 }
 
 export interface EnrollInput {
-  invite_code: string;
+  /**
+   * Omitted, null or blank: name-only enroll (D35 open access). An invite-only server answers 401
+   * UNAUTHENTICATED, and the popup then asks for an invite code and retries with it.
+   */
+  invite_code?: string | null;
   display_name: string;
   claimed_twitch_login: string | null;
 }

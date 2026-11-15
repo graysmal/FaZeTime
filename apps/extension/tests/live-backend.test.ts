@@ -212,7 +212,7 @@ describe('LiveBackend (background-only live adapter)', () => {
     expect(sockets).toHaveLength(1);
   });
 
-  it('a 401 clears the session and asks the user to re-enroll', async () => {
+  it('a 401 that survives the silent re-join clears the session and asks the user to join', async () => {
     const h = await connected();
     h.fail401();
     const r = await h.backend.getOperation('00000000-0000-4000-8000-000000000001');
