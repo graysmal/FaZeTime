@@ -825,3 +825,28 @@ A missing, extra or malformed `generic` object is a schema error, HTTP 422, and 
 - **Worker-side detection slack (end-to-end finding):** for kinds whose episode end comes from the screen, the worker adds an end-detection slack of 15 s (`FAZETIME_AI_END_DETECTION_SLACK_S`) to the fairness margin. It voids when the detected end is at or before `lock_media_ms` + 20 000 + 15 000, because a result screen trails the decisive moment (in Peggle, by about 12 s). The proposer's minimum expected lead after lock is 40 s.
 - **Reader fallback (end-to-end finding):** if a reader's model errors or is cooling down, the other reader model reads that reader's own frames. Two agreeing reads on different frames are still required.
 - **Viewer isolation:** viewer snapshots, `/v1/me` and PUBLIC/USER events never carry `generic`, the cues or `template_id`. This is tested.
+
+### 9.20 AI activity feed, result ETA and stream context (v1 additive, owner requests 2026-11-15 ~03:00 CT)
+
+These additions are for operator visibility and viewer UX. None of them changes money, market state or settlement rules.
+
+**1. AI activity feed: the "thoughts" the advanced console shows.**
+- **`POST /v1/worker/ai-activity`** (MEDIA_WORKER).
+  - Body: `{schema_version: 1, stream_id, source_epoch, items[1..50]}`.
+  - Each item: `{at_utc, media_ms|null, role: OBSERVER|PROPOSER|RESOLVER|STREAM, outcome (≤40 chars, e.g. ABSTAIN, REJECT:INSUFFICIENT_LEAD, POSTED:PENDING, OBSERVED, READS), kind|null (generic kind), text (≤400 chars), fields (flat object, ≤12 keys, scalar values ≤120 chars)}`.
+  - `text` and `fields` are untrusted model output: the proposer's `reason`, the observer's `notable` notes and result text, or the reader texts. They are stored inert.
+  - Response `{accepted}`. Rate: at most one request per 2 s per worker; the worker batches.
+- **Storage:** the API keeps the newest 300 items per stream in memory only. A restart clears them. No DB table.
+- **`GET /v1/operator/ai-activity?limit=100`** (operator only) returns `{items}`, newest first.
+- **Never sent to viewers.**
+
+**2. Expected result time.**
+- `generic` (§9.19) gains an optional `expected_result_in_s`: an integer from 0 to 900, or null. It is the worker's estimate of seconds from betting close (lock) until the result is known. It comes from the proposer's `seconds_to_outcome` minus the betting window, or from this stream's earlier round durations when there are any.
+- The public market view adds **`expected_result_at_utc`** = `close_at_utc` + `expected_result_in_s` (null when unknown, and for H2H and fixture markets).
+- **Viewer and console behaviour:** once the market is LOCKED or EVALUATING, and that time has passed with no result yet, the UI shows a pending-result state: **"AI is watching for the result…"** with a subtle animation. This is truthful: the observer keeps sampling the stream. The UI never claims a decision is being made before one exists.
+
+**3. Stream context.**
+- The worker reads the Twitch title, category and author from Streamlink's `--json` metadata, at start and then every 5 minutes.
+- It adds them to the observer and proposer prompts as **untrusted** context ("Stream title (untrusted): …; Category: …"). The category may seed the activity name.
+- Each change is posted as a `STREAM` activity item, so the console shows them.
+- The Twitch "About" description is not available from Streamlink and is out of scope.
