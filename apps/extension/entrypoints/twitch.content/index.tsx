@@ -14,7 +14,7 @@ import { watchKey, wxtKV } from '../../src/storage';
 import { EnvContext, type UiEnv } from '../../src/ui/hooks';
 import { Overlay } from '../../src/ui/Overlay';
 import { Panel } from '../../src/ui/Panel';
-import { DIAMOND_CSS_VALUE, registerFonts } from '../../src/ui/theme';
+import { DIAMOND_CSS_VALUE, MEANDER_CSS_VALUE, registerFonts } from '../../src/ui/theme';
 
 export default defineContentScript({
   matches: ['https://www.twitch.tv/*'],
@@ -66,6 +66,7 @@ export default defineContentScript({
     const renderInto = (root: HTMLElement, channel: string, node: (env: UiEnv) => ReactElement): MountedView => {
       const env = makeEnv(channel);
       root.style.setProperty('--ft-diamond', DIAMOND_CSS_VALUE);
+      root.style.setProperty('--ft-meander', MEANDER_CSS_VALUE);
       const reactRoot = createRoot(root);
       reactRoot.render(
         <StrictMode>

@@ -298,3 +298,58 @@ describe('profile card (owner request 2026-11-15)', () => {
     expect(html).toContain('aria-label="Your FaZeTime profile"');
   });
 });
+
+describe('CALM / ENRAGE theme (owner request 2026-11-15)', () => {
+  it('the panel defaults to CALM (FaZe) and carries the switch', () => {
+    const html = render(envWith({}, 'live'), <Panel host={document.createElement('div')} placement="chat" notice={null} retryAttach={() => undefined} />);
+    expect(html).toContain('data-theme="faze"');
+    expect(html).toMatch(/role="radiogroup" aria-label="Theme" data-value="calm"/);
+    expect(html).toMatch(/aria-checked="true" class="ft-theme-opt"[^>]*>F</);
+    expect(html).toContain('<span class="omega">Θ</span>');
+    expect(html).not.toContain('ft-sky');
+  });
+
+  it('maps the stored choice to the odyssey attribute', async () => {
+    const { themeAttr } = await import('../src/ui/theme');
+    expect(themeAttr('enrage')).toBe('odyssey');
+    expect(themeAttr('calm')).toBe('faze');
+    expect(themeAttr(null)).toBe('faze');
+  });
+});
+
+describe('Redeem journey map (owner request 2026-11-15)', () => {
+  const items = [
+    { item_id: 'c', title: 'Hoodie', description: 'x', price_minor: 2500 },
+    { item_id: 'a', title: 'Sticker', description: 'x', price_minor: 500 },
+    { item_id: 'b', title: 'Emote', description: 'x', price_minor: 1000 },
+  ];
+  it('orders stops cheapest first and locks what the balance cannot reach, with the amount still needed', async () => {
+    const { redeemMap } = await import('../src/ui/Panel');
+    const stops = redeemMap(items, 1200, false);
+    expect(stops.map((s) => s.item.item_id)).toEqual(['a', 'b', 'c']);
+    expect(stops.map((s) => s.locked)).toEqual([false, false, true]);
+    expect(stops[2]!.needMinor).toBe(1300);
+  });
+  it('locks every stop while rewards are unavailable, and while the balance is unknown', async () => {
+    const { redeemMap } = await import('../src/ui/Panel');
+    expect(redeemMap(items, 99_999, true).every((s) => s.locked && s.needMinor === 0)).toBe(true);
+    expect(redeemMap(items, null, false).every((s) => s.locked)).toBe(true);
+  });
+});
+
+describe('Redeem voyage ship (owner request 2026-11-15)', () => {
+  const items = [
+    { item_id: 'a', title: 'A', description: 'x', price_minor: 500 },
+    { item_id: 'b', title: 'B', description: 'x', price_minor: 1000 },
+    { item_id: 'c', title: 'C', description: 'x', price_minor: 2500 },
+  ];
+  it('sails on the leg into the first locked stop, as far as the balance reaches', async () => {
+    const { redeemMap, shipPosition } = await import('../src/ui/Panel');
+    const at = (bal: number | null, unavailable = false) => shipPosition(redeemMap(items, bal, unavailable), bal, unavailable);
+    expect(at(2000)).toEqual({ leg: 2, t: (2000 - 1000) / 1500 });
+    expect(at(200)).toEqual({ leg: 0, t: 0.4 });
+    expect(at(5000)).toEqual({ leg: 2, t: 0.92 }); // all reached: docked at the last stop
+    expect(at(2000, true)).toEqual({ leg: 0, t: 0.12 }); // rewards unavailable: just leaving port
+    expect(shipPosition([], 100, false)).toBeNull();
+  });
+});

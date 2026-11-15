@@ -1471,3 +1471,1013 @@ button:disabled {
 .ft-profile-names .ft-verified {
   align-self: center;
 }
+
+/* =============================================================================================================
+   CALM / ENRAGE switch + ENRAGE = Odyssey theme (owner request, 2026-11-15). CALM keeps everything above.
+   Odyssey: parchment and navy, Greek-key band, Cinzel title, Barlow Semi Condensed text, drifting pixel storm.
+   Scoped to [data-theme='odyssey'] on .ft-panel / .ft-overlay.
+   ============================================================================================================= */
+/* ---- the switch (CALM look by default) ---- */
+.ft-theme {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  isolation: isolate;
+  padding: 2px;
+  background: #121216;
+  border: 1px solid #3a2026;
+  clip-path: var(--chamfer-sm);
+}
+.ft-root .ft-theme-opt {
+  position: relative;
+  z-index: 1;
+  overflow: visible;
+  padding: 3px 6px;
+  border: none;
+  background: none;
+  font-family: var(--ft-font-head);
+  font-weight: 400;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ft-muted);
+  transition: color 0.25s ease;
+}
+.ft-theme-opt[aria-checked='true'] {
+  color: #fff;
+}
+.ft-theme-thumb {
+  position: absolute;
+  z-index: 0;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  background: var(--ft-red);
+  clip-path: var(--chamfer-sm);
+  transition: transform 0.3s var(--ft-ease), width 0.3s var(--ft-ease);
+}
+.ft-root .ft-theme-opt {
+  width: 50px;
+  text-align: center;
+}
+.ft-theme-thumb {
+  width: 50px;
+}
+.ft-theme[data-value='enrage'] .ft-theme-thumb {
+  transform: translateX(50px);
+}
+.ft-root button.ft-theme-opt.ft-glaze::after {
+  display: none; /* the thumb carries the motion */
+}
+
+/* ---- Odyssey palette ---- */
+[data-theme='odyssey'] {
+  --ft-bg: #ece3d3;
+  --ft-surface: rgba(247, 242, 232, 0.92);
+  --ft-surface-2: #e8e0d1;
+  --ft-border: #b9b5aa;
+  --ft-text: #1f3550;
+  --ft-muted: #5f6b77;
+  --ft-faint: #8a8f93;
+  --ft-red: #3a5875;
+  --ft-red-hover: #2c4762;
+  --ft-no: #a7a99f;
+  --ft-ok: #2f7a4a;
+  --ft-warn: #a8781c;
+  --ft-gold: #b38b2e;
+  --ft-terracotta: #b5532f;
+  --ft-font-title: 'FT Cinzel', Georgia, serif;
+  --ft-font-head: 'FT Barlow SC', 'Arial Narrow', sans-serif;
+  --ft-font-body: 'FT Barlow SC', 'Arial Narrow', sans-serif;
+  color-scheme: light;
+  color: var(--ft-text);
+  font-family: var(--ft-font-body);
+  font-weight: 500;
+}
+
+/* rounded, soft, stone-bordered: undo the CALM cut corners */
+[data-theme='odyssey'] .ft-stat,
+[data-theme='odyssey'] .ft-item,
+[data-theme='odyssey'] .ft-code,
+[data-theme='odyssey'] .ft-choice,
+[data-theme='odyssey'] .ft-banner,
+[data-theme='odyssey'] .ft-status,
+[data-theme='odyssey'] .ft-notice,
+[data-theme='odyssey'] .ft-dialog,
+[data-theme='odyssey'] .ft-drop,
+[data-theme='odyssey'] .ft-menu,
+[data-theme='odyssey'] .ft-profile,
+[data-theme='odyssey'] .ft-secondary,
+[data-theme='odyssey'] .ft-amount,
+[data-theme='odyssey'] .ft-stake,
+[data-theme='odyssey'] .ft-input,
+[data-theme='odyssey'] .ft-profile-row,
+[data-theme='odyssey'] .ft-select,
+[data-theme='odyssey'] .ft-icon-btn,
+[data-theme='odyssey'] .ft-chip-btn {
+  border-radius: 8px !important;
+  clip-path: none !important;
+}
+[data-theme='odyssey'] .ft-badge,
+[data-theme='odyssey'] .ft-state,
+[data-theme='odyssey'] .ft-tag,
+[data-theme='odyssey'] .ft-mode,
+[data-theme='odyssey'] .ft-verified,
+[data-theme='odyssey'] .ft-x,
+[data-theme='odyssey'] .ft-menu-item,
+[data-theme='odyssey'] .ft-poolbar {
+  border-radius: 3px !important;
+  clip-path: none !important;
+}
+[data-theme='odyssey'] .ft-primary {
+  border-radius: 0 !important; /* square navy slab, like the reference "APPLY" */
+  clip-path: none !important;
+}
+[data-theme='odyssey'] .ft-pill {
+  border-radius: 999px !important;
+  clip-path: none !important;
+}
+
+/* ---- panel shell + backdrop ---- */
+.ft-panel[data-theme='odyssey'] {
+  background: var(--ft-bg);
+  border-bottom-color: var(--ft-border);
+}
+.ft-panel[data-theme='odyssey'] > .ft-head,
+.ft-panel[data-theme='odyssey'] > .ft-collapsible {
+  position: relative;
+  z-index: 1;
+}
+.ft-sky {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.ft-sky canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.ft-rain i {
+  position: absolute;
+  top: -30%;
+  width: 1px;
+  height: 60px;
+  background: linear-gradient(180deg, transparent, rgba(80, 86, 92, 0.35));
+  animation: ft-rain 2.1s linear infinite;
+}
+@keyframes ft-rain {
+  from {
+    transform: translate(0, 0) rotate(14deg);
+  }
+  to {
+    transform: translate(-90px, 520px) rotate(14deg);
+  }
+}
+.ft-flash {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 25% 0%, rgba(255, 252, 240, 0.85), transparent 65%);
+  opacity: 0;
+  animation: ft-flash 12s ease-out infinite 4s;
+}
+@keyframes ft-flash {
+  0%, 90%, 100% { opacity: 0; }
+  91% { opacity: 0.9; }
+  92% { opacity: 0.15; }
+  93.5% { opacity: 0.7; }
+  96% { opacity: 0; }
+}
+
+/* header with a Greek-key band along its bottom edge */
+[data-theme='odyssey'] .ft-head {
+  background:
+    var(--ft-meander, none) left 8px bottom 3px / auto 11px repeat-x,
+    rgba(246, 240, 229, 0.92);
+  backdrop-filter: none;
+  padding-bottom: 17px;
+  border-bottom-color: var(--ft-border);
+}
+.ft-panel[data-theme='odyssey'][data-open='false'] {
+  border-bottom-color: var(--ft-red);
+}
+[data-theme='odyssey'] .ft-word,
+[data-theme='odyssey'] .ft-pill-brand {
+  font-family: var(--ft-font-title);
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: 0.03em;
+  color: var(--ft-text);
+}
+[data-theme='odyssey'] .ft-pill-brand {
+  font-size: 14px;
+}
+[data-theme='odyssey'] .ft-word b,
+[data-theme='odyssey'] .ft-pill-brand b {
+  font-weight: 700;
+  color: var(--ft-gold);
+  text-shadow: none;
+}
+[data-theme='odyssey'] .ft-icon-btn,
+[data-theme='odyssey'] .ft-chip-btn {
+  background: #f3ede2;
+  border-color: #c9c3b6;
+  color: var(--ft-text);
+}
+[data-theme='odyssey'] .ft-collapse:hover,
+[data-theme='odyssey'] .ft-profile-btn:hover,
+[data-theme='odyssey'] .ft-profile-btn[aria-expanded='true'] {
+  color: var(--ft-red);
+  border-color: var(--ft-red);
+}
+
+/* the switch, Odyssey look: rounded parchment pill with a navy thumb */
+[data-theme='odyssey'] .ft-theme {
+  background: #f3ede2;
+  border: 1px solid #d6cfc1;
+  border-radius: 999px;
+  clip-path: none;
+  box-shadow: 0 1px 5px rgba(31, 53, 80, 0.14), inset 0 0 0 2px #faf6ee;
+}
+[data-theme='odyssey'] .ft-root .ft-theme-opt,
+[data-theme='odyssey'] .ft-theme-opt {
+  font-family: var(--ft-font-head);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: #66727e;
+}
+[data-theme='odyssey'] .ft-theme-opt[aria-checked='true'] {
+  color: #fff;
+}
+[data-theme='odyssey'] .ft-theme-thumb {
+  background: #3a5875;
+  border-radius: 999px;
+  clip-path: none;
+}
+
+/* tabs */
+[data-theme='odyssey'] .ft-tabs {
+  background: rgba(246, 240, 229, 0.75);
+  border-bottom-color: var(--ft-border);
+}
+[data-theme='odyssey'] .ft-tab {
+  font-family: var(--ft-font-head);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+}
+[data-theme='odyssey'] .ft-tab-ink {
+  box-shadow: none;
+}
+
+/* type */
+[data-theme='odyssey'] .ft-q,
+[data-theme='odyssey'] .ft-banner h4,
+[data-theme='odyssey'] .ft-dialog h4,
+[data-theme='odyssey'] .ft-profile-name {
+  font-family: var(--ft-font-title);
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0.01em;
+}
+[data-theme='odyssey'] .ft-q {
+  font-size: 17px;
+}
+[data-theme='odyssey'] .ft-hint,
+[data-theme='odyssey'] .ft-fine,
+[data-theme='odyssey'] .ft-label,
+[data-theme='odyssey'] .ft-notice,
+[data-theme='odyssey'] .ft-estimate,
+[data-theme='odyssey'] .ft-position,
+[data-theme='odyssey'] .ft-pooltotal,
+[data-theme='odyssey'] .ft-choice-sub,
+[data-theme='odyssey'] .ft-meta,
+[data-theme='odyssey'] .ft-banner p,
+[data-theme='odyssey'] .ft-item p,
+[data-theme='odyssey'] .ft-stat span {
+  font-family: var(--ft-font-body);
+  font-weight: 500;
+}
+[data-theme='odyssey'] .ft-tab,
+[data-theme='odyssey'] .ft-state,
+[data-theme='odyssey'] .ft-badge,
+[data-theme='odyssey'] .ft-tag,
+[data-theme='odyssey'] .ft-icon-btn,
+[data-theme='odyssey'] .ft-chip-btn,
+[data-theme='odyssey'] .ft-primary,
+[data-theme='odyssey'] .ft-secondary,
+[data-theme='odyssey'] .ft-amount,
+[data-theme='odyssey'] .ft-choice-label,
+[data-theme='odyssey'] .ft-countdown,
+[data-theme='odyssey'] .ft-pill-time,
+[data-theme='odyssey'] .ft-stat b,
+[data-theme='odyssey'] .ft-stake input,
+[data-theme='odyssey'] .ft-verified,
+[data-theme='odyssey'] .ft-profile-label,
+[data-theme='odyssey'] .ft-profile-row dt,
+[data-theme='odyssey'] .ft-profile-balance {
+  font-family: var(--ft-font-head);
+  font-weight: 600;
+}
+[data-theme='odyssey'] .ft-stat b,
+[data-theme='odyssey'] .ft-profile-balance {
+  font-weight: 700;
+}
+
+/* surfaces: parchment cards with stone borders (replaces the CALM red edges and dark wash) */
+[data-theme='odyssey'] .ft-stat,
+[data-theme='odyssey'] .ft-choice,
+[data-theme='odyssey'] .ft-banner,
+[data-theme='odyssey'] .ft-status,
+[data-theme='odyssey'] .ft-notice,
+[data-theme='odyssey'] .ft-item,
+[data-theme='odyssey'] .ft-profile-row {
+  background: rgba(247, 242, 232, 0.9);
+  border: 1px solid #b4b1a7;
+}
+[data-theme='odyssey'] .ft-pane[data-tab='wallet'] .ft-stat,
+[data-theme='odyssey'] .ft-pane[data-tab='redeem'] .ft-item,
+[data-theme='odyssey'] .ft-pane[data-tab='redeem'] .ft-code,
+[data-theme='odyssey'] .ft-pane[data-tab='wallet'] .ft-primary:disabled,
+[data-theme='odyssey'] .ft-pane[data-tab='redeem'] .ft-secondary {
+  border: 1px solid #a9a9a2;
+  box-shadow: none;
+}
+[data-theme='odyssey'] .ft-pane[data-tab='redeem'] .ft-item {
+  background: rgba(247, 242, 232, 0.9);
+}
+[data-theme='odyssey'] .ft-pane[data-tab='redeem'] .ft-secondary:hover:not(:disabled) {
+  background: rgba(58, 88, 117, 0.12);
+  color: var(--ft-text);
+}
+[data-theme='odyssey'] .ft-notice--warn {
+  border-color: rgba(168, 120, 28, 0.6);
+  background: rgba(255, 244, 214, 0.9);
+  color: #7a5713;
+}
+[data-theme='odyssey'] .ft-hint--warn {
+  color: #8a6414;
+}
+[data-theme='odyssey'] .ft-money,
+[data-theme='odyssey'] .ft-stat b.ft-money,
+[data-theme='odyssey'] .ft-label b.ft-money {
+  color: var(--ft-ok);
+  text-shadow: none;
+}
+[data-theme='odyssey'] .ft-state--OPEN {
+  background: rgba(58, 88, 117, 0.14);
+  color: var(--ft-red);
+}
+[data-theme='odyssey'] .ft-choice[aria-checked='true'].ft-choice--YES {
+  border-color: var(--ft-red);
+  box-shadow: inset 0 0 0 1px var(--ft-red);
+}
+[data-theme='odyssey'] .ft-dot,
+[data-theme='odyssey'] .ft-watch > span {
+  border-radius: 50%;
+  transform: none;
+}
+
+/* buttons */
+[data-theme='odyssey'] .ft-primary {
+  background:
+    radial-gradient(circle at 18px 50%, #fff 0 4px, rgba(255, 255, 255, 0.16) 5px 10px, transparent 11px),
+    #3a5875;
+  color: #fff;
+  letter-spacing: 0.16em;
+}
+[data-theme='odyssey'] .ft-primary:hover:not(:disabled) {
+  background:
+    radial-gradient(circle at 18px 50%, #fff 0 4px, rgba(255, 255, 255, 0.2) 5px 10px, transparent 11px),
+    #2c4762;
+}
+[data-theme='odyssey'] .ft-primary:disabled {
+  background: #e3dccd;
+  color: #9a9a92;
+}
+[data-theme='odyssey'] .ft-secondary,
+[data-theme='odyssey'] .ft-amount {
+  background: #f3ede2;
+  border: 1px solid #b4b1a7;
+  color: var(--ft-text);
+}
+[data-theme='odyssey'] .ft-link {
+  color: var(--ft-red);
+}
+/* glaze on parchment: a plain bright sheen (the diamond texture belongs to CALM) */
+[data-theme='odyssey'] button.ft-glaze::after {
+  background: linear-gradient(105deg, transparent 38%, rgba(255, 255, 255, 0.75) 50%, transparent 62%);
+  mix-blend-mode: normal;
+}
+
+/* dialogs, menus, profile, over-video dropdown */
+[data-theme='odyssey'] .ft-dialog,
+[data-theme='odyssey'] .ft-drop,
+[data-theme='odyssey'] .ft-menu {
+  background:
+    var(--ft-meander, none) left 10px top 6px / auto 11px repeat-x,
+    #f4eee3;
+  border: 1px solid #a9a9a2;
+  padding-top: 24px;
+  box-shadow: 0 10px 28px rgba(31, 53, 80, 0.22);
+}
+[data-theme='odyssey'] .ft-profile {
+  background:
+    var(--ft-meander, none) left 10px bottom 6px / auto 11px repeat-x,
+    #f4eee3;
+  border: 1px solid #3a5875;
+  padding-bottom: 24px;
+  box-shadow: 0 10px 28px rgba(31, 53, 80, 0.22);
+}
+[data-theme='odyssey'] .ft-avatar {
+  clip-path: none;
+  border-radius: 50%;
+  background: var(--ft-gold);
+}
+[data-theme='odyssey'] .ft-avatar span {
+  clip-path: none;
+  border-radius: 50%;
+  background: #3a5875;
+  color: #f4eee3;
+  font-family: var(--ft-font-title);
+  font-weight: 700;
+  text-shadow: none;
+}
+[data-theme='odyssey'] .ft-verified {
+  color: var(--ft-text);
+  background: rgba(47, 122, 74, 0.12);
+}
+[data-theme='odyssey'] .ft-verified--no {
+  color: #7a5713;
+  background: rgba(168, 120, 28, 0.12);
+}
+[data-theme='odyssey'] .ft-x {
+  color: var(--ft-muted);
+}
+[data-theme='odyssey'] .ft-x:hover {
+  color: var(--ft-text);
+  border-color: var(--ft-red);
+  background: rgba(58, 88, 117, 0.12);
+}
+[data-theme='odyssey'] .ft-backdrop {
+  background: rgba(31, 53, 80, 0.28);
+}
+[data-theme='odyssey'] .ft-pill {
+  background: rgba(244, 238, 227, 0.95);
+  border: 1px solid #b4b1a7;
+  color: var(--ft-text);
+  backdrop-filter: none;
+}
+[data-theme='odyssey'] .ft-pill-time {
+  color: var(--ft-terracotta);
+}
+[data-theme='odyssey'] .ft-resize {
+  background: rgba(246, 240, 229, 0.9);
+}
+[data-theme='odyssey'] .ft-poolbar-no {
+  background: #c9c2b3;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ft-rain i,
+  .ft-flash {
+    animation: none !important;
+    opacity: 0;
+  }
+  .ft-theme-thumb {
+    transition: none;
+  }
+}
+
+/* Header fit with the theme switch: a slightly smaller logo and switch so nothing truncates at 340px. */
+.ft-panel .ft-word {
+  font-size: 17px;
+}
+[data-theme='odyssey'] .ft-word {
+  font-size: 16px;
+}
+.ft-root .ft-theme-opt {
+  width: 46px;
+  font-size: 10.5px;
+  padding: 3px 0;
+}
+.ft-theme-thumb {
+  width: 46px;
+}
+.ft-theme[data-value='enrage'] .ft-theme-thumb {
+  transform: translateX(46px);
+}
+.ft-head {
+  gap: 6px;
+}
+.ft-brand {
+  min-width: 70px;
+}
+/* the profile card's Greek-key band sits at the end of its content, not over it */
+[data-theme='odyssey'] .ft-profile {
+  background-attachment: local, scroll;
+}
+.ft-panel[data-theme='faze'] .ft-word {
+  font-size: 16px;
+  letter-spacing: 0.01em;
+}
+
+/* =============================================================================================================
+   Redeem as a journey map (owner request): rewards are stops on a winding route, cheapest first. Reached stops
+   are unlocked (open padlock, solid route); the rest are locked (padlock, dashed route, "$X more to unlock").
+   ============================================================================================================= */
+.ft-map {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  --ft-map-node: 34px;
+  --ft-map-keyhole: var(--ft-bg);
+}
+.ft-map-row {
+  position: relative;
+}
+.ft-map-stop,
+.ft-map-start {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 0 4px 0 10px;
+}
+.ft-map-row--right .ft-map-stop {
+  flex-direction: row-reverse;
+  padding: 0 10px 0 4px;
+  text-align: right;
+}
+.ft-map-leg {
+  display: block;
+  width: 100%;
+  height: 34px;
+  overflow: visible;
+}
+.ft-map-leg path {
+  fill: none;
+  stroke: var(--ft-faint);
+  stroke-width: 2;
+  stroke-dasharray: 5 5;
+  opacity: 0.8;
+}
+.ft-map-leg--done path {
+  stroke: var(--ft-red);
+  stroke-width: 3;
+  stroke-dasharray: none;
+  opacity: 1;
+  filter: drop-shadow(0 0 4px rgba(228, 0, 43, 0.6));
+}
+.ft-map-node {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--ft-map-node);
+  height: var(--ft-map-node);
+  margin-top: 2px;
+  color: #fff;
+  background: var(--ft-red);
+  clip-path: var(--octagon);
+}
+.ft-map-node--start {
+  background: var(--ft-ok);
+  color: #0b1a12;
+  --ft-map-keyhole: var(--ft-ok);
+}
+.ft-map-node--open {
+  box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.25);
+  animation: ft-map-pulse 2.4s ease-in-out infinite;
+}
+.ft-map-node--locked {
+  background: var(--ft-surface-2);
+  color: var(--ft-faint);
+  outline: 1px solid var(--ft-border);
+}
+@keyframes ft-map-pulse {
+  50% {
+    filter: brightness(1.25);
+  }
+}
+.ft-map-card {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 8px 10px;
+  background: rgba(31, 31, 35, 0.82);
+  border: 1px solid var(--ft-red);
+  clip-path: var(--chamfer);
+  box-shadow: inset 0 0 12px rgba(228, 0, 43, 0.22);
+}
+.ft-map-row--locked .ft-map-card {
+  border-color: var(--ft-border);
+  box-shadow: none;
+  opacity: 0.85;
+}
+.ft-map-card strong {
+  display: block;
+  font-family: var(--ft-font-head);
+  font-weight: 400;
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.ft-map-card p {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--ft-muted);
+}
+.ft-map-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+.ft-map-row--right .ft-map-foot {
+  flex-direction: row-reverse;
+}
+.ft-map-price {
+  font-family: var(--ft-font-head);
+  font-size: 16px;
+  letter-spacing: 0.04em;
+}
+.ft-map-need {
+  font-size: 11px;
+  color: var(--ft-warn);
+}
+.ft-map .ft-secondary {
+  padding: 4px 12px;
+  border: 1px solid var(--ft-red);
+  white-space: nowrap;
+}
+.ft-map .ft-secondary:hover:not(:disabled) {
+  background: rgba(228, 0, 43, 0.18);
+  color: #fff;
+}
+
+/* Odyssey: a sea chart. Navy route, round gold-rimmed waypoints, parchment cards. */
+[data-theme='odyssey'] .ft-map {
+  --ft-map-keyhole: #f4eee3;
+}
+[data-theme='odyssey'] .ft-map-leg--done path {
+  stroke: #3a5875;
+  filter: none;
+}
+[data-theme='odyssey'] .ft-map-leg path {
+  stroke: #8f8f86;
+}
+[data-theme='odyssey'] .ft-map-node {
+  clip-path: none;
+  border-radius: 50%;
+  background: #3a5875;
+  color: #f4eee3;
+  box-shadow: 0 0 0 2px var(--ft-gold);
+}
+[data-theme='odyssey'] .ft-map-node--start {
+  background: var(--ft-gold);
+  color: #f4eee3;
+  box-shadow: 0 0 0 2px #3a5875;
+  --ft-map-keyhole: var(--ft-gold);
+}
+[data-theme='odyssey'] .ft-map-node--locked {
+  background: #e3dccd;
+  color: #8f8f86;
+  outline: none;
+  box-shadow: 0 0 0 1.5px #b4b1a7;
+}
+[data-theme='odyssey'] .ft-map-card {
+  clip-path: none;
+  border-radius: 8px;
+  background: rgba(247, 242, 232, 0.92);
+  border: 1px solid #a9a9a2;
+  box-shadow: none;
+}
+[data-theme='odyssey'] .ft-map-row--locked .ft-map-card {
+  border-style: dashed;
+}
+[data-theme='odyssey'] .ft-map-card strong {
+  font-family: var(--ft-font-title);
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0.01em;
+}
+[data-theme='odyssey'] .ft-map-price {
+  font-weight: 700;
+}
+[data-theme='odyssey'] .ft-map-need {
+  color: #8a6414;
+}
+[data-theme='odyssey'] .ft-map .ft-secondary {
+  border: 1px solid #3a5875;
+  border-radius: 0 !important;
+  background: #3a5875;
+  color: #fff;
+}
+[data-theme='odyssey'] .ft-map .ft-secondary:hover:not(:disabled) {
+  background: #2c4762;
+  color: #fff;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ft-map-node--open {
+    animation: none;
+  }
+}
+[data-theme='odyssey'] .ft-map-leg.ft-map-leg--done path {
+  stroke: #3a5875;
+  stroke-width: 3;
+  stroke-dasharray: none;
+}
+
+/* Switch labels: "FaZe" (kept in its brand casing) and the Greek omega, drawn from a serif that has Greek. */
+.ft-root .ft-theme-opt, [data-theme='odyssey'] .ft-root .ft-theme-opt, [data-theme='odyssey'] .ft-theme-opt {
+  text-transform: none;
+}
+.ft-root .ft-theme-opt .omega, [data-theme='odyssey'] .ft-root .ft-theme-opt .omega, [data-theme='odyssey'] .ft-theme-opt .omega {
+  font-family: 'Times New Roman', Georgia, 'Noto Serif', serif;
+  font-weight: 700;
+  font-size: 1.35em;
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* ---- Redeem voyage: the ship on the route, and stronger dashed legs for the stretches still locked ---- */
+.ft-map-legwrap {
+  position: relative;
+  height: 34px;
+}
+.ft-map-leg path {
+  stroke: #9b9ba8;
+  stroke-width: 3;
+  stroke-dasharray: 9 6;
+  stroke-linecap: round;
+  opacity: 1;
+  animation: ft-map-march 1.4s linear infinite;
+}
+.ft-map-leg.ft-map-leg--done path {
+  stroke: var(--ft-red);
+  stroke-width: 3;
+  stroke-dasharray: none;
+  animation: none;
+  filter: drop-shadow(0 0 4px rgba(228, 0, 43, 0.6));
+}
+@keyframes ft-map-march {
+  to {
+    stroke-dashoffset: -15;
+  }
+}
+.ft-map-ship {
+  position: absolute;
+  z-index: 2;
+  transform: translate(-50%, -78%);
+  color: #f2f2f4;
+  --ft-map-sail: var(--ft-red);
+  --ft-map-flag: var(--ft-red);
+  --ft-map-sail-mark: #fff;
+  --ft-map-wake: #9b9ba8;
+  filter: drop-shadow(0 0 6px rgba(228, 0, 43, 0.55));
+  pointer-events: none;
+}
+.ft-map-ship[data-dir='left'] svg {
+  transform: scaleX(-1);
+}
+.ft-map-ship-bob {
+  display: block;
+  animation: ft-ship-bob 2.6s ease-in-out infinite;
+  transform-origin: 50% 85%;
+}
+@keyframes ft-ship-bob {
+  0%, 100% { transform: translateY(0) rotate(-4deg); }
+  50% { transform: translateY(-3px) rotate(4deg); }
+}
+[data-theme='odyssey'] .ft-map-leg path {
+  stroke: #66707c;
+}
+[data-theme='odyssey'] .ft-map-leg.ft-map-leg--done path {
+  stroke: #3a5875;
+}
+[data-theme='odyssey'] .ft-map-ship {
+  color: #223650;
+  --ft-map-sail: #3a5875;
+  --ft-map-flag: #223650;
+  --ft-map-sail-mark: #f4eee3;
+  --ft-map-wake: #8aa0b5;
+  filter: drop-shadow(0 2px 2px rgba(31, 53, 80, 0.25));
+}
+@media (prefers-reduced-motion: reduce) {
+  .ft-map-leg path,
+  .ft-map-ship-bob {
+    animation: none;
+  }
+}
+[data-theme='odyssey'] .ft-map-leg.ft-map-leg--done path {
+  filter: none;
+}
+
+/* FaZe locked legs: a dim red laser grid line instead of grey dashes */
+.ft-panel[data-theme='faze'] .ft-map-leg:not(.ft-map-leg--done) path {
+  stroke: rgba(255, 70, 100, 0.55);
+}
+/* the Odyssey ship is a touch bigger now that it carries the full sail */
+.ft-map-ship {
+  transform: translate(-50%, -80%);
+}
+@media (prefers-reduced-motion: reduce) {
+
+}
+.ft-map-ship {
+  transform: translate(-50%, -64%);
+}
+.ft-map-ship svg {
+  width: 44px;
+  height: 38px;
+}
+
+/* =============================================================================================================
+   FaZe Redeem = shooting range (owner request). Lanes nearest (cheapest) first; red bullseyes in range, grey
+   locked targets; hovering a live target brings in a scope with a laser dot; FIRE redeems.
+   ============================================================================================================= */
+.ft-range {
+  margin-top: 8px;
+}
+.ft-range-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 6px 2px 8px;
+  border-bottom: 1px dashed rgba(255, 70, 100, 0.45);
+  margin-bottom: 8px;
+}
+.ft-range-title {
+  font-family: var(--ft-font-head);
+  font-size: 16px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.ft-range-ammo {
+  font-size: 12px;
+  color: var(--ft-muted);
+}
+.ft-range-ammo b {
+  font-family: var(--ft-font-head);
+  font-weight: 400;
+  font-size: 16px;
+  letter-spacing: 0.03em;
+  margin-left: 4px;
+}
+.ft-lanes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ft-lane {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 10px 10px 8px;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 22px, rgba(255, 70, 100, 0.06) 22px 23px),
+    rgba(31, 31, 35, 0.82);
+  border: 1px solid var(--ft-red);
+  clip-path: var(--chamfer);
+  box-shadow: inset 0 0 12px rgba(228, 0, 43, 0.22);
+}
+.ft-lane--locked {
+  border-color: var(--ft-border);
+  box-shadow: none;
+}
+.ft-lane-dist {
+  position: absolute;
+  top: 4px;
+  right: 10px;
+  font-family: var(--ft-font-head);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--ft-faint);
+}
+.ft-target {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+}
+.ft-bullseye .ft-ring-a {
+  fill: var(--ft-red);
+}
+.ft-bullseye .ft-ring-b {
+  fill: #f2f2f4;
+}
+.ft-lane--locked .ft-bullseye {
+  filter: grayscale(1) brightness(0.55);
+  opacity: 0.7;
+}
+.ft-target-lock {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  --ft-map-keyhole: #3a3a40;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.8));
+}
+.ft-target-lock svg {
+  width: 22px;
+  height: 25px;
+}
+.ft-reticle {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  color: #ff1f4b;
+  filter: drop-shadow(0 0 4px rgba(255, 31, 75, 0.9));
+  opacity: 0;
+  transform: scale(1.6) rotate(-30deg);
+  transition:
+    opacity 0.2s ease,
+    transform 0.35s var(--ft-ease);
+  pointer-events: none;
+}
+.ft-lane:not(.ft-lane--locked):hover .ft-reticle,
+.ft-lane:not(.ft-lane--locked):focus-within .ft-reticle,
+.ft-lane--firing .ft-reticle {
+  opacity: 1;
+  transform: scale(1) rotate(0);
+}
+.ft-laser-dot {
+  animation: ft-laser-dot 0.9s ease-in-out infinite;
+}
+@keyframes ft-laser-dot {
+  50% {
+    opacity: 0.35;
+  }
+}
+.ft-lane--firing .ft-target {
+  animation: ft-hit 0.35s ease-out 2;
+}
+@keyframes ft-hit {
+  30% {
+    transform: translateX(-2px) rotate(-3deg);
+  }
+  60% {
+    transform: translateX(2px) rotate(3deg);
+  }
+}
+.ft-lane-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.ft-lane-body strong {
+  display: block;
+  font-family: var(--ft-font-head);
+  font-weight: 400;
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding-right: 28px;
+}
+.ft-lane-body p {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--ft-muted);
+}
+.ft-lane-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+.ft-root .ft-fire {
+  padding: 4px 16px;
+  border: none;
+  background: var(--ft-red);
+  color: #fff;
+  font-family: var(--ft-font-head);
+  font-size: 14px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  clip-path: var(--chamfer-sm);
+  box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.2);
+}
+.ft-root .ft-fire:hover:not(:disabled) {
+  background: #ff1f4b;
+}
+.ft-root .ft-fire:disabled {
+  opacity: 0.6;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ft-reticle {
+    transition: none;
+  }
+  .ft-laser-dot,
+  .ft-lane--firing .ft-target {
+    animation: none;
+  }
+}

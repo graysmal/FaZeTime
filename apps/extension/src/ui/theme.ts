@@ -7,17 +7,35 @@ import antonUrl from '../assets/fonts/Anton-Regular.woff?inline';
 import fazedUrl from '../assets/fonts/Sample_FaZed_Sans.otf?inline';
 import sourceSansUrl from '../assets/fonts/SourceSansPro-Black.woff?inline';
 import diamondUrl from '../assets/diamond.jpg?inline';
+import meanderUrl from '../assets/meander.svg?inline';
+import cinzelUrl from '../assets/fonts/Cinzel.woff?inline';
+import barlowMediumUrl from '../assets/fonts/BarlowSemiCondensed-Medium.woff?inline';
+import barlowSemiBoldUrl from '../assets/fonts/BarlowSemiCondensed-SemiBold.woff?inline';
+import barlowBoldUrl from '../assets/fonts/BarlowSemiCondensed-Bold.woff?inline';
 
 export const FONT_TITLE = 'FT FaZed Sans';
 export const FONT_HEAD = 'FT Anton';
 export const FONT_BODY = 'FT Source Sans';
 
 export const DIAMOND_CSS_VALUE = `url("${diamondUrl}")`;
+/** ENRAGE (Odyssey) theme: the Greek-key band. */
+export const MEANDER_CSS_VALUE = `url("${meanderUrl}")`;
+export const FONT_ODY_TITLE = 'FT Cinzel';
+export const FONT_ODY_TEXT = 'FT Barlow SC';
+
+/** CALM = FaZe theme, ENRAGE = Odyssey theme (owner request, 2026-11-15). Stored per browser. */
+export type ThemeName = 'calm' | 'enrage';
+export const THEME_KEY = 'local:fazetime.theme';
+export const themeAttr = (t: ThemeName | null | undefined) => (t === 'enrage' ? 'odyssey' : 'faze');
 
 const FACES: [family: string, url: string, weight: string][] = [
   [FONT_TITLE, fazedUrl, '400'],
   [FONT_HEAD, antonUrl, '400'],
   [FONT_BODY, sourceSansUrl, '100 900'],
+  ['FT Cinzel', cinzelUrl, '400 900'],
+  ['FT Barlow SC', barlowMediumUrl, '500'],
+  ['FT Barlow SC', barlowSemiBoldUrl, '600'],
+  ['FT Barlow SC', barlowBoldUrl, '700'],
 ];
 
 const registered = new WeakSet<Document>();

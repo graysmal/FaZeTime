@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { formatCountdown, remainingMs } from '../lib/time';
 import { MarketCard } from './MarketCard';
-import { glazeFromEvent, glazeOnHover } from './theme';
-import { useEnv, useFullscreen, useNow, usePanel } from './hooks';
+import { glazeFromEvent, glazeOnHover, THEME_KEY, themeAttr, type ThemeName } from './theme';
+import { useEnv, useFullscreen, useNow, usePanel, useStoredValue } from './hooks';
 
 const CONTROLS_CLEARANCE_PX = 76; // Keep clear of Twitch's bottom control bar (about 50px) plus margin.
 
@@ -13,6 +13,7 @@ export function Overlay({ host }: { host: HTMLElement }) {
   const fullscreen = useFullscreen(doc);
   const [expanded, setExpanded] = useState(false);
   const [maxHeight, setMaxHeight] = useState(320);
+  const [theme] = useStoredValue<ThemeName>(THEME_KEY, 'calm');
   const market = st.snapshot?.market ?? null;
   const now = useNow(1000, market?.state === 'OPEN');
 
@@ -36,7 +37,7 @@ export function Overlay({ host }: { host: HTMLElement }) {
   const remaining = market ? remainingMs(market.close_at_utc, now, st.offsetMs) : 0;
   const title = market ? market.question : 'No market open';
   return (
-    <div className="ft-overlay" onKeyDown={(e) => e.key === 'Escape' && setExpanded(false)} onClickCapture={(e) => glazeFromEvent(e.target)} onPointerOver={(e) => glazeOnHover(e)}>
+    <div className="ft-overlay" data-theme={themeAttr(theme)} onKeyDown={(e) => e.key === 'Escape' && setExpanded(false)} onClickCapture={(e) => glazeFromEvent(e.target)} onPointerOver={(e) => glazeOnHover(e)}>
       <button
         type="button"
         className="ft-pill"

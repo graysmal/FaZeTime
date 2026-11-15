@@ -3,8 +3,10 @@ import type { ErrorCode, Modes } from '@fazetime/contracts';
 import { checkTopUp, describeAmountProblem, formatMinor, parseDollarsToMinor } from '../lib/money';
 import type { PanelNotice, Placement } from '../content/mount';
 import { describeTopUp } from '../state/topupCopy';
+import type { RedeemItem } from '../api/types';
 import { MarketCard } from './MarketCard';
-import { glazeFromEvent, glazeOnHover } from './theme';
+import { glazeFromEvent, glazeOnHover, THEME_KEY, themeAttr, type ThemeName } from './theme';
+import { OdysseySky, ThemeSwitch } from './ThemeSwitch';
 import { PANEL_OPEN_KEY, PROFILE_KEY, panelHeightKey, useEnv, usePanel, useStoredValue, type Profile } from './hooks';
 
 export const PANEL_MIN_PX = 160;
@@ -102,6 +104,7 @@ export function Panel(props: { host: HTMLElement; placement: Placement; notice: 
   const [tabDir, setTabDir] = useState<1 | -1>(1);
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [theme, setTheme] = useStoredValue<ThemeName>(THEME_KEY, 'calm');
   const headRef = useRef<HTMLElement>(null);
   // While collapsing, keep the body rendered so the height animation has something to hide.
   const [closing, setClosing] = useState(false);
@@ -147,7 +150,15 @@ export function Panel(props: { host: HTMLElement; placement: Placement; notice: 
   const showBody = open || closing;
   const headInset = useHeaderInset(env.doc, host, placement === 'chat');
   return (
-    <div className="ft-panel" data-placement={placement} data-open={open} onClickCapture={(e) => glazeFromEvent(e.target)} onPointerOver={(e) => glazeOnHover(e)}>
+    <div
+      className="ft-panel"
+      data-placement={placement}
+      data-open={open}
+      data-theme={themeAttr(theme)}
+      onClickCapture={(e) => glazeFromEvent(e.target)}
+      onPointerOver={(e) => glazeOnHover(e)}
+    >
+      {theme === 'enrage' && <OdysseySky />}
       <header className="ft-head" ref={headRef} style={headInset !== null ? { paddingLeft: headInset } : undefined}>
         <div className="ft-brand">
           <span className="ft-word">
@@ -157,6 +168,7 @@ export function Panel(props: { host: HTMLElement; placement: Placement; notice: 
           {snap?.market?.state === 'OPEN' && !open && <span className="ft-badge ft-badge--soft">Market open</span>}
         </div>
         <div className="ft-head-actions">
+          <ThemeSwitch theme={theme} onChange={setTheme} />
           {open && (
             <button
               type="button"
@@ -284,7 +296,10 @@ function CheckIcon() {
 
 /** Up to two initials from a display name ("Faze Gavin" -> "FG", "gavin" -> "GA"); "?" when unknown. */
 export function initialsFor(name: string | null | undefined): string {
-  const words = (name ?? '').trim().split(/[\s_.-]+/).filter(Boolean);
+  const words = (name ?? '')
+    .trim()
+    .split(/[\s_.-]+/)
+    .filter(Boolean);
   if (words.length === 0) return '?';
   const letters = words.length >= 2 ? words[0]![0]! + words[1]![0]! : [...words[0]!].slice(0, 2).join('');
   return letters.toUpperCase();
@@ -406,7 +421,11 @@ export function ProfileCard({
 }
 
 function ResizeHandle({ host, height, onChange }: { host: HTMLElement; height: number; onChange: (px: number) => void }) {
-  const drag = useRef<{ startY: number; startH: number; pointerId: number } | null>(null);
+  const drag = useRef<{
+    startY: number;
+    startH: number;
+    pointerId: number;
+  } | null>(null);
   const [live, setLive] = useState<number | null>(null);
   const container = () => host.parentElement?.getBoundingClientRect().height ?? 0;
   const current = live ?? height;
@@ -420,7 +439,11 @@ function ResizeHandle({ host, height, onChange }: { host: HTMLElement; height: n
 
   const commit = (px: number) => onChange(clampPanelHeight(px, container()));
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
-    drag.current = { startY: e.clientY, startH: host.getBoundingClientRect().height, pointerId: e.pointerId };
+    drag.current = {
+      startY: e.clientY,
+      startH: host.getBoundingClientRect().height,
+      pointerId: e.pointerId,
+    };
     e.currentTarget.setPointerCapture(e.pointerId);
     e.preventDefault();
   };
@@ -439,7 +462,12 @@ function ResizeHandle({ host, height, onChange }: { host: HTMLElement; height: n
     host.style.transition = `height ${COLLAPSE_MS}ms cubic-bezier(0.2, 0.8, 0.2, 1)`;
   };
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    const steps: Record<string, number> = { ArrowUp: -KEY_STEP_PX, ArrowDown: KEY_STEP_PX, PageUp: -PAGE_STEP_PX, PageDown: PAGE_STEP_PX };
+    const steps: Record<string, number> = {
+      ArrowUp: -KEY_STEP_PX,
+      ArrowDown: KEY_STEP_PX,
+      PageUp: -PAGE_STEP_PX,
+      PageDown: PAGE_STEP_PX,
+    };
     const step = steps[e.key];
     if (step !== undefined) commit(height + step);
     else if (e.key === 'Home') commit(PANEL_MIN_PX);
@@ -491,7 +519,226 @@ export function WalletTab() {
           Top-ups aren't available yet
         </button>
       )}
-      <p className="ft-fine">{mode === 'live' ? TEST_CREDITS_NOTE : 'Demo funds only. Not money, cannot be withdrawn, and only valid in this demo run.'}</p>
+      <p className="ft-fine">
+        {mode === 'live' ? TEST_CREDITS_NOTE : 'Demo funds only. Not money, cannot be withdrawn, and only valid in this demo run.'}
+      </p>
+    </div>
+  );
+}
+
+export interface MapStop {
+  item: RedeemItem;
+  locked: boolean;
+  /** Minor units still needed to unlock (0 when unlocked or when rewards are unavailable). */
+  needMinor: number;
+}
+
+/**
+ * The Redeem "journey": rewards as stops along a route, cheapest first. A stop is unlocked when the viewer can
+ * afford it and rewards are available; otherwise it is locked (and says how much is still needed).
+ * Display only: the server still decides every redemption.
+ */
+export function redeemMap(items: readonly RedeemItem[], availableMinor: number | null, unavailable: boolean): MapStop[] {
+  return [...items]
+    .sort((a, b) => a.price_minor - b.price_minor)
+    .map((item) => {
+      const affordable = availableMinor !== null && availableMinor >= item.price_minor;
+      const locked = unavailable || !affordable;
+      const needMinor = !unavailable && availableMinor !== null && !affordable ? item.price_minor - availableMinor : 0;
+      return { item, locked, needMinor };
+    });
+}
+
+function LockIcon({ open }: { open: boolean }) {
+  return (
+    <svg viewBox="0 0 16 18" width="16" height="18" aria-hidden="true">
+      <path d={open ? 'M4 8V5.5a4 4 0 0 1 7.6-1.8' : 'M4 8V5.5a4 4 0 0 1 8 0V8'} fill="none" stroke="currentColor" strokeWidth="2" />
+      <rect x="1.5" y="8" width="13" height="9" rx="1.5" fill="currentColor" />
+      <rect x="7" y="11" width="2" height="3.2" fill="var(--ft-map-keyhole, #000)" />
+    </svg>
+  );
+}
+
+function PinIcon() {
+  return (
+    <svg viewBox="0 0 16 18" width="15" height="17" aria-hidden="true">
+      <path d="M8 17s6-6.2 6-10.2A6 6 0 0 0 2 6.8C2 10.8 8 17 8 17z" fill="currentColor" />
+      <circle cx="8" cy="6.8" r="2.2" fill="var(--ft-map-keyhole, #000)" />
+    </svg>
+  );
+}
+
+/**
+ * Where the ship sails: on the leg into the first locked stop, as far along as the balance reaches between the
+ * last reached price and that stop's price. All reached: docked at the end of the last leg. Rewards unavailable or
+ * balance unknown: just leaving port. Returns the leg index and the position along it (0..1).
+ */
+export function shipPosition(stops: readonly MapStop[], availableMinor: number | null, unavailable: boolean): { leg: number; t: number } | null {
+  if (stops.length === 0) return null;
+  if (unavailable || availableMinor === null) return { leg: 0, t: 0.12 };
+  const next = stops.findIndex((s) => s.locked);
+  if (next === -1) return { leg: stops.length - 1, t: 0.92 };
+  const from = next === 0 ? 0 : stops[next - 1]!.item.price_minor;
+  const to = stops[next]!.item.price_minor;
+  const frac = to > from ? (availableMinor - from) / (to - from) : 0;
+  return { leg: next, t: Math.min(0.88, Math.max(0.12, frac)) };
+}
+
+/** A point on the leg's curve, as (x % of width, y px), for t in 0..1. */
+function legPoint(fromLeft: boolean, t: number): { x: number; y: number } {
+  const [x0, x3] = fromLeft ? [9, 91] : [91, 9];
+  const u = 1 - t;
+  const x = u * u * u * x0 + 3 * u * u * t * x0 + 3 * u * t * t * x3 + t * t * t * x3;
+  const y = 3 * u * u * t * 22 + 3 * u * t * t * 10 + t * t * t * 32;
+  return { x, y };
+}
+
+/** Odyssey ship, after the owner's reference: square sail with a bordered panel, seam and diamond emblem,
+ *  a pennant, rigging, a row of rowers and oars, and a curved hull with raised prow and stern. */
+function ShipIcon() {
+  return (
+    <svg viewBox="0 0 60 52" width="50" height="44" aria-hidden="true">
+      <g stroke="currentColor" strokeWidth="0.9" fill="none" opacity="0.8">
+        <path d="M30 3L13 35M30 3L48 35" />
+      </g>
+      <path d="M30 2v34" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M30 2.5l10 3.2-10 3.2z" fill="currentColor" />
+      <path d="M17 11h26l-1.6 19.5c-3.8 1.4-19 1.4-22.8 0z" fill="var(--ft-map-sail, currentColor)" stroke="currentColor" strokeWidth="1" />
+      <path d="M19.5 13.5h21l-1.3 15c-3.3 1-15.1 1-18.4 0z" fill="none" stroke="var(--ft-map-sail-mark, #f4eee3)" strokeWidth="0.8" opacity="0.85" />
+      <path d="M30 11v21" stroke="var(--ft-map-sail-mark, #f4eee3)" strokeWidth="0.7" opacity="0.7" />
+      <path d="M30 16.2l4 4.6-4 4.6-4-4.6z" fill="var(--ft-map-sail, currentColor)" stroke="var(--ft-map-sail-mark, #f4eee3)" strokeWidth="1" />
+      <circle cx="30" cy="20.8" r="1.4" fill="var(--ft-map-sail-mark, #f4eee3)" />
+      <g fill="currentColor">
+        {[17, 22, 27, 33, 38, 43].map((x) => (
+          <g key={x}>
+            <circle cx={x} cy="32.6" r="1.9" />
+            <path d={`M${x - 1.6} 37v-2.4c0-1 .7-1.6 1.6-1.6s1.6.6 1.6 1.6V37z`} />
+          </g>
+        ))}
+      </g>
+      <g stroke="currentColor" strokeWidth="1.1">
+        {[15, 21, 27, 33, 39, 45].map((x) => (
+          <path key={x} d={`M${x} 39l-6 9`} />
+        ))}
+      </g>
+      <path
+        d="M3 31.5c2.2 0 3.2 2.3 5.4 4.5h43.4c2.5-1.3 4.3-3.8 5.6-6.8l1.6.6c-1.5 6.1-5.5 11.7-12 12.7H14.2C8.6 42.5 4.6 38 3 31.5z"
+        fill="currentColor"
+      />
+      <path d="M11 39.2h38" stroke="var(--ft-map-sail-mark, #f4eee3)" strokeWidth="0.9" opacity="0.8" />
+      <path
+        d="M2 49c3 0 3-1.5 6-1.5s3 1.5 6 1.5 3-1.5 6-1.5 3 1.5 6 1.5 3-1.5 6-1.5 3 1.5 6 1.5 3-1.5 6-1.5 3 1.5 6 1.5"
+        fill="none"
+        stroke="var(--ft-map-wake, currentColor)"
+        strokeWidth="1.2"
+        opacity="0.7"
+      />
+    </svg>
+  );
+}
+
+/** One leg of the route between two stops, curving to the other side; it may carry the ship. */
+function MapLeg({ fromLeft, done, ship }: { fromLeft: boolean; done: boolean; ship?: number }) {
+  const d = fromLeft ? 'M 9 0 C 9 22, 91 10, 91 32' : 'M 91 0 C 91 22, 9 10, 9 32';
+  const at = ship !== undefined ? legPoint(fromLeft, ship) : null;
+  return (
+    <div className="ft-map-legwrap">
+      <svg className={`ft-map-leg${done ? ' ft-map-leg--done' : ''}`} viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true">
+        <path d={d} vectorEffect="non-scaling-stroke" />
+      </svg>
+      {at && (
+        <span
+          className="ft-map-ship"
+          role="img"
+          aria-label="Your ship: you are here"
+          data-dir={fromLeft ? 'right' : 'left'}
+          style={{ left: `${at.x}%`, top: at.y }}
+        >
+          <span className="ft-map-ship-bob">
+            <ShipIcon />
+          </span>
+        </span>
+      )}
+    </div>
+  );
+}
+
+function Bullseye() {
+  return (
+    <svg viewBox="0 0 60 60" width="56" height="56" aria-hidden="true" className="ft-bullseye">
+      <circle cx="30" cy="30" r="28" className="ft-ring-a" />
+      <circle cx="30" cy="30" r="22" className="ft-ring-b" />
+      <circle cx="30" cy="30" r="16" className="ft-ring-a" />
+      <circle cx="30" cy="30" r="10" className="ft-ring-b" />
+      <circle cx="30" cy="30" r="4.5" className="ft-ring-a" />
+    </svg>
+  );
+}
+
+function Reticle() {
+  return (
+    <svg viewBox="0 0 60 60" width="64" height="64" aria-hidden="true" className="ft-reticle">
+      <circle cx="30" cy="30" r="24" fill="none" stroke="currentColor" strokeWidth="1.6" />
+      <circle cx="30" cy="30" r="13" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.7" />
+      <path d="M30 0v20M30 40v20M0 30h20M40 30h20" stroke="currentColor" strokeWidth="1.6" />
+      <circle cx="30" cy="30" r="2.2" fill="#fff" className="ft-laser-dot" />
+    </svg>
+  );
+}
+
+/**
+ * FaZe side of Redeem (owner request): a shooting range. Each reward is a lane with a target, nearest (cheapest)
+ * first; affordable targets can be fired at (= Redeem), the rest are locked. The Odyssey side keeps the voyage map.
+ */
+function TargetRange({ stops, available, unavailable }: { stops: MapStop[]; available: number | null; unavailable: boolean }) {
+  const { controller } = useEnv();
+  const { busyItem } = usePanel().redeem;
+  return (
+    <div className="ft-range" aria-label="Rewards range">
+      <div className="ft-range-head">
+        <span className="ft-range-title">Shooting range</span>
+        <span className="ft-range-ammo">
+          Ammo <b className="ft-money">{available !== null ? formatMinor(available) : '…'}</b>
+        </span>
+      </div>
+      <ol className="ft-lanes">
+        {stops.map((stop, i) => (
+          <li
+            key={stop.item.item_id}
+            className={`ft-lane${stop.locked ? ' ft-lane--locked' : ''}${busyItem === stop.item.item_id ? ' ft-lane--firing' : ''}`}
+          >
+            <span className="ft-lane-dist" aria-hidden="true">
+              {(i + 1) * 10}m
+            </span>
+            <span className="ft-target" role="img" aria-label={stop.locked ? 'Locked target' : 'Target in range'}>
+              <Bullseye />
+              {stop.locked ? (
+                <span className="ft-target-lock">
+                  <LockIcon open={false} />
+                </span>
+              ) : (
+                <Reticle />
+              )}
+            </span>
+            <div className="ft-lane-body">
+              <strong>{stop.item.title}</strong>
+              <p>{stop.item.description}</p>
+              <div className="ft-lane-foot">
+                <span className="ft-map-price">{formatMinor(stop.item.price_minor)}</span>
+                {stop.locked ? (
+                  <span className="ft-map-need">
+                    {unavailable ? 'Not available yet' : stop.needMinor > 0 ? `${formatMinor(stop.needMinor)} more to unlock` : 'Locked'}
+                  </span>
+                ) : (
+                  <button type="button" className="ft-fire" disabled={busyItem !== null} onClick={() => void controller.redeem(stop.item.item_id)}>
+                    {busyItem === stop.item.item_id ? 'Firing…' : 'Fire'}
+                  </button>
+                )}
+              </div>
+            </div>
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }
@@ -504,24 +751,72 @@ function RedeemTab() {
   }, [controller, st.catalog]);
   const { busyItem, receipt, error } = st.redeem;
   const unavailable = st.snapshot !== null && st.snapshot.modes.payment_mode !== 'MOCK';
+  const available = st.snapshot?.wallet.available_minor ?? null;
+  const stops = redeemMap(st.catalog ?? [], available, unavailable);
+  const ship = shipPosition(stops, available, unavailable);
+  const [theme] = useStoredValue<ThemeName>(THEME_KEY, 'calm');
+  const odyssey = theme === 'enrage';
   return (
     <div>
       {mode === 'live' && unavailable ? (
-        <p className="ft-fine">Rewards aren't available yet.</p>
+        <p className="ft-fine">Rewards aren't available yet. Every stop is locked for now.</p>
       ) : (
         <p className="ft-fine">Tiny fixed demo catalog. Codes are random and NON-REDEEMABLE: no store, coupon or prize exists.</p>
       )}
-      {(st.catalog ?? []).map((item) => (
-        <div className="ft-item" key={item.item_id}>
-          <div>
-            <strong>{item.title}</strong>
-            <p>{item.description}</p>
-          </div>
-          <button type="button" className="ft-secondary" disabled={busyItem !== null || unavailable} onClick={() => void controller.redeem(item.item_id)}>
-            {unavailable ? 'Not available yet' : busyItem === item.item_id ? 'Redeeming…' : `Redeem ${formatMinor(item.price_minor)}`}
-          </button>
-        </div>
-      ))}
+      {!odyssey && <TargetRange stops={stops} available={available} unavailable={unavailable} />}
+      {odyssey && (
+        <ol className="ft-map" aria-label="Rewards journey">
+          <li className="ft-map-row ft-map-row--left ft-map-start">
+            <span className="ft-map-node ft-map-node--start" aria-hidden="true">
+              <PinIcon />
+            </span>
+            <div className="ft-map-card">
+              <strong>Home port</strong>
+              <p>
+                Available <b className="ft-money">{available !== null ? formatMinor(available) : '…'}</b>
+              </p>
+            </div>
+          </li>
+          {stops.map((stop, i) => {
+            const left = i % 2 === 1; // the start is on the left, so the first stop sits on the right
+            return (
+              <li key={stop.item.item_id} className={`ft-map-row ft-map-row--${left ? 'left' : 'right'}${stop.locked ? ' ft-map-row--locked' : ''}`}>
+                <MapLeg fromLeft={!left} done={!stop.locked} ship={ship?.leg === i ? ship.t : undefined} />
+                <div className="ft-map-stop">
+                  <span
+                    className={`ft-map-node${stop.locked ? ' ft-map-node--locked' : ' ft-map-node--open'}`}
+                    role="img"
+                    aria-label={stop.locked ? 'Locked' : 'Unlocked'}
+                  >
+                    <LockIcon open={!stop.locked} />
+                  </span>
+                  <div className="ft-map-card">
+                    <strong>{stop.item.title}</strong>
+                    <p>{stop.item.description}</p>
+                    <div className="ft-map-foot">
+                      <span className="ft-map-price">{formatMinor(stop.item.price_minor)}</span>
+                      {stop.locked ? (
+                        <span className="ft-map-need">
+                          {unavailable ? 'Not available yet' : stop.needMinor > 0 ? `${formatMinor(stop.needMinor)} more to unlock` : 'Locked'}
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="ft-secondary"
+                          disabled={busyItem !== null}
+                          onClick={() => void controller.redeem(stop.item.item_id)}
+                        >
+                          {busyItem === stop.item.item_id ? 'Redeeming…' : 'Redeem'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      )}
       {error && (
         <p className="ft-field-error" role="alert">
           {error}
@@ -532,7 +827,8 @@ function RedeemTab() {
           <span className="ft-badge ft-badge--mock">NON-REDEEMABLE DEMO CODE</span>
           <code>{receipt.demo_code}</code>
           <span className="ft-fine">
-            Debited {formatMinor(receipt.price_minor)} of demo funds{receipt.replayed ? ' (same request replayed; charged once)' : ''}. Not valid anywhere.
+            Debited {formatMinor(receipt.price_minor)} of demo funds
+            {receipt.replayed ? ' (same request replayed; charged once)' : ''}. Not valid anywhere.
           </span>
         </div>
       )}
@@ -591,8 +887,8 @@ export function TopUpDialog() {
         </p>
         {t.reason === 'insufficient' && (
           <p className="ft-hint ft-hint--warn">
-            {t.neededMinor ? `You need ${formatMinor(t.neededMinor)} more for that bet. ` : ''}Topping up does not hold your bet or the market;
-            it may close before you are back.
+            {t.neededMinor ? `You need ${formatMinor(t.neededMinor)} more for that bet. ` : ''}
+            Topping up does not hold your bet or the market; it may close before you are back.
           </p>
         )}
         <div className="ft-amounts" role="group" aria-label="Top-up amount">
@@ -615,18 +911,29 @@ export function TopUpDialog() {
         </div>
         {choice === 'custom' && (
           <label className="ft-label">
-            Custom amount ({formatMinor(limits.topup_min_minor)} to {formatMinor(limits.topup_max_minor)}, steps of {formatMinor(limits.topup_step_minor)})
+            Custom amount ({formatMinor(limits.topup_min_minor)} to {formatMinor(limits.topup_max_minor)}, steps of{' '}
+            {formatMinor(limits.topup_step_minor)})
             <input className="ft-input" inputMode="decimal" value={customText} placeholder="20" onChange={(e) => setCustomText(e.target.value)} />
           </label>
         )}
         {problem && choice === 'custom' && customText !== '' && (
-          <div className="ft-field-error">{describeAmountProblem(problem, limits.topup_min_minor, limits.topup_max_minor, limits.topup_step_minor)}</div>
+          <div className="ft-field-error">
+            {describeAmountProblem(problem, limits.topup_min_minor, limits.topup_max_minor, limits.topup_step_minor)}
+          </div>
         )}
-        <button type="button" className="ft-primary" disabled={busy || problem !== null || amount === null} onClick={() => amount !== null && void controller.submitTopUp(amount)}>
+        <button
+          type="button"
+          className="ft-primary"
+          disabled={busy || problem !== null || amount === null}
+          onClick={() => amount !== null && void controller.submitTopUp(amount)}
+        >
           {busy ? 'Adding…' : 'FaZe Up!'}
         </button>
         {t.message && (
-          <div className={`ft-status ${t.status === 'credited' ? 'ft-status--ok' : t.status === 'error' ? 'ft-status--err' : 'ft-status--wait'}`} role="status">
+          <div
+            className={`ft-status ${t.status === 'credited' ? 'ft-status--ok' : t.status === 'error' ? 'ft-status--err' : 'ft-status--wait'}`}
+            role="status"
+          >
             {t.message}
           </div>
         )}
@@ -731,8 +1038,8 @@ export function StripeTopUpDialog() {
         </div>
         {t.reason === 'insufficient' && (
           <p className="ft-hint ft-hint--warn">
-            {t.neededMinor ? `You need ${formatMinor(t.neededMinor)} more for that bet. ` : ''}Topping up does not hold your bet or the market; it may close
-            before you are back.
+            {t.neededMinor ? `You need ${formatMinor(t.neededMinor)} more for that bet. ` : ''}
+            Topping up does not hold your bet or the market; it may close before you are back.
           </p>
         )}
         <div className="ft-amounts" role="group" aria-label="Top-up amount">
@@ -755,14 +1062,22 @@ export function StripeTopUpDialog() {
         </div>
         {choice === 'custom' && (
           <label className="ft-label">
-            Custom amount ({formatMinor(limits.topup_min_minor)} to {formatMinor(limits.topup_max_minor)}, steps of {formatMinor(limits.topup_step_minor)})
+            Custom amount ({formatMinor(limits.topup_min_minor)} to {formatMinor(limits.topup_max_minor)}, steps of{' '}
+            {formatMinor(limits.topup_step_minor)})
             <input className="ft-input" inputMode="decimal" value={customText} placeholder="20" onChange={(e) => setCustomText(e.target.value)} />
           </label>
         )}
         {problem && choice === 'custom' && customText !== '' && (
-          <div className="ft-field-error">{describeAmountProblem(problem, limits.topup_min_minor, limits.topup_max_minor, limits.topup_step_minor)}</div>
+          <div className="ft-field-error">
+            {describeAmountProblem(problem, limits.topup_min_minor, limits.topup_max_minor, limits.topup_step_minor)}
+          </div>
         )}
-        <button type="button" className="ft-primary" disabled={creating || problem !== null || amount === null} onClick={() => amount !== null && void controller.submitTopUp(amount)}>
+        <button
+          type="button"
+          className="ft-primary"
+          disabled={creating || problem !== null || amount === null}
+          onClick={() => amount !== null && void controller.submitTopUp(amount)}
+        >
           {creating ? 'Opening checkout…' : 'FaZe Up!'}
         </button>
         <p className="ft-hint">Opens Stripe's secure checkout in a new tab. Card details are entered only there.</p>
@@ -776,7 +1091,9 @@ export function StripeTopUpDialog() {
             <span>{copy.text}</span> <TopUpActions action={copy.action} terminal={false} />
           </div>
         )}
-        {copy?.tone === 'ok' && t.reason === 'insufficient' && <p className="ft-hint">Your bet was not placed. Check the market and confirm it again.</p>}
+        {copy?.tone === 'ok' && t.reason === 'insufficient' && (
+          <p className="ft-hint">Your bet was not placed. Check the market and confirm it again.</p>
+        )}
         <p className="ft-fine">{TEST_CREDITS_NOTE}</p>
         <button type="button" className="ft-secondary" onClick={close} disabled={t.status === 'submitting'}>
           {copy?.terminal ? 'Done' : 'Close'}
