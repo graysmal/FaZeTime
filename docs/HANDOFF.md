@@ -79,6 +79,15 @@ The two `services/api` workers share `main.py`, `ids.py`, `config.py` and `schem
 5. **P6 gate:** one 4242 test checkout credited exactly once, plus the negative cases.
 6. **P7:** two consecutive full rehearsals and the fault drill. Then P8/P9 (raffle and spoken trigger), then P10 manual FaceTime.
 
+## Research to build on
+
+- `reports/LLM stream market architectures.md`, with notes in `research_notes/LLM stream market architectures/`. It is the deep research on generic, LLM-driven market proposal and resolution, delivered 2026-11-15 ~00:30 CT.
+- **Recommendation:** widen to any-game head-to-heads (Stage 1) with no contract change, and leave generic binary markets until after the deadline.
+- **What was decided:**
+  - Stage 1 is **deferred by the owner (D36)**.
+  - **Stage 1a** (the proposer cap resets per run, a resolver quota reserve, the challenge name from config) is being implemented as a bug fix.
+  - **Stage 0 is open:** the owner should read the real Gemini free-tier RPM/RPD at aistudio.google.com/rate-limit. The quota resets at 02:00 CT.
+
 ## Owner actions pending
 
 - **Record two Minecraft 1v1 takes**, one won by each player. Cues are in D19 and the earlier HANDOFF: an opening line, ≥90 s of setup, "3, 2, 1, fight!", the death message visible, and a spoken winner.
