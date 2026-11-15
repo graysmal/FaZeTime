@@ -84,6 +84,11 @@ class Pipeline:
                       FasterWhisperEngine(cfg.asr_model, cfg.asr_threads, cfg.asr_beam, cfg.asr_temperature,
                                           cfg.asr_max_new_tokens, cfg.asr_hotwords, cfg.asr_initial_prompt,
                                           str(cfg.models_dir) if cfg.models_dir else None))
+            if cfg.asr_engine != "fake":
+                # D34: optional remote ASR on the Vultr VM (tailnet only). The local engine stays loaded as the
+                # circuit-breaker fallback; unset ASR_REMOTE_URL means local ASR only.
+                from .asr_remote import engine_from_env
+                engine = engine_from_env(fallback=engine) or engine
         self.asr = AsrWorker(engine, self.queue, self.seq.is_current, self.publish_transcript, cfg.asr_max_wait_s,
                              cfg.asr_low_logprob, cfg.asr_high_no_speech)
         self.capture = Capture(cfg, self, sequencer_epoch=lambda: self.seq.current)

@@ -1,0 +1,51 @@
+# FaZeTime remote speech-to-text (D34). Tailnet-only; the service refuses to bind anywhere else.
+# Secret: /etc/fazetime-asr.env (root:root 0600) holds only ASR_REMOTE_TOKEN=...
+[Unit]
+Description=FaZeTime remote speech-to-text (faster-whisper int8, tailnet only)
+Wants=network-online.target tailscaled.service
+After=network-online.target tailscaled.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=fazetime-asr
+Group=fazetime-asr
+EnvironmentFile=/etc/fazetime-asr.env
+Environment=ASR_BIND_HOST=100.91.148.70
+Environment=ASR_BIND_IFACE=tailscale0
+Environment=ASR_PORT=8090
+Environment=ASR_MODEL=distil-small.en
+Environment=ASR_THREADS=8
+Environment=ASR_CONCURRENCY=1
+Environment=ASR_QUEUE_CAP=2
+Environment=ASR_DEADLINE_MS=2500
+Environment=ASR_MAX_CONNECTIONS=8
+Environment=ASR_MODELS_DIR=/opt/fazetime-asr/models
+Environment=HF_HUB_OFFLINE=1
+Environment=HF_HUB_DISABLE_TELEMETRY=1
+Environment=PYTHONUNBUFFERED=1
+WorkingDirectory=/opt/fazetime-asr/app
+ExecStart=/opt/fazetime-asr/app/.venv/bin/python -m fazetime_asr_remote
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=120
+MemoryMax=6G
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

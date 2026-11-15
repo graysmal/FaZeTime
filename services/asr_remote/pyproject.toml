@@ -1,0 +1,22 @@
+[project]
+name = "fazetime-asr-remote"
+version = "0.1.0"
+description = "FaZeTime remote speech-to-text service (D34): faster-whisper int8 CPU behind a tailnet-only, token-authenticated HTTP endpoint."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "faster-whisper==1.2.1",
+    "numpy>=2.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q -p no:cacheprovider"
