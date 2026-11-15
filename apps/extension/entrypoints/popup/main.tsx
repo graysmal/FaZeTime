@@ -25,13 +25,13 @@ export function validateProfile(displayName: string, login: string): string | nu
 const ask = <T,>(method: 'status' | 'enroll' | 'signout', params?: unknown) =>
   browser.runtime.sendMessage({ t: 'popup', method, params }) as Promise<ApiResult<T>>;
 
-function Header({ badge }: { badge: string }) {
+function Header({ badge }: { badge: string | null }) {
   return (
     <header>
       <h1>
         FaZe<b>Time</b>
       </h1>
-      <span className="mock">{badge}</span>
+      {badge && <span className="mock">{badge}</span>}
     </header>
   );
 }
@@ -98,7 +98,7 @@ function LiveEnroll() {
     if (r?.ok) {
       setCode('');
       await wxtKV.set<Profile>(PROFILE_KEY, { display_name: r.body.me.user.display_name, claimed_twitch_login: r.body.me.user.claimed_twitch_login });
-      setMsg({ ok: true, text: `Enrolled as ${r.body.me.user.display_name}.` });
+      setMsg({ ok: true, text: `Signed in as ${r.body.me.user.display_name}.` });
     } else if (r && !r.ok && r.kind === 'http') {
       const text =
         r.error.error.code === 'UNAUTHENTICATED' ? 'That invite code is invalid, used or expired.' : `${describeError(r.error.error).title}. ${describeError(r.error.error).detail}`;
@@ -108,16 +108,15 @@ function LiveEnroll() {
   };
   return (
     <main>
-      <Header badge="DEMO · TEST MONEY" />
-      <p className="fine">Live demo API at {st?.apiBase ?? '…'}. Test money only; nothing here is real money.</p>
+      <Header badge={null} />
       {st?.enrolled ? (
         <>
           <p className="ok">
-            Enrolled as <b>{st.displayName}</b> ({st.role?.toLowerCase()}). Updates: {st.link.toLowerCase()}.
+            Signed in as <b>{st.displayName}</b>.
           </p>
-          <p className="fine">The panel appears on twitch.tv/{st.channel}.</p>
+          <p className="fine">FaZeTime appears beside chat on twitch.tv/{st.channel}.</p>
           <button type="button" onClick={() => void ask('signout').then(refresh)}>
-            Sign out on this browser
+            Sign out
           </button>
         </>
       ) : (
@@ -139,7 +138,7 @@ function LiveEnroll() {
           {code !== '' && !codeOk && <p className="err">Invite codes have 12 letters or digits (dashes optional).</p>}
           {profileError && name !== '' && <p className="err">{profileError}</p>}
           <button type="button" disabled={!codeOk || profileError !== null || busy} onClick={() => void enroll()}>
-            {busy ? 'Enrolling…' : 'Enroll'}
+            {busy ? 'Signing in…' : 'Sign in'}
           </button>
         </>
       )}

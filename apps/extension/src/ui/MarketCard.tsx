@@ -51,6 +51,12 @@ const STATE_TEXT: Record<string, string> = {
   VOID: 'VOID',
 };
 
+/** Viewer origin text. Live builds (D31): fixture origins are shown like any market (no label). */
+export function viewerOriginLabel(origin: string, modes: Modes | undefined, mode: 'mock' | 'live'): string | null {
+  if (mode === 'mock') return originLabel(origin, modes);
+  return origin === 'AI_APPROVED' || origin === 'AI_AUTOMATIC' ? 'AI suggested' : null;
+}
+
 export function originLabel(origin: string, modes: Modes | undefined): string {
   const text = ORIGIN_TEXT[origin as MarketOrigin] ?? 'Unknown origin';
   return modes?.ai_mode === 'FIXTURE' && (origin === 'AI_APPROVED' || origin === 'AI_AUTOMATIC') ? `${text} (fixture data)` : text;
@@ -100,7 +106,7 @@ export function bannerCopy(market: PublicMarket, pos: MyPosition | null): Banner
 }
 
 export function MarketCard({ surface }: { surface: 'panel' | 'overlay' }) {
-  const { controller, requestPanelOpen } = useEnv();
+  const { controller, requestPanelOpen, mode } = useEnv();
   const st = usePanel();
   const snap = st.snapshot;
   const market = snap?.market ?? null;
@@ -178,7 +184,7 @@ export function MarketCard({ surface }: { surface: 'panel' | 'overlay' }) {
     <section className="ft-market" aria-label="FaZeTime market">
       <div className="ft-meta">
         <span className={`ft-state ft-state--${market.state}`}>{STATE_TEXT[market.state] ?? 'UNAVAILABLE'}</span>
-        <span>{originLabel(market.origin, snap.modes)}</span>
+        {viewerOriginLabel(market.origin, snap.modes, mode) && <span>{viewerOriginLabel(market.origin, snap.modes, mode)}</span>}
         {isOpen && (
           <span className="ft-countdown" title="Display only. The server decides when betting closes.">
             {pastDeadline ? 'Closing…' : `Closes in ${formatCountdown(remaining)}`}
@@ -295,11 +301,13 @@ export function MarketCard({ surface }: { surface: 'panel' | 'overlay' }) {
           </div>
           <div className="ft-row">
             <span className="ft-label">
-              Available <b>{formatMinor(snap.wallet.available_minor)}</b> demo
+              Available <b>{formatMinor(snap.wallet.available_minor)}</b>
             </span>
-            <button type="button" className="ft-link" onClick={() => (controller.openTopUp('manual'), surface === 'overlay' && requestPanelOpen())}>
-              Add demo funds
-            </button>
+            {snap.modes.payment_mode === 'MOCK' && (
+              <button type="button" className="ft-link" onClick={() => (controller.openTopUp('manual'), surface === 'overlay' && requestPanelOpen())}>
+                Add demo funds
+              </button>
+            )}
           </div>
           <button type="button" className="ft-primary" disabled={actionDisabled} onClick={onAction}>
             {action}

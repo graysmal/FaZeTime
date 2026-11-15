@@ -178,6 +178,73 @@ try {
     await shot(page, '08-over-video-dropdown');
     await overlay.locator('.ft-pill').click();
   } else record('over-video dropdown mounted', false, 'no player anchor found');
+
+  const single = async () => (await panelHosts()) === 1 && (await overlayHosts()) <= 1;
+  const playerWidth = async () => Math.round((await page.locator('[data-a-target="video-player"]').first().boundingBox())?.width ?? 0);
+  const blur = () => page.evaluate(() => (document.activeElement instanceof HTMLElement ? document.activeElement.blur() : undefined));
+
+  // Theater mode (Alt+T), with the player's theatre button as a fallback.
+  at('theater mode');
+  const w0 = await playerWidth();
+  await blur();
+  await page.keyboard.press('Alt+t');
+  await page.waitForTimeout(1500);
+  let w1 = await playerWidth();
+  let how = 'Alt+T';
+  if (Math.abs(w1 - w0) < 40) {
+    await page.locator('[data-a-target="video-player"]').first().hover();
+    await page.locator('button[aria-label*="heat" i]').first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(1500);
+    w1 = await playerWidth();
+    how = 'theatre button';
+  }
+  const theaterOn = Math.abs(w1 - w0) >= 40;
+  await page.waitForTimeout(1500);
+  record('theater mode on: single mount', theaterOn && (await single()), `${how}: player width ${w0} -> ${w1}; panel=${await panelHosts()} overlay=${await overlayHosts()}`);
+  await shot(page, '09-theater-mode');
+  await blur();
+  await page.keyboard.press('Alt+t');
+  await page.waitForTimeout(1500);
+  if (Math.abs((await playerWidth()) - w0) >= 40) {
+    await page.locator('[data-a-target="video-player"]').first().hover();
+    await page.locator('button[aria-label*="heat" i]').first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(1500);
+  }
+  await page.waitForTimeout(1000);
+  record('theater mode off: single mount, panel back above chat', (await single()) && (await page.locator('[data-fazetime-host="panel"]').getAttribute('data-fazetime-placement')) === 'chat', `player width ${await playerWidth()}`);
+
+  // Chat collapse / expand.
+  at('chat collapse');
+  await page.locator('[data-a-target="right-column__toggle-collapse-btn"]').first().click();
+  await page.waitForTimeout(2500);
+  const floating = await page.locator('[data-fazetime-placement="floating"]').count();
+  const visiblePanel = await page.locator('[data-fazetime-host="panel"]').evaluate((h) => h.getBoundingClientRect().height > 0).catch(() => false);
+  record('chat collapsed: no floating fallback, no duplicate, pill still mounted', floating === 0 && (await panelHosts()) <= 1 && (await overlayHosts()) === 1, `panel hosts=${await panelHosts()} visible=${visiblePanel}`);
+  await shot(page, '10-chat-collapsed');
+  at('chat expand');
+  const expand = page.locator('[data-a-target="right-column__toggle-collapse-btn"]').first();
+  if (await expand.count()) await expand.click();
+  else await page.getByRole('button', { name: /expand/i }).first().click();
+  await page.locator('[data-fazetime-host="panel"][data-fazetime-placement="chat"]').waitFor({ timeout: 15000 });
+  await page.waitForTimeout(1500);
+  const restored = await page.locator('[data-fazetime-host="panel"]').evaluate((h) => ({ h: Math.round(h.getBoundingClientRect().height), afterHeader: h.previousElementSibling?.classList.contains('stream-chat-header') }));
+  record('chat expanded: panel restored above chat exactly once', (await single()) && restored.h > 0 && restored.afterHeader === true, JSON.stringify(restored));
+  await shot(page, '11-chat-expanded');
+
+  // Full-screen via the player's button (a trusted click), then exit.
+  at('full-screen');
+  await page.locator('[data-a-target="video-player"]').first().hover();
+  await page.locator('[data-a-target="player-fullscreen-button"]').first().click({ timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(1500);
+  const fsOn = await page.evaluate(() => Boolean(document.fullscreenElement));
+  const pillsInFs = await page.evaluate(() => document.querySelector('[data-fazetime-host="overlay"]')?.shadowRoot?.querySelectorAll('.ft-pill').length ?? -1);
+  if (!fsOn) record('full-screen entered (headless)', false, 'document.fullscreenElement stayed null: not verifiable headless');
+  else record('full-screen: over-video pill hidden, single mount', pillsInFs === 0 && (await single()), `pills=${pillsInFs}`);
+  await shot(page, '12-fullscreen');
+  await page.evaluate(() => (document.fullscreenElement ? document.exitFullscreen() : undefined)).catch(() => {});
+  await page.waitForTimeout(1500);
+  const pillsAfter = await page.evaluate(() => document.querySelector('[data-fazetime-host="overlay"]')?.shadowRoot?.querySelectorAll('.ft-pill').length ?? -1);
+  record('full-screen exit: pill back, single mount', !(await page.evaluate(() => Boolean(document.fullscreenElement))) && pillsAfter === 1 && (await single()), `pills=${pillsAfter}`);
 } catch (err) {
   record(`smoke run (step: ${current})`, false, String(err?.message ?? err).split('\n').slice(0, 8).join(' | '));
   await shot(page, 'zz-failure').catch(() => {});

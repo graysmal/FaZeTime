@@ -84,6 +84,8 @@ export class MountController {
   private remountTimes: number[] = [];
   private gaveUp = false;
   private stopped = false;
+  /** The panel attached in chat at least once on this route (chat may later be collapsed). */
+  private attachedInChat = false;
   /** Count of host insertions, for tests and diagnostics. */
   insertions = 0;
 
@@ -123,6 +125,7 @@ export class MountController {
     this.unmountAll();
     this.channel = next;
     this.gaveUp = false;
+    this.attachedInChat = false;
     this.remountTimes = [];
     if (!next) {
       this.disconnect();
@@ -195,15 +198,21 @@ export class MountController {
     const anchor = findPanelAnchor(this.deps.doc);
 
     if (this.panel && !this.panel.host.isConnected) {
-      this.deps.log?.('panel host was removed by the page');
       this.unmountPanel();
-      if (!this.allowRemount()) return this.giveUp();
+      // Only a re-render that keeps chat present counts against the budget. If chat itself is gone
+      // (the viewer collapsed it), wait quietly; the over-video dropdown stays available.
+      if (anchor) {
+        this.deps.log?.('panel host was removed while chat stayed; re-inserting');
+        if (!this.allowRemount()) return this.giveUp();
+      }
     }
     if (this.gaveUp) return;
     if (this.panel?.placement === 'floating' && this.panel.notice === 'chat_not_found' && anchor) this.unmountPanel(); // Chat appeared late.
     if (!this.panel) {
       if (anchor) this.mountPanel('chat', null, anchor);
-      else if (this.now >= this.deadline) {
+      else if (this.attachedInChat) {
+        // Chat collapsed after a successful attach: no floating fallback, no page mutation.
+      } else if (this.now >= this.deadline) {
         this.deps.log?.('chat anchor not found within the bound; using the floating panel');
         this.mountPanel('floating', 'chat_not_found', null);
       } else this.armDeadline();
@@ -241,6 +250,7 @@ export class MountController {
     if (placement === 'chat' && anchor) {
       host.style.cssText = 'display:block;flex:0 0 auto;position:relative;z-index:1;min-height:0;';
       anchor.parent.insertBefore(host, anchor.before);
+      this.attachedInChat = true;
     } else {
       host.style.cssText = 'display:block;position:fixed;right:16px;bottom:16px;width:360px;max-height:72vh;z-index:2147483000;';
       (doc.body ?? doc.documentElement).appendChild(host);

@@ -153,6 +153,8 @@ export interface BackendAdapter extends MarketDataSource, WalletApi {
   peekSnapshot?(): ApiResult<StreamSnapshot> | null;
   /** Number of connected tabs; the live socket runs only while someone watches. */
   setDemand?(tabs: number): void;
+  /** A tab connected (new page or reload): refresh the snapshot once in the background. */
+  onTabConnected?(): void;
   presence?(input: PresenceInput): Promise<ApiResult<PresenceAck>>;
   enroll?(input: EnrollInput): Promise<ApiResult<{ me: Me }>>;
   signOut?(): Promise<void>;

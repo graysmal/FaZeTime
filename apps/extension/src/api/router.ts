@@ -110,6 +110,10 @@ export function attachRouter(adapter: BackendAdapter, runtime: RuntimeLike): () 
     const hello: PushMessage = { t: 'hello', mode: adapter.mode, fixtures: Boolean(adapter.fixtures) };
     safePost(port, hello);
     safePost(port, { t: 'status', status: adapter.status?.() ?? MOCK_STATUS } satisfies PushMessage);
+    // A new tab (or reload): serve the cache immediately, then refresh once from the server.
+    const cached = adapter.peekSnapshot?.();
+    if (cached) safePost(port, { t: 'snapshot', result: cached } satisfies PushMessage);
+    adapter.onTabConnected?.();
   };
 
   runtime.onConnect.addListener(onConnect);

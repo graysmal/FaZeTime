@@ -33,17 +33,17 @@ export default defineConfig({
     '@fixtures': resolve(__dirname, '../../packages/contracts/fixtures'),
   },
   manifest: {
-    name: mode === 'live' ? 'FaZeTime (DEMO, test money)' : 'FaZeTime (MOCK demo)',
+    name: mode === 'live' ? 'FaZeTime' : 'FaZeTime (MOCK demo)',
     description:
       mode === 'live'
-        ? 'FaZeTime hackathon demo panel for Twitch. Talks to the team demo API. Test money only.'
+        ? 'Predict what happens next on stream, with friends.'
         : 'FaZeTime hackathon demo panel for Twitch. P1 build: local MOCK/FIXTURE data only, no real money.',
     version,
     key: manifestKey.key,
     permissions: ['storage'],
     // Only the API origin, and only in live builds. Content scripts never call it (background only).
     host_permissions: mode === 'live' ? [`${apiBase.origin}/*`] : [],
-    action: { default_title: mode === 'live' ? 'FaZeTime enrollment (DEMO)' : 'FaZeTime profile (MOCK)' },
+    action: { default_title: mode === 'live' ? 'FaZeTime' : 'FaZeTime profile (MOCK)' },
   },
   vite: () => ({
     define: {

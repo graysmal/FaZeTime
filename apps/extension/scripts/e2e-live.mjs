@@ -112,8 +112,10 @@ try {
     await popup.goto(`chrome-extension://${EXT_ID}/popup.html`);
     await popup.getByPlaceholder('XXXX-XXXX-XXXX').fill(code);
     await popup.getByPlaceholder('PixelPilot').fill(name === 'A' ? 'Viewer Alice' : 'Viewer Bob');
-    await popup.getByRole('button', { name: 'Enroll' }).click();
-    await popup.getByText(/Enrolled as/).first().waitFor({ timeout: 15000 });
+    await popup.getByRole('button', { name: 'Sign in' }).click();
+    await popup.getByText(/Signed in as/).first().waitFor({ timeout: 15000 });
+    const popupText = await popup.locator('main').innerText();
+    record(`viewer ${name} popup is clean (D31: no MOCK/DEMO badge)`, !/MOCK|DEMO|TEST MONEY/.test(popupText), popupText.replace(/\s+/g, ' ').slice(0, 80));
     await popup.screenshot({ path: join(out, `${name}-00-popup-enrolled.png`) });
     await popup.close();
     const page = ctx.pages()[0] ?? (await ctx.newPage());
@@ -253,13 +255,16 @@ try {
   record('B after reload: loss banner and $13.00 from the server', /Available \$13\.00/.test(wb2), wb2);
   await B.page.screenshot({ path: join(out, 'B-06-after-reload.png') });
 
-  // 11. Honest live-mode labels; no Fixture menu.
-  const header = await A.panel.locator('.ft-head').innerText();
-  const modes = await A.panel.locator('.ft-modes').innerText();
-  record('live labels: DEMO badge, Data LIVE API, no Fixture menu', /DEMO/.test(header) && !/Fixture/.test(header) && /LIVE API/.test(modes), `${header.replace(/\s+/g, ' ')} | ${modes.replace(/\s+/g, ' ')}`);
+  // 11. D31: clean live surfaces. No badge, no mode chips, no Fixture menu; one test-credits note.
+  const panelText = await A.panel.innerText();
+  const chips = await A.panel.locator('.ft-modes').count();
+  const pillText = await A.page.locator('[data-fazetime-host="overlay"] .ft-pill').innerText();
+  record('D31: live panel and pill have no MOCK/DEMO badge, no mode chips, no Fixture menu', !/MOCK|DEMO|TEST MONEY|Fixture|LIVE API/.test(panelText + pillText) && chips === 0, `pill="${pillText.replace(/\s+/g, ' ')}"`);
   await A.panel.locator('.ft-tab', { hasText: 'Wallet' }).click();
+  const walletAll = await A.panel.locator('.ft-body').innerText();
+  const notes = (walletAll.match(/Balances are test credits\./g) ?? []).length;
   const topup = await A.panel.locator('.ft-primary').first().innerText();
-  record('top-ups shown as unavailable until phase 6', /unavailable/i.test(topup), topup);
+  record('D31: exactly one test-credits note; top-ups honestly unavailable', notes === 1 && /aren.t available yet/i.test(topup), `notes=${notes}; button="${topup}"`);
   await A.page.screenshot({ path: join(out, 'A-07-wallet-live.png') });
   for (const [name, v] of Object.entries(viewers))
     record(`viewer ${name}: snapshot fetches stay small (9.15(14): connect, reconnect, run change, resync only)`, true, `${await v.sw.evaluate(() => globalThis.__fazetimeDebug.snapshotFetches())} HTTP snapshot fetches in the whole run`);

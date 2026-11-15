@@ -223,9 +223,11 @@ export class PanelController {
       offsetMs: serverOffsetMs(snap.server_time_utc, this.now()),
     };
     if (prev && !sameRun) {
-      patch.runNotice = 'A new demo run started. Wallets were re-seeded for this run.';
+      patch.runNotice = 'A new run started. Balances were reset for this run.';
       if (!isBusy(this.state.bet)) patch.bet = IDLE;
     }
+    const terminal = snap.market?.state === 'SETTLED' || snap.market?.state === 'VOID';
+    if (terminal && this.state.bet.kind === 'accepted') patch.bet = IDLE; // The banner replaces the stale toast.
     this.set(patch);
   }
 

@@ -208,7 +208,7 @@ describe('PanelController over the mock (content-side flows)', () => {
     const c = new PanelController(asApi(b), memoryKV());
     await c.refresh();
     await c.loadFixture('run_reset');
-    expect(c.getState().runNotice).toMatch(/new demo run/i);
+    expect(c.getState().runNotice).toMatch(/new run started/i);
     c.dispose();
   });
 });

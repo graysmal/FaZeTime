@@ -503,6 +503,10 @@ export class LiveBackend implements BackendAdapter {
     }
   }
 
+  onTabConnected(): void {
+    if (this.session) void this.fetchSnapshot(); // Authoritative refresh on reload; pushes to every tab.
+  }
+
   ensureLink(): void {
     if (!this.session || this.demand === 0) return;
     if (this.wsPhase === 'closed' && this.reconnectTimer === null && this.link !== 'ORIGIN_REJECTED') void this.openSocket();

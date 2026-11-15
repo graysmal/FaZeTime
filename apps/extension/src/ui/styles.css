@@ -688,6 +688,11 @@ button:disabled {
   white-space: nowrap;
   max-width: 230px;
 }
+.ft-pill-brand {
+  font-weight: 800;
+  color: var(--ft-red);
+  white-space: nowrap;
+}
 .ft-pill-time {
   font-variant-numeric: tabular-nums;
   color: #ff6b85;

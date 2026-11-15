@@ -60,7 +60,7 @@ npx vitest run                       # 190 tests
 cd ../../apps/extension
 npm install --no-audit --no-fund --ignore-scripts && npx wxt prepare
 npx tsc --noEmit
-npx vitest run                       # 88 tests
+npx vitest run                       # 94 tests
 npm run build:mock                   # -> .output/chrome-mv3
 npm run build:live                   # -> .output/chrome-mv3-live            (API http://127.0.0.1:8000)
 npm run build:live:pi                # -> .output/chrome-mv3-live-fazetime   (API http://fazetime:8000)
@@ -70,8 +70,8 @@ node scripts/copy-to-documents.mjs chrome-mv3-live-fazetime fazetime-extension-l
 
 # Real-browser checks (Playwright bundled Chromium; downloaded once)
 npx playwright install --no-shell chromium
-node scripts/smoke.mjs               # P1 mock build on live twitch.tv: 19/19
-node scripts/e2e-live.mjs            # P2 two-browser test against the real API: 29/29 (see below)
+node scripts/smoke.mjs               # mock build on live twitch.tv: 25/25 (incl. theater, chat collapse/expand, full-screen)
+node scripts/e2e-live.mjs            # two-browser test against the real API: 31/31 (see below)
 ```
 
 The copy script overwrites files in place and never deletes anything. Stale chunk files from older builds are harmless.
@@ -106,9 +106,13 @@ Chrome on this laptop is a Flatpak and can only read folders such as `~/Document
 - **Polling fallback:** while the socket is down, every 2 s if a market is OPEN, else every 10 s.
 - **Presence:** while the panel is mounted, the content script reports `page_visibility` and `player_state` every 15 s and on visibility change. The background adds the device ID and session and calls `POST /v1/presence`.
 - **Top-up and redeem:** the background returns `CAPABILITY_UNAVAILABLE` without making a network call. The UI says "unavailable until phase 6".
-- **Labels:**
-  - Live builds show a `DEMO · TEST MONEY` badge and chips for Media, Model, Funds and `Data: LIVE API`, taken from `snapshot.modes`.
-  - Live builds have no Fixture menu.
+- **Labels (D31):**
+  - Live builds are named plain "FaZeTime".
+  - The panel, over-video pill and popup carry no MOCK/DEMO badge, no mode chips and no Fixture menu. Fixture-origin markets show no origin label; AI-origin markets read "AI suggested".
+  - Exactly one small grey note, "Balances are test credits.", appears in the Wallet tab and in the top-up dialog.
+  - Mock builds keep their MOCK badge and Media/Model/Funds/Data chips (dev only). The operator console carries the mode labels.
+- **Reload:** a newly connected tab gets the cached snapshot immediately, and the background then refreshes once from the server.
+- **Chat collapse** is not "chat missing": it never spawns the floating panel and does not use the re-attach budget. Expanding chat restores the panel above chat.
 
 ## Two-browser evidence (`scripts/e2e-live.mjs`, 2026-11-14 ~21:52 CT)
 

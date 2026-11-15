@@ -53,6 +53,7 @@ export default defineContentScript({
       watch: watchKey,
       channel,
       doc: document,
+      mode: FAZETIME_MODE,
       requestPanelOpen: () => panelOpenListeners.forEach((cb) => cb()),
       onPanelOpenRequest: (cb) => {
         panelOpenListeners.add(cb);

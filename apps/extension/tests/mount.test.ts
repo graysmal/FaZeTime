@@ -122,6 +122,23 @@ describe('MountController (P1-A / P1-E)', () => {
     expect(hosts('panel')).toHaveLength(1);
   });
 
+  it('chat collapse is not "chat missing": no floating panel, no budget use; expand restores the panel', async () => {
+    twitchDom(document);
+    ctl = make({ maxRemounts: 1 });
+    ctl.start();
+    for (let i = 0; i < 3; i++) {
+      document.querySelector('.stream-chat')!.remove(); // Viewer collapses chat.
+      await flush(260);
+      expect(hosts('panel')).toHaveLength(0);
+      expect(ctl.state).toMatchObject({ panel: null, gaveUp: false });
+      document.querySelector('#live-page-chat')!.innerHTML =
+        '<div class="stream-chat"><div class="stream-chat-header"></div><section class="chat-room" data-test-selector="chat-room-component-layout"></section></div>';
+      await flush();
+      expect(ctl.state.panel).toBe('chat'); // Expand restores the panel above chat.
+      expect(hosts('panel')).toHaveLength(1);
+    }
+  });
+
   it('removes hosts orphaned by an invalidated instance and cleans up on stop', async () => {
     twitchDom(document);
     const orphan = document.createElement('fazetime-root');

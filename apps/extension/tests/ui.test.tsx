@@ -4,11 +4,12 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { bannerFor, LOSS_BANNER_TEXT, type StreamSnapshot } from '@fazetime/contracts';
 import { loadSnapshotFixture, SNAPSHOT_FIXTURE_NAMES, type SnapshotFixtureName } from '../src/mock/fixtures';
 import { bannerCopy, MarketCard } from '../src/ui/MarketCard';
-import { Panel, clampPanelHeight, CHAT_MIN_PX, PANEL_MIN_PX } from '../src/ui/Panel';
+import { Panel, clampPanelHeight, CHAT_MIN_PX, PANEL_MIN_PX, TopUpDialog, WalletTab } from '../src/ui/Panel';
+import { Overlay } from '../src/ui/Overlay';
 import { EnvContext, type UiEnv } from '../src/ui/hooks';
 import { initialPanelState, PanelController, type PanelState } from '../src/state/controller';
 
-function envWith(state: Partial<PanelState>): UiEnv {
+function envWith(state: Partial<PanelState>, mode: 'mock' | 'live' = 'mock'): UiEnv {
   const controller = new PanelController({} as never, { get: async () => null, set: async () => undefined, remove: async () => undefined });
   (controller as unknown as { state: PanelState }).state = { ...initialPanelState(), ...state };
   return {
@@ -17,6 +18,7 @@ function envWith(state: Partial<PanelState>): UiEnv {
     watch: () => () => undefined,
     channel: 'somechannel',
     doc: document,
+    mode,
     requestPanelOpen: () => undefined,
     onPanelOpenRequest: () => () => undefined,
   };
@@ -106,5 +108,53 @@ describe('panel chrome', () => {
     expect(clampPanelHeight(5000, 600)).toBe(600 - CHAT_MIN_PX);
     expect(clampPanelHeight(10, 600)).toBe(PANEL_MIN_PX);
     expect(clampPanelHeight(300, 600)).toBe(300);
+  });
+});
+
+describe('D31: live builds look like a product (no MOCK/DEMO badges or mode chips)', () => {
+  const live = (name: string): StreamSnapshot => ({ ...snap(name), modes: { ai_mode: 'OFF', payment_mode: 'UNAVAILABLE', media_source_kind: null } });
+  const panel = (state: Partial<PanelState>) =>
+    render(envWith(state, 'live'), <Panel host={document.createElement('div')} placement="chat" notice={null} retryAttach={() => undefined} />);
+
+  it('panel header and body carry no badge, chips, fixture menu or fixture-origin label', () => {
+    const html = panel({ snapshot: live('open_no_position'), adapterMode: 'LIVE', hasFixtures: false });
+    expect(html).not.toMatch(/MOCK|DEMO|TEST MONEY|ft-modes|Fixture ▾|Canned fixture|Operator fixture|LIVE API/);
+    expect(html).toContain('FaZe<b>Time</b>');
+    expect(html).toContain('Will RedFox win the first Minecraft duel against BlueJay?');
+  });
+
+  it('the over-video pill has no badge', () => {
+    const host = document.createElement('div');
+    document.createElement('div').appendChild(host);
+    const html = render(envWith({ snapshot: live('open_no_position') }, 'live'), <Overlay host={host} />);
+    expect(html).not.toMatch(/MOCK|DEMO/);
+    expect(html).toContain('ft-pill-brand');
+  });
+
+  it('exactly one unobtrusive test-credits note in the Wallet tab and the top-up dialog', () => {
+    const wallet = render(envWith({ snapshot: live('open_no_position') }, 'live'), <WalletTab />);
+    expect(wallet.match(/Balances are test credits\./g)).toHaveLength(1);
+    expect(wallet).not.toMatch(/MOCK|DEMO|phase 6/);
+    expect(wallet).toContain("Top-ups aren&#x27;t available yet");
+    const dialog = render(
+      envWith({ snapshot: live('open_low_balance'), topUp: { ...initialPanelState().topUp, open: true, reason: 'insufficient', neededMinor: 200 } }, 'live'),
+      <TopUpDialog />,
+    );
+    expect(dialog.match(/Balances are test credits\./g)).toHaveLength(1);
+    expect(dialog).not.toMatch(/MOCK|DEMO|FaZe Up!/); // Nothing chargeable is offered while top-ups are unavailable.
+  });
+
+  it('AI-origin markets read as "AI suggested", never as fixtures', () => {
+    const html = render(envWith({ snapshot: live('open_source_stale') }, 'live'), <MarketCard surface="panel" />);
+    expect(html).toContain('AI suggested');
+    expect(html).not.toMatch(/fixture/i);
+  });
+
+  it('mock builds keep their dev labels', () => {
+    const html = render(envWith({ snapshot: snap('open_no_position'), adapterMode: 'MOCK', hasFixtures: true }), (
+      <Panel host={document.createElement('div')} placement="chat" notice={null} retryAttach={() => undefined} />
+    ));
+    expect(html).toContain('MOCK');
+    expect(html).toContain('ft-modes');
   });
 });

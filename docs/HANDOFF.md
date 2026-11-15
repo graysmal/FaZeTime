@@ -1,83 +1,76 @@
 # Current handoff
 
-- **Timestamp / coordinator:** 2026-11-14 ~21:05 CT, coordinator session in the Claude Code desktop app (Claude Code 2.1.289, model Opus 5.5 `claude-opus-5-5`).
-- **Current phase / task:** P0 exit gate. P1 and P2 are running in parallel.
-- **Branch and commit:** `hackathon-build`, pushed to `origin` (graysmal/FaZeTime, a **public** repo) at ~21:50 CT with the owner's authorization.
-  - Before the first push, the two local commits were squashed into one checkpoint for phases 0–2, so that a teammate's name and a device name never reached public history.
-  - The branch starts from `master` @ `6c05030`.
-  - Workers' in-progress edits after the checkpoint stay uncommitted until they are reviewed.
-  - Never commit names, phone numbers, IDs or keys: the repo is public.
-- **Env keys in `.env.local`** (names only): `GEMINI_API_KEY`, `CHERT_API_KEY`, `CHERT_PROJECT_ID`, `CHERT_LINE_NUMBER`, `DEMO_CALL_ALLOWLIST` (team phone ***9335).
-- **Team Twitch channel:** `fazegavin1234`. Not live at 21:01 CT.
+- **Timestamp / coordinator:** 2026-11-14 22:01 CT. Coordinator session in the Claude Code desktop app (2.1.289, model Opus 5.5 `claude-opus-5-5`).
+- **Deadline:** 12:00 CT Sun 2026-11-15, about 14 h away.
+- **Branch:** `hackathon-build` @ `e4f736a`, pushed to `origin` (graysmal/FaZeTime, a **public** repo).
+  - The owner authorized committing and pushing coherent increments.
+  - Never commit names, phone numbers, Chert or Stripe IDs, or keys.
+  - Run a scan of the staged diff before every push.
 
-**Uncommitted changes and their owners**
+## Phase state
 
-| Owner | Paths |
+See STATUS for the evidence.
+
+| Phase | State |
 |---|---|
-| Coordinator | `.gitignore`, `docs/DECISIONS.md`, `docs/STATUS.md`, `docs/HANDOFF.md`, `docs/CONTRACTS.md` (§9 v1 freeze plus line fixes), `docs/ECONOMICS.md` (4 alignment edits), `PROJECT_PLAN.md` (P5 timeout sentence), `docs/evidence/p0/*` |
-| P0 media worker (finished) | `spikes/p0-media/**` |
-| Pi worker | `spikes/p0-pi/**` and `~/fazetime-spike/**` on the Pi |
-| Chert worker | `spikes/p0-chert/**` |
-| P1 worker | `apps/extension/**`, `packages/contracts/**`, `~/Documents/fazetime-extension/` |
-| P2 worker | `services/api/**` |
+| P0 | Closing. Remaining: the P0-B team-channel analysis from the media worker, then the coordinator writes the P0 gate record |
+| P1 | Built. The owner loaded the mock build in Flatpak Chrome: "looks alright". Visual critique deferred; focus on function |
+| P2 | Built, and the two-browser e2e passed 29/29. Remaining: the Pi run, review fixes M2/M3, and the operator console |
+| P3 | In progress |
+| P4/P5 | Contract frozen (CONTRACTS §9.17), not started |
+| P6 | Adapter prep in progress |
 
-**Decisions changed this session:** D10–D12 and D14–D22 moved to OWNER_CONFIRMED. D23–D29 added as DESIGN_DEFAULT. See the change log in DECISIONS.
+## Active workers
 
-**Checks**
-- **Passed (MEASURED):**
-  - Laptop and Pi inventory.
-  - Twitch TOOLCHAIN_SMOKE on a public channel, including the restart → new epoch test.
-  - Laptop ASR benchmark.
-  - Gemini key validity via `models.list`.
-- **Not performed:**
-  - Team-channel P0-B.
-  - Gemini generation.
-  - Pi ASR benchmark (running).
-  - Chert probe (reporting).
-  - Tailnet WebSocket test (running).
-  - Any browser extension check.
+All work in the main checkout on disjoint paths and do not commit.
 
-**External accounts and devices**
-- Pi reachable as `fazetime@fazetime` over Tailscale with key auth. The coordinator never uses or stores a password and never runs sudo on it.
-- `.env.local` holds `GEMINI_API_KEY` and `CHERT_API_KEY`. It is gitignored; never print it.
-- **Stripe CLI** 1.55.11 is installed at `~/.local/bin/stripe` on `latpop`.
-  - Source: the official GitHub release, SHA-256 verified on 2026-11-14.
-  - No `stripe login` is needed: use `stripe listen --api-key "$STRIPE_SECRET_KEY" --forward-to …` with the test key.
-  - `STRIPE_SECRET_KEY` was not in `.env.local` yet at ~21:55 CT. The owner is creating the account; it must be test mode only.
+| Worker | Paths | Task |
+|---|---|---|
+| Backend | `services/api/**` | §9.16 worker routes; review fixes M2, M3, L1–L3 and L8; D30 operators cannot wager; `/operator` static mount; Pi deploy with origins `https://www.twitch.tv,chrome-extension://hodaaffdhncidmaccebmionoljljfefe` |
+| Media | `services/worker/**`, `spikes/p0b-team/**` | P0-B analysis and choosing the ASR model on the team audio, then the P3 worker |
+| Extension | `apps/extension/**`, `packages/contracts/**` | D31 clean live UI with one "test credits" note; snapshot refresh on reload; theater/chat/full-screen smoke checks |
+| Operator console | `apps/operator/**` | New React/Vite app, served by the API at `/operator/` |
+| Stripe | `services/api/fazetime_api/integrations/**`, `services/api/tests/integrations/**`, `spikes/p6-stripe/**` | Stdlib adapter for Checkout and webhooks, a fulfillment planner, and a test-mode smoke run |
 
-**Active workers**
-- Pi ASR/tailnet.
-- Chert read-only probe.
-- P1 extension.
-- P2 backend.
-All started from base `6c05030`, all in the main checkout on disjoint paths.
+## Next assignments, after the current reports
 
-**Blockers and open questions for the owner**
-1. Confirm that the Gemini key's project is on the free tier (no billing linked).
-2. Create the Twitch channel, then run an OBS test broadcast on `latpop` with the stream key entered by the owner.
-3. Run `sudo apt install -y ffmpeg git` on the Pi, and use the official 27 W power supply because of the under-voltage history.
-4. Record the Minecraft 1v1 using the proposed cues:
-   - The opening line, followed by at least 90 s of setup.
-   - A spoken "3, 2, 1, fight".
-   - An outcome shown both by the in-game death message and by a spoken "FaZe<name> wins".
-5. Authorize commits, preferably on a working branch.
+1. **Backend:** the P4/P5 routes from §9.17, plus P6 wiring: a topups table, the webhook route with the raw body, and fulfillment inside the transaction, following the Stripe adapter's report. Then a review.
+2. **Media:** the Gemini proposer and resolver from §9.17 (`gemini-3.5-flash-lite`, structured output, few frames), tested against the owner's recordings.
+3. **Extension:** P6-E, the Stripe Checkout handoff in Wallet, once the backend routes exist.
+4. **Coordinator:** the P0 gate record; then commit and push each accepted increment.
 
-**Next three concrete actions**
-1. Review the Pi, Chert, P1 and P2 reports.
-2. Run P0-B on the team channel with `spikes/p0-media/capture_spike.py --label P0B_TEAM_CHANNEL --duration-s 900`.
-3. Run the P0-C Gemini smoke test (3.3.0 SDK, one request) after free-tier confirmation. Then write the P0 recommendation and gate record.
+## Owner actions
 
-**Pi notes, updated 21:25 CT**
-- The official 27 W supply is installed, and the re-run passed. D22 primary is restored: the Pi hosts the API, capture and ASR. Provisional ASR model: tiny.en at 3 threads.
-- The P0-B team-channel capture is running in `~/fazetime-p0b/`, from 21:15:23 to 21:31:23 CT. A scheduled Streamlink kill fires at 21:25:23. The owner stops and restarts the stream at about 21:21.
-- The clock is set to America/New_York but NTP is synced; use UTC everywhere.
-- The tailnet path is relayed through DERP (Dallas, about 13 ms).
-- `~/fazetime-spike/` holds a uv-managed Python 3.12.16 venv, the tiny/base models, and the bench scripts for a re-run.
-- The uv installer added `. "$HOME/.local/bin/env"` to `~/.profile` and `~/.bashrc`, and created `~/.config/fish/conf.d/uv.env.fish`. This is a benign PATH line; the revert command is in spikes/p0-pi/README.md.
-- The third-party test WAV was deleted from both the laptop and the Pi at 03:22Z, as the Pi worker confirmed.
+- **Record two Minecraft 1v1 takes**, ETA about 00:00 CT. One where FaZeGavin wins, one where FaZeNeville wins. Cues:
+  - in-game names FaZeGavin and FaZeNeville;
+  - the opening line from D19, then at least 90 s of setup;
+  - "3, 2, 1, fight!";
+  - chat visible so the death message shows;
+  - a spoken "FaZe<name> wins!".
+- **Then stream them via OBS** on `latpop` to `fazegavin1234`, for the live P3/P4/P5 tests.
+- **Later:** a P6 test checkout using Stripe's published test card in Stripe's test-mode page; the rehearsals; and a manual FaceTime handoff for P10. Chert is blocked unless the owner wants automation.
 
-**Do not repeat / known failed approaches**
-- Do not use a GAP/STALE threshold of 6 s or less: Twitch delivers media in 6 s bursts.
-- Do not use the WAL journal mode (D23).
-- Do not pass `--twitch-disable-ads`.
-- After the Pi benchmark, delete the retained third-party WAV at `spikes/p0-media/out/smoke/summit1g/audio.wav` (and its copy on the Pi).
+## Environment facts
+
+- **`.env.local` keys** (names only): `GEMINI_API_KEY`, `CHERT_API_KEY`, `CHERT_PROJECT_ID`, `CHERT_LINE_NUMBER`, `DEMO_CALL_ALLOWLIST`, `STRIPE_SECRET_KEY`. The Stripe key's test-mode prefix has been verified.
+- **Stripe CLI** 1.55.11 at `~/.local/bin/stripe`. Use `--api-key`; no login is needed.
+- **Pi `fazetime`:**
+  - Official PSU: `0x0` throttling under load.
+  - Reached with `ssh fazetime@fazetime` using key auth only. Never use a password or sudo.
+  - The API binds only to the tailnet IP on port 8000 (`http://fazetime:8000`), with data in `~/fazetime-data/`.
+  - ASR: tiny.en at 3 threads is provisional, pending the team-audio test.
+  - The P0-B capture output is in `~/fazetime-p0b/`. It is the team's own content; keep it out of git.
+- **Extension builds** in `~/Documents/`:
+  - `fazetime-extension` (mock)
+  - `fazetime-extension-live` (`127.0.0.1:8000`)
+  - `fazetime-extension-live-pi` (`fazetime:8000`)
+  - Pinned extension ID: `hodaaffdhncidmaccebmionoljljfefe`.
+
+## Do not repeat / known failures
+
+- Never use a GAP/STALE threshold of 6 s or less: Twitch delivers media in bursts about 6 s apart.
+- Never use the WAL journal mode (D23).
+- Never pass `--twitch-disable-ads`.
+- Never run `cpu_threads=4` on the Pi alongside other load.
+- Never use wildcard extension origins.
+- Never commit third-party media or transcripts.

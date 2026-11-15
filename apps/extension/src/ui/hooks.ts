@@ -17,6 +17,8 @@ export interface UiEnv {
   watch<T>(key: string, cb: (value: T | null) => void): () => void;
   channel: string;
   doc: Document;
+  /** Build mode. Live builds follow D31: no MOCK/DEMO badges or mode chips on viewer surfaces. */
+  mode: 'mock' | 'live';
   /** Ask the panel (if mounted) to expand, e.g. when the overlay needs the top-up dialog. */
   requestPanelOpen: () => void;
   onPanelOpenRequest: (cb: () => void) => () => void;
