@@ -1,3 +1,4 @@
+import './polyfills'; // must stay first: crypto.randomUUID fallback for the plain-http tailnet origin
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
