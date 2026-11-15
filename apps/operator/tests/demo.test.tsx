@@ -386,6 +386,111 @@ describe('DemoView', () => {
   });
 });
 
+// ---- §9.19 generic candidates (D37/D39) ------------------------------------------------------------------------
+
+const CUES = { success_cue: 'SUCCESS_CUE_MODEL_TEXT level cleared', failure_cue: 'FAILURE_CUE_MODEL_TEXT try again' };
+const YES_RULE = 'YES if the level in progress when betting opened ends with a visible result showing the streamer cleared it.';
+const NO_RULE = 'NO if it ends with a visible result showing the streamer does not.';
+
+/** A pending GENERIC_BINARY_V1 candidate: received 10 s ago with close_in_s 35, so its receipt-anchored lead is gone. */
+function genericCandidate(over: Partial<AiCandidate> = {}): AiCandidate {
+  return candidate({
+    template_id: 'GENERIC_BINARY_V1',
+    generic: { spec_version: 'gen-1', kind: 'EPISODE_OUTCOME', unit: 'level', params: { win_verb: 'clear' }, episode_start_media_ms: 120_000, ...CUES },
+    episode_fingerprint: `gen:${EP}:120000:episode_outcome`,
+    question: 'Will the streamer clear this level?',
+    yes: { label: 'Yes', predicate: YES_RULE },
+    no: { label: 'No', predicate: NO_RULE },
+    subjects: [],
+    suggested_close_in_s: 35,
+    suggested_resolve_in_s: 335,
+    close_in_s: 35,
+    resolve_in_s: 335,
+    proposed_close_at_utc: iso(25_000),
+    rationale: 'model rationale',
+    ...over,
+  });
+}
+
+describe('DemoView: §9.19 generic candidates', () => {
+  it('approves a generic candidate with its clamped close_in_s (from approval), and H2H still without one', async () => {
+    const gen = api({ health: healthBody({ ai: AI, server_time_utc: NOW }), candidates: [genericCandidate()] });
+    mounted = await mount(<DemoView client={gen.client} />);
+    const c = mounted.container;
+    await waitFor(() => card(c)?.dataset.state === 'candidate');
+    // The receipt-anchored lead (close at +25 s, minus 30 s) would already be gone; counted from approval it does
+    // not apply, so the window is the candidate expiry (50 s).
+    expect(c.querySelector('[data-testid="demo-countdown"]')!.textContent).toMatch(/^0:(4\d|50)$/);
+    const approve = byText(c, 'button', 'Approve') as HTMLButtonElement;
+    expect(approve.disabled).toBe(false);
+    await click(approve);
+    await waitFor(() => posts(gen.calls).length === 1);
+    const [g] = posts(gen.calls);
+    expect(g.url).toBe(`/v1/operator/candidates/${CND}/approve`);
+    expect(g.body).toEqual({ close_in_s: 35, operation_id: g.body?.operation_id });
+    expect(g.body?.operation_id).toMatch(UUID_RE);
+    mounted.unmount();
+
+    const h2h = api({ health: healthBody({ ai: AI, server_time_utc: NOW }), candidates: [candidate({ proposed_close_at_utc: iso(45_000) })] });
+    mounted = await mount(<DemoView client={h2h.client} />);
+    const c2 = mounted.container;
+    await waitFor(() => card(c2)?.dataset.state === 'candidate');
+    expect(c2.querySelector('[data-testid="demo-countdown"]')!.textContent).toMatch(/^0:1[0-5]$/); // LEAD still binds
+    expect(c2.querySelector('[data-testid="demo-kind"]')).toBeNull();
+    expect(c2.querySelector('[data-testid="demo-rules"]')).toBeNull();
+    await click(byText(c2, 'button', 'Approve'));
+    await waitFor(() => posts(h2h.calls).length === 1);
+    const [h] = posts(h2h.calls);
+    expect(h.body).toEqual({ operation_id: h.body?.operation_id });
+    expect(h.body).not.toHaveProperty('close_in_s');
+  });
+
+  it('shows one small kind line plus the YES / NO rules, tolerates no subjects, and never shows the cues', async () => {
+    const kinds: [string, string, Record<string, unknown>][] = [
+      ['EPISODE_OUTCOME', 'Outcome', { win_verb: 'clear' }],
+      ['END_VALUE_AT_LEAST', 'Number', { label: 'time left', threshold: 30 }],
+      ['SAY_PHRASE', 'Heard on stream', { phrase: 'rush' }],
+      ['DURATION_OVER', 'Duration', { duration_s: 90 }],
+    ];
+    for (const [kind, label, params] of kinds) {
+      const g = genericCandidate({
+        generic: { spec_version: 'gen-1', kind, unit: 'round', params, episode_start_media_ms: 5_000, ...CUES },
+        subjects: kind === 'SAY_PHRASE' ? ['FaZeGavin'] : [],
+      });
+      const { client } = api({ health: healthBody({ ai: AI, server_time_utc: NOW }), candidates: [g] });
+      mounted = await mount(<DemoView client={client} />);
+      const c = mounted.container;
+      await waitFor(() => card(c)?.dataset.state === 'candidate');
+      expect(c.querySelector('[data-testid="demo-kind"]')!.textContent).toBe(label);
+      const rules = c.querySelector('[data-testid="demo-rules"]')!;
+      expect(rules.querySelector('.demo-rule.yes')!.textContent).toBe(YES_RULE); // already says YES: no repeated label
+      expect(rules.querySelector('.demo-rule.no')!.textContent).toBe(NO_RULE);
+      expect(c.querySelector('.demo-chip')).toBeNull();
+      expect(c.textContent).not.toMatch(/SUCCESS_CUE|FAILURE_CUE|model rationale|GENERIC_BINARY_V1|gen:/);
+      mounted.unmount();
+      mounted = null;
+    }
+  });
+
+  it('labels a rule that does not name its side, and shows no kind line without a generic object', async () => {
+    const g = genericCandidate({
+      generic: null,
+      yes: { label: 'Yes', predicate: 'The streamer clears the level.' },
+      no: { label: 'No', predicate: 'The level ends without a clear.' },
+    });
+    const { client, calls } = api({ health: healthBody({ ai: AI, server_time_utc: NOW }), candidates: [g] });
+    mounted = await mount(<DemoView client={client} />);
+    const c = mounted.container;
+    await waitFor(() => card(c)?.dataset.state === 'candidate');
+    expect(c.querySelector('[data-testid="demo-kind"]')).toBeNull();
+    expect(c.querySelector('.demo-rule.yes')!.textContent).toBe('Yes: The streamer clears the level.');
+    expect(c.querySelector('.demo-rule.no')!.textContent).toBe('No: The level ends without a clear.');
+    await click(byText(c, 'button', 'Approve'));
+    await waitFor(() => posts(calls).length === 1);
+    expect(posts(calls)[0].body).toMatchObject({ close_in_s: 35 });
+  });
+});
+
 describe('client: D35 silent re-open', () => {
   it('a 401 on a mutation re-opens once and retries with the same operation_id and the new token', async () => {
     let token = TOKEN;

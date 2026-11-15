@@ -446,12 +446,21 @@ WORKER_MARKET_FIELDS = ("market_id", "rules_version", "state", "origin", "questi
 
 @router.get("/market")
 def worker_market(request: Request, stream_id: str, worker: WorkerPrincipal = Depends(worker_principal)):
-    """§9.17 item 5b: the run's nonterminal market (exactly these fields), or null. No balances, no user data."""
+    """§9.17 item 5b: the run's nonterminal market (exactly these fields), or null. No balances, no user data.
+    §9.19 item 6 adds template_id and generic from the market's originating candidate; both null for fixture and
+    manual markets."""
     svc: Services = svc_of(request)
     with svc.db.read() as conn:
         _, run = _stream_and_run(conn, stream_id)
         row = views.nonterminal_market(conn, run["run_id"])
-        market = {k: row[k] for k in WORKER_MARKET_FIELDS} if row is not None else None
+        market = None
+        if row is not None:
+            market = {k: row[k] for k in WORKER_MARKET_FIELDS}
+            cand = conn.execute("SELECT template_id, generic_json FROM ai_candidates WHERE market_id = ?",
+                                (row["market_id"],)).fetchone()
+            market["template_id"] = cand["template_id"] if cand is not None else None
+            market["generic"] = (json.loads(cand["generic_json"])
+                                 if cand is not None and cand["generic_json"] is not None else None)
     return JSONResponse({"schema_version": 1, "market": market}, headers={"Cache-Control": "no-store"})
 
 

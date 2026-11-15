@@ -22,6 +22,7 @@ import { AuthThumb } from './AuthThumb';
 import { ErrorNotice, MutationStatus, Panel, StateBadge } from './common';
 import { BINDING_TEXT, candidateDeadlines } from './deadlines';
 import { formatDuration, formatMediaMs, formatUtcClock, shortId } from './format';
+import { approvalCloseInS, genericKindLabel, genericParamsText, isGenericCandidate, subjectsText } from './generic';
 import { useMutation, useNow, usePoll } from './hooks';
 
 const AI_ORIGINS = new Set(['AI_APPROVED', 'AI_AUTOMATIC']);
@@ -181,7 +182,14 @@ export function CandidateCard({
   const overrideN = override.trim() === '' ? null : Number(override);
   const overrideOk =
     overrideN === null || (Number.isSafeInteger(overrideN) && overrideN >= limits.closeMin && overrideN <= limits.closeMax);
-  const d = serverNowMs === null ? null : candidateDeadlines(c, serverNowMs, { ...limits, override: overrideN !== null });
+  // §9.19 item 5: a blank override still sends a generic candidate's own close_in_s (counted from approval);
+  // for H2H, blank stays null (receipt-anchored close), unchanged.
+  const generic = isGenericCandidate(c);
+  const defaultClose = approvalCloseInS(c);
+  const closeToSend = overrideN ?? defaultClose;
+  const kindLabel = genericKindLabel(c);
+  const paramsText = genericParamsText(c.generic?.params);
+  const d = serverNowMs === null ? null : candidateDeadlines(c, serverNowMs, { ...limits, override: closeToSend !== null });
   const timeLeft = d?.approveMs ?? null;
   const late = timeLeft !== null && timeLeft <= 0;
   const canAct = c.actionable && !late;
@@ -190,7 +198,7 @@ export function CandidateCard({
 
   const doApprove = () => {
     if (!canAct || !overrideOk || busy) return;
-    void approve.run(() => client.approveCandidate(c.id, overrideN));
+    void approve.run(() => client.approveCandidate(c.id, closeToSend));
   };
   const doReject = (e: FormEvent) => {
     e.preventDefault();
@@ -211,7 +219,7 @@ export function CandidateCard({
         {isNew && <span className="badge new">NEW</span>}
         <code title={c.id}>{shortId(c.id)}</code>
         <span className="muted small">
-          {c.template_id} · {c.model} · {c.prompt_version} · received {formatUtcClock(c.received_at_utc)}
+          {c.template_id ?? 'template unknown'} · {c.model} · {c.prompt_version} · received {formatUtcClock(c.received_at_utc)}
         </span>
       </header>
 
@@ -233,6 +241,19 @@ export function CandidateCard({
         </div>
       )}
 
+      {generic && (
+        <div className="small" data-testid="candidate-kind">
+          <span className="badge">{kindLabel ?? 'Generic'}</span>{' '}
+          {c.generic ? (
+            <>
+              <code>{c.generic.kind}</code> · unit {c.generic.unit}
+              {paramsText && <> · {paramsText}</>} · episode start {formatMediaMs(c.generic.episode_start_media_ms)}
+            </>
+          ) : (
+            <span className="muted">no generic detail from the server</span>
+          )}
+        </div>
+      )}
       <p className="question">{c.question}</p>
       <div className="sides">
         <div className="side-terms yes">
@@ -244,10 +265,12 @@ export function CandidateCard({
           <span>{c.no.predicate}</span>
         </div>
       </div>
-      <div className="small muted">
-        Subjects: A = {c.subjects[0] ?? '?'} · B = {c.subjects[1] ?? '?'} · episode <code>{c.episode_fingerprint}</code> ·
-        close {c.close_in_s ?? c.suggested_close_in_s} s{c.proposed_close_at_utc ? ` (at ${formatUtcClock(c.proposed_close_at_utc)}, from receipt)` : ''} ·
-        resolve {c.resolve_in_s ?? c.suggested_resolve_in_s} s
+      <div className="small muted" data-testid="candidate-terms">
+        {subjectsText(c)} · episode <code>{c.episode_fingerprint}</code> ·{' '}
+        {generic && defaultClose !== null
+          ? `close ${defaultClose} s from approval`
+          : `close ${c.close_in_s ?? c.suggested_close_in_s} s${c.proposed_close_at_utc ? ` (at ${formatUtcClock(c.proposed_close_at_utc)}, from receipt)` : ''}`}{' '}
+        · resolve {c.resolve_in_s ?? c.suggested_resolve_in_s} s
       </div>
       {c.cancellation_conditions.length > 0 && (
         <div className="small">
@@ -274,7 +297,9 @@ export function CandidateCard({
               />
               <span className="muted small">
                 {overrideN === null
-                  ? `blank keeps the close at ${formatUtcClock(c.proposed_close_at_utc)} (from receipt)`
+                  ? defaultClose !== null
+                    ? `blank sends its ${defaultClose} s, counted from approval (§9.19)`
+                    : `blank keeps the close at ${formatUtcClock(c.proposed_close_at_utc)} (from receipt)`
                   : overrideOk
                     ? `closes ${overrideN} s after approval`
                     : `must be ${limits.closeMin}–${limits.closeMax}`}

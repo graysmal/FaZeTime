@@ -151,7 +151,7 @@ const REJECT_TEXT: Record<string, string> = {
   MARKET_BUSY: 'Another bet is still running. Finish it first.',
   SOURCE_NOT_LIVE: "The stream isn't live, so this bet can't open.",
   STALE_EPOCH: 'The stream restarted, so this no longer counts.',
-  DUPLICATE_EPISODE: 'This matchup was already used. Reset for the next take.',
+  DUPLICATE_EPISODE: 'This bet was already used. Reset for the next take.',
   UNPAIRED_SIDES: "The AI's two sides don't match up, so it can't open.",
 };
 

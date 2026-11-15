@@ -241,6 +241,103 @@ describe('CandidateCard', () => {
   });
 });
 
+describe('CandidateCard: §9.19 generic candidates (Advanced)', () => {
+  const LIMITS35 = { ...LIMITS, closeMin: 35 }; // D39: the server reports ai_close_in_s.min = 35
+  const generic = (over: Partial<AiCandidate> = {}) =>
+    candidate({
+      template_id: 'GENERIC_BINARY_V1',
+      generic: {
+        spec_version: 'gen-1',
+        kind: 'END_VALUE_AT_LEAST',
+        unit: 'round',
+        params: { label: 'terrorists alive', threshold: 2 },
+        episode_start_media_ms: 61_500,
+        success_cue: 'SUCCESS_CUE_MODEL_TEXT',
+        failure_cue: 'FAILURE_CUE_MODEL_TEXT',
+      },
+      episode_fingerprint: `gen:${EP}:61500:end_value_at_least`,
+      question: 'Will terrorists alive be at least 2 when this round ends?',
+      yes: { label: 'Yes', predicate: "YES if the last clear on-screen reading of 'terrorists alive' when the round ends is 2 or more." },
+      no: { label: 'No', predicate: 'NO if that reading is below 2.' },
+      subjects: [],
+      cancellation_conditions: [],
+      suggested_close_in_s: 35,
+      suggested_resolve_in_s: 335,
+      close_in_s: 35,
+      resolve_in_s: 335,
+      proposed_close_at_utc: iso(25_000),
+      ...over,
+    });
+  const approveOk = withImages((call) =>
+    call.method === 'POST'
+      ? echo({ candidate: candidate({ status: 'OPENED', actionable: false }), market: operatorMarket({ origin: 'AI_APPROVED' }) })(call)
+      : json(404, envelope('NOT_FOUND')),
+  );
+
+  it('shows the kind, unit and params (never the cues), tolerates no subjects, and approves with close_in_s 35', async () => {
+    const { client, calls } = makeClient(approveOk);
+    mounted = await mount(<CandidateCard client={client} c={generic()} serverNowMs={T0} limits={LIMITS35} onChanged={() => undefined} isNew={false} />);
+    const c = mounted.container;
+    const kind = c.querySelector('[data-testid="candidate-kind"]')!.textContent!;
+    expect(kind).toContain('Number');
+    expect(kind).toContain('END_VALUE_AT_LEAST');
+    expect(kind).toContain('unit round');
+    expect(kind).toContain('label=terrorists alive, threshold=2');
+    expect(kind).toContain('episode start 1:01.500');
+    const terms = c.querySelector('[data-testid="candidate-terms"]')!.textContent!;
+    expect(terms).toContain('No named subject');
+    expect(terms).toContain('close 35 s from approval');
+    expect(terms).not.toMatch(/A = |B = |from receipt/);
+    expect(c.textContent).not.toMatch(/SUCCESS_CUE|FAILURE_CUE/);
+    expect(c.textContent).toContain('blank sends its 35 s, counted from approval');
+    // counted from approval, so the expired receipt-anchored lead does not bind: the candidate expiry does
+    const countdown = c.querySelector('[data-testid="candidate-countdown"]')!.textContent!;
+    expect(countdown).toContain('50 s');
+    expect(countdown).not.toContain('minimum lead');
+    await click(byText(c, 'button', 'Approve'));
+    await waitFor(() => calls.filter((x) => x.method === 'POST').length === 1);
+    const post = calls.find((x) => x.method === 'POST')!;
+    expect(post.url).toBe(`/v1/operator/candidates/${CND}/approve`);
+    expect(post.body).toEqual({ close_in_s: 35, operation_id: post.body?.operation_id });
+  });
+
+  it('an explicit override still wins for generic; a blank H2H approval sends no close_in_s', async () => {
+    const { client, calls } = makeClient(approveOk);
+    mounted = await mount(
+      <CandidateCard client={client} c={generic({ subjects: ['FaZeGavin'] })} serverNowMs={T0} limits={LIMITS35} onChanged={() => undefined} isNew={false} />,
+    );
+    const c = mounted.container;
+    expect(c.querySelector('[data-testid="candidate-terms"]')!.textContent).toContain('Subject: FaZeGavin');
+    await typeInto(c.querySelector('.approve-row input'), '120');
+    await click(byText(c, 'button', 'Approve'));
+    await waitFor(() => calls.filter((x) => x.method === 'POST').length === 1);
+    expect(calls.find((x) => x.method === 'POST')!.body).toMatchObject({ close_in_s: 120 });
+    mounted.unmount();
+
+    const h2h = makeClient(approveOk);
+    mounted = await mount(<CandidateCard client={h2h.client} c={candidate()} serverNowMs={T0} limits={LIMITS} onChanged={() => undefined} isNew={false} />);
+    const c2 = mounted.container;
+    expect(c2.querySelector('[data-testid="candidate-kind"]')).toBeNull();
+    expect(c2.querySelector('[data-testid="candidate-terms"]')!.textContent).toContain('Subjects: A = FaZeGavin · B = FaZeNeville');
+    expect(c2.textContent).toContain('(from receipt)');
+    await click(byText(c2, 'button', 'Approve'));
+    await waitFor(() => h2h.calls.filter((x) => x.method === 'POST').length === 1);
+    const post = h2h.calls.find((x) => x.method === 'POST')!;
+    expect(post.body).toEqual({ operation_id: post.body?.operation_id });
+  });
+
+  it('an older server without template_id or generic renders as before (H2H rules)', async () => {
+    const { client } = makeClient(approveOk);
+    const old = candidate();
+    delete (old as Partial<AiCandidate>).template_id;
+    mounted = await mount(<CandidateCard client={client} c={old} serverNowMs={T0} limits={LIMITS} onChanged={() => undefined} isNew={false} />);
+    const c = mounted.container;
+    expect(c.querySelector('[data-testid="candidate-kind"]')).toBeNull();
+    expect(c.textContent).toContain('template unknown');
+    expect(c.querySelector('[data-testid="candidate-countdown"]')!.textContent).toContain('minimum lead');
+  });
+});
+
 describe('ResolutionCard', () => {
   it('approves only after a confirm, and renders contradictions and reason as text', async () => {
     const { client, calls } = makeClient(

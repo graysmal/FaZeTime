@@ -99,7 +99,7 @@ class Settings:
     ai_mode_default: str = "OFF"  # mode of a brand-new stream's first run; a reset keeps the previous run's mode
     candidate_expiry_s: int = 60  # a PENDING candidate EXPIRES this long after receipt
     evidence_fresh_s: int = 90  # cited evidence must have been received within this window
-    ai_close_min_s: int = 45  # below -> INSUFFICIENT_LEAD
+    ai_close_min_s: int = 35  # below -> INSUFFICIENT_LEAD (D39, CONTRACTS §9.19 item 4; min_lead_ms still applies)
     ai_close_max_s: int = 600  # above -> clamped
     ai_resolve_min_s: int = 60  # clamped into [min, max]
     ai_resolve_max_s: int = 900
@@ -158,6 +158,7 @@ def load_settings() -> Settings:
         ai_mode_default=_env("FAZETIME_AI_MODE_DEFAULT", "OFF").strip().upper(),
         candidate_expiry_s=_env_int("FAZETIME_CANDIDATE_EXPIRY_S", 60),
         evidence_fresh_s=_env_int("FAZETIME_EVIDENCE_FRESH_S", 90),
+        ai_close_min_s=_env_int("FAZETIME_AI_CLOSE_MIN_S", Settings.ai_close_min_s),
         payments_enabled=_env_bool("FAZETIME_PAYMENTS_ENABLED", True),
         stripe_env_file=os.environ.get("FAZETIME_STRIPE_ENV_FILE") or _default_stripe_env_file(),
         topup_success_url=_env("FAZETIME_TOPUP_SUCCESS_URL", Settings.topup_success_url),

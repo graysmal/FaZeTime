@@ -298,13 +298,14 @@ def test_source_not_live(aw):
 
 
 def test_insufficient_lead_and_clamping(aw):
+    """D39 (§9.19 item 4): close_in_s is clamped to [35, 600]; below 35 is INSUFFICIENT_LEAD."""
     aw.set_mode("SHADOW")
-    _status(aw.propose(suggested_close_in_s=44), 201, "REJECTED", "INSUFFICIENT_LEAD")
+    _status(aw.propose(suggested_close_in_s=34), 201, "REJECTED", "INSUFFICIENT_LEAD")
     r = _status(aw.propose(suggested_close_in_s=5000, suggested_resolve_in_s=5000), 201, "SHADOW")
     assert (r["close_in_s"], r["resolve_in_s"]) == (600, 900)
-    r = _status(aw.propose(suggested_close_in_s=45, suggested_resolve_in_s=1,
+    r = _status(aw.propose(suggested_close_in_s=35, suggested_resolve_in_s=1,
                            episode_fingerprint="h2h:fazegavin|fazeneville:game-2"), 201, "SHADOW")
-    assert (r["close_in_s"], r["resolve_in_s"]) == (45, 60)
+    assert (r["close_in_s"], r["resolve_in_s"]) == (35, 60)
 
 
 def test_schema_violation_is_422_and_not_recorded(aw):
@@ -436,7 +437,7 @@ def test_approve_checks_min_lead_on_the_real_clock(aw):
     body = _status(aw.propose(suggested_close_in_s=45), 201, "PENDING")
     aw.tick(10), aw.tick(10.001)  # 24.999 s would remain < min_lead 30 s
     _err(aw.approve(body["id"]), 409, "MARKET_CLOSED", "INSUFFICIENT_LEAD")
-    _err(aw.approve(body["id"], close_in_s=44), 409, "MARKET_CLOSED", "INSUFFICIENT_LEAD")
+    _err(aw.approve(body["id"], close_in_s=34), 409, "MARKET_CLOSED", "INSUFFICIENT_LEAD")  # below the D39 floor
     r = aw.approve(body["id"], close_in_s=60)  # operator override: seconds from approval
     assert r.status_code == 200, r.text
     assert timeutil.parse(r.json()["market"]["close_at_utc"]) == aw.h.clock.now() + timedelta(seconds=60)
@@ -739,7 +740,7 @@ def test_operator_health_has_modes_worker_detail_and_limits(aw):
     assert worker["heartbeat_age_ms"] == 0 and worker["current_source_epoch"] == aw.ep
     assert body["source_health"]["asr_backlog_ms"] == 0
     limits = body["market_limits"]
-    assert limits["min_lead_ms"] == 30_000 and limits["ai_close_in_s"]["min"] == 45
+    assert limits["min_lead_ms"] == 30_000 and limits["ai_close_in_s"]["min"] == 35  # D39
     assert limits["ai_close_in_s"]["max"] == 600 and limits["ai_resolve_in_s"] == {"min": 60, "max": 900,
                                                                                    "outside": "CLAMPED"}
     assert "ai_mode APPROVAL" in body["service"]["mode_labels"]
@@ -752,9 +753,11 @@ def test_worker_market_view_exposes_lock_position_only_to_workers(aw):
     assert set(r.json()) == {"schema_version", "market"}
     view = r.json()["market"]
     assert set(view) == {"market_id", "rules_version", "state", "origin", "question", "yes_label", "no_label",
-                         "close_at_utc", "resolve_by_utc", "lock_source_epoch", "lock_media_ms"}
+                         "close_at_utc", "resolve_by_utc", "lock_source_epoch", "lock_media_ms",
+                         "template_id", "generic"}  # §9.19 item 6
     assert view["market_id"] == m["market_id"] and view["state"] == "EVALUATING" and view["origin"] == "AI_APPROVED"
     assert view["lock_source_epoch"] == aw.ep and view["lock_media_ms"] == m["lock_media_ms"]
+    assert view["template_id"] == "H2H_WINNER_V1" and view["generic"] is None
     aw.resolve(aw.resolution(m, "YES"))
     s = [x for x in aw.h.client.get("/v1/operator/resolutions", headers=aw.operator.h).json()["resolutions"]][0]
     assert aw.approve_resolution(s["id"]).status_code == 200

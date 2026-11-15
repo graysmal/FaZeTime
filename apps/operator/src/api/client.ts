@@ -446,7 +446,11 @@ export class OperatorClient {
     return (await this.request<ResolutionList>(`/v1/operator/resolutions?${q.toString()}`, { signal, timeoutMs: 5_000 })).data;
   }
 
-  /** Opens an AI_APPROVED market. closeInS (45..600, from approval) overrides the receipt-anchored default. */
+  /**
+   * Opens an AI_APPROVED market. closeInS (within the server's ai_close_in_s bounds, [35, 600] under D39) counts
+   * from approval; null keeps the receipt-anchored close. GENERIC_BINARY_V1 approvals send the candidate's own
+   * close_in_s (§9.19 item 5, see ui/generic.ts approvalCloseInS); H2H approvals send null.
+   */
   async approveCandidate(candidateId: string, closeInS: number | null) {
     const body: Record<string, unknown> = {};
     if (closeInS !== null) body.close_in_s = closeInS;

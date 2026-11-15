@@ -22,7 +22,8 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
-from pydantic import Field, StrictBool, StrictInt, StringConstraints, model_validator
+from pydantic import (BaseModel, Discriminator, Field, StrictBool, StrictInt, StringConstraints, Tag, ValidationError,
+                      model_validator)
 
 from . import api_operator, domain, events, source_health, timeutil, views
 from .config import Settings
@@ -36,6 +37,7 @@ log = logging.getLogger("fazetime.ai")
 operator_router = APIRouter(prefix="/v1/operator", tags=["operator-ai"])
 
 TEMPLATE_H2H = "H2H_WINNER_V1"
+TEMPLATE_GENERIC = "GENERIC_BINARY_V1"  # §9.19 (D37): one yes/no question about one episode of any game
 _FRAME_REF = re.compile(r"evd_[0-9a-f]{32}")
 _OBS_REF = re.compile(r"(ep_[0-9a-f]{32}):([0-9]{1,18})")
 CANDIDATE_BURNS = ("PENDING", "SHADOW", "OPENED", "EXPIRED")  # plus reject_code OPERATOR_REJECTED
@@ -59,14 +61,81 @@ class SideTerms(Strict):
     predicate: Text200
 
 
+class EpisodeOutcomeParams(Strict):
+    win_verb: Literal["win", "clear", "complete", "beat", "survive", "finish"]
+
+
+class EndValueParams(Strict):
+    label: Label  # 1-40 chars
+    threshold: StrictInt | Annotated[float, Field(strict=True, allow_inf_nan=False)]  # a JSON number, never a bool
+
+
+_PHRASE_WORD = r"[A-Za-z']*[A-Za-z][A-Za-z']*"  # letters and apostrophes, at least one letter
+
+
+class SayPhraseParams(Strict):
+    phrase: Annotated[str, StringConstraints(max_length=80, pattern=rf"^{_PHRASE_WORD}(?: {_PHRASE_WORD}){{0,2}}$")]
+
+
+class DurationParams(Strict):
+    duration_s: Annotated[StrictInt, Field(ge=30, le=3600)]
+
+
+GENERIC_PARAMS: dict[str, type[Strict]] = {"EPISODE_OUTCOME": EpisodeOutcomeParams,
+                                           "END_VALUE_AT_LEAST": EndValueParams,
+                                           "SAY_PHRASE": SayPhraseParams, "DURATION_OVER": DurationParams}
+_PARAM_KEY_KIND = {key: kind for kind, model in GENERIC_PARAMS.items() for key in model.model_fields}
+
+
+def _params_kind(value) -> str | None:
+    """Discriminator: the one kind whose keys ``params`` uses (extra='forbid' then enforces exactly those keys)."""
+    if isinstance(value, dict):
+        keys = list(value)
+    elif isinstance(value, BaseModel):
+        keys = list(type(value).model_fields)
+    else:
+        return None
+    kinds = {_PARAM_KEY_KIND.get(k) for k in keys}
+    return kinds.pop() if len(kinds) == 1 and None not in kinds else None
+
+
+GenericParams = Annotated[
+    Annotated[EpisodeOutcomeParams, Tag("EPISODE_OUTCOME")] | Annotated[EndValueParams, Tag("END_VALUE_AT_LEAST")]
+    | Annotated[SayPhraseParams, Tag("SAY_PHRASE")] | Annotated[DurationParams, Tag("DURATION_OVER")],
+    Discriminator(_params_kind, custom_error_type="generic_params",
+                  custom_error_message="params must be exactly the keys of one generic kind (§9.19)"),
+]
+
+
+class GenericSpec(Strict):
+    """§9.19 item 1. Required for GENERIC_BINARY_V1, forbidden for H2H_WINNER_V1. Every field is required; the cues
+    may be empty. The cues are untrusted model text: stored inert, shown to the operator and worker only."""
+
+    spec_version: Literal["gen-1"]
+    kind: Literal["EPISODE_OUTCOME", "END_VALUE_AT_LEAST", "SAY_PHRASE", "DURATION_OVER"]
+    unit: Annotated[str, StringConstraints(min_length=1, max_length=20)]
+    params: GenericParams
+    episode_start_media_ms: NonNeg
+    success_cue: Annotated[str, StringConstraints(max_length=160)]
+    failure_cue: Annotated[str, StringConstraints(max_length=160)]
+
+    @model_validator(mode="after")
+    def _params_match_kind(self):
+        expected = GENERIC_PARAMS[self.kind]
+        if not isinstance(self.params, expected):
+            raise ValueError(f"params must be exactly the {self.kind} keys: {sorted(expected.model_fields)}")
+        return self
+
+
 class Candidate(Strict):
     candidate_id: CUuid
-    template_id: Literal["H2H_WINNER_V1"]
+    template_id: Literal["H2H_WINNER_V1", "GENERIC_BINARY_V1"]
     episode_fingerprint: Annotated[str, StringConstraints(min_length=3, max_length=160)]
     question: Text200
     yes: SideTerms
     no: SideTerms
-    subjects: Annotated[list[Label], Field(min_length=2, max_length=2)]
+    # 0-2 here; H2H needs exactly 2 (schema, below); GENERIC at most 1 (validation: UNPAIRED_SIDES, §9.19 item 2)
+    subjects: Annotated[list[Label], Field(min_length=0, max_length=2)]
     evidence_ids: Refs
     announced_at_media_ms: NonNeg
     suggested_close_in_s: Seconds
@@ -75,6 +144,18 @@ class Candidate(Strict):
     rationale: Annotated[str, StringConstraints(max_length=300)] = ""
     model: Short
     prompt_version: Short
+    generic: GenericSpec | None = None
+
+    @model_validator(mode="after")
+    def _template_shape(self):
+        if self.template_id == TEMPLATE_H2H:
+            if self.generic is not None:
+                raise ValueError("generic is forbidden for H2H_WINNER_V1")
+            if len(self.subjects) != 2:
+                raise ValueError("H2H_WINNER_V1 needs exactly 2 subjects")
+        elif self.generic is None:
+            raise ValueError("generic is required for GENERIC_BINARY_V1")
+        return self
 
 
 class ProposalRequest(Strict):
@@ -123,7 +204,7 @@ class ResolutionRequest(Strict):
 
 class OpApproveCandidate(Strict):
     operation_id: CUuid
-    close_in_s: Pos | None = None  # optional operator override, seconds from approval, same [45, 600] rules
+    close_in_s: Pos | None = None  # optional operator override, seconds from approval, same [35, 600] rules (D39)
 
 
 class OpRejectCandidate(Strict):
@@ -209,6 +290,39 @@ def sides_paired(*, question: str, subjects: list[str], yes_label: str, yes_pred
     return True
 
 
+def generic_paired(*, subjects: list[str], yes_label: str, yes_predicate: str, no_label: str, no_predicate: str,
+                   generic: dict | None, fingerprint: str) -> bool:
+    """GENERIC_BINARY_V1 sides check (§9.19 item 2): labels non-empty and distinct; predicates non-empty and distinct
+    (compared case-insensitively, ignoring punctuation and spacing, as the H2H check does); generic.kind and its
+    params valid (re-checked here because approval reads them back from storage); the canonical fingerprint starts
+    with ``gen:`` and ends with ``:<kind lowercased>``; at most 1 subject."""
+    yl, nl = _norm(yes_label), _norm(no_label)
+    if not yl or not nl or yl == nl:
+        return False
+    yp, np_ = _norm(yes_predicate), _norm(no_predicate)
+    if not yp or not np_ or yp == np_:
+        return False
+    try:
+        spec = GenericSpec.model_validate(generic)
+    except ValidationError:
+        return False
+    if not fingerprint.startswith("gen:") or not fingerprint.endswith(f":{spec.kind.lower()}"):
+        return False
+    return len(subjects) <= 1
+
+
+def terms_paired(*, fingerprint: str, terms: dict) -> bool:
+    """The §9.17 UNPAIRED_SIDES check for the candidate's template (§9.19 item 2 for GENERIC_BINARY_V1)."""
+    sides = {k: terms[k] for k in ("subjects", "yes_label", "yes_predicate", "no_label", "no_predicate")}
+    template, generic = terms.get("template_id", TEMPLATE_H2H), terms.get("generic")
+    if template == TEMPLATE_GENERIC:
+        return generic is not None and generic_paired(fingerprint=fingerprint, generic=generic, **sides)
+    if template == TEMPLATE_H2H:
+        return (generic is None and len(sides["subjects"]) == 2
+                and sides_paired(fingerprint=fingerprint, question=terms["question"], **sides))
+    return False
+
+
 def _epoch_is_current(conn: sqlite3.Connection, stream_id: str, source_epoch: str) -> bool:
     row = conn.execute("SELECT stream_id, superseded_at_utc FROM source_epochs WHERE source_epoch = ?",
                        (source_epoch,)).fetchone()
@@ -259,7 +373,8 @@ def validate_candidate(
     conn: sqlite3.Connection, *, stream_id: str, run: sqlite3.Row, source_epoch: str, evidence_ids: list[str],
     fingerprint: str, terms: dict, now: datetime, settings: Settings, exclude_cnd: str | None = None,
 ) -> tuple[str | None, list[dict]]:
-    """The §9.17 checks, in contract order. Returns (reject_code or None, resolved evidence)."""
+    """The §9.17 checks, in contract order (§9.19 swaps only the sides check for GENERIC_BINARY_V1).
+    Returns (reject_code or None, resolved evidence)."""
     if not _epoch_is_current(conn, stream_id, source_epoch):
         return "STALE_EPOCH", []
     refs, found = resolve_refs(conn, source_epoch, evidence_ids)
@@ -270,7 +385,7 @@ def validate_candidate(
         return "MARKET_BUSY", refs
     if _fingerprint_used(conn, run["run_id"], fingerprint, exclude_cnd):
         return "DUPLICATE_EPISODE", refs
-    if not sides_paired(fingerprint=fingerprint, **terms):
+    if not terms_paired(fingerprint=fingerprint, terms=terms):
         return "UNPAIRED_SIDES", refs
     if source_health.current(conn, stream_id, now, settings)["state"] != "LIVE":
         return "SOURCE_NOT_LIVE", refs
@@ -311,9 +426,22 @@ def _trace(conn: sqlite3.Connection, *, kind: str, subject_id: str, client_id: s
     )
 
 
+def _generic_of(row: sqlite3.Row) -> dict | None:
+    return json.loads(row["generic_json"]) if row["generic_json"] is not None else None
+
+
 def _terms_of(row: sqlite3.Row) -> dict:
     return {"question": row["question"], "subjects": json.loads(row["subjects_json"]), "yes_label": row["yes_label"],
-            "yes_predicate": row["yes_predicate"], "no_label": row["no_label"], "no_predicate": row["no_predicate"]}
+            "yes_predicate": row["yes_predicate"], "no_label": row["no_label"], "no_predicate": row["no_predicate"],
+            "template_id": row["template_id"], "generic": _generic_of(row)}
+
+
+def _proposal_hash(req: ProposalRequest) -> str:
+    """§9.7 request hash. An absent generic object is left out, so H2H hashes match rows stored before §9.19."""
+    payload = req.model_dump(mode="json")
+    if payload["candidate"].get("generic") is None:
+        payload["candidate"].pop("generic", None)
+    return request_hash(payload)
 
 
 def _bump_stream(conn: sqlite3.Connection, stream_id: str, now: datetime, settings: Settings) -> None:
@@ -376,6 +504,7 @@ def candidate_view(conn: sqlite3.Connection, row: sqlite3.Row, now: datetime) ->
         "actionable": status == "PENDING",
         "market_id": row["market_id"],
         "template_id": row["template_id"],
+        "generic": _generic_of(row),  # §9.19 item 6: the stored object (cues untrusted), null for H2H
         "episode_fingerprint": row["episode_fingerprint"],
         "question": row["question"],
         "yes": {"label": row["yes_label"], "predicate": row["yes_predicate"]},
@@ -454,10 +583,12 @@ def resolution_view(conn: sqlite3.Connection, row: sqlite3.Row, now: datetime) -
 def submit_proposal(svc: Services, req: ProposalRequest, actor_ref: str) -> tuple[dict, int]:
     settings = svc.settings
     c = req.candidate
-    req_hash = request_hash(req.model_dump(mode="json"))
+    req_hash = _proposal_hash(req)
     fingerprint = canonical_fingerprint(c.episode_fingerprint)
+    generic = c.generic.model_dump(mode="json") if c.generic is not None else None
     terms = {"question": c.question, "subjects": list(c.subjects), "yes_label": c.yes.label,
-             "yes_predicate": c.yes.predicate, "no_label": c.no.label, "no_predicate": c.no.predicate}
+             "yes_predicate": c.yes.predicate, "no_label": c.no.label, "no_predicate": c.no.predicate,
+             "template_id": c.template_id, "generic": generic}
     with svc.db.write() as conn:
         now = svc.clock.now()
         stream = views.get_stream(conn, req.stream_id)
@@ -503,15 +634,16 @@ def submit_proposal(svc: Services, req: ProposalRequest, actor_ref: str) -> tupl
             " episode_fingerprint, raw_fingerprint, question, yes_label, yes_predicate, no_label, no_predicate,"
             " subjects_json, evidence_ids_json, evidence_json, announced_at_media_ms, suggested_close_in_s,"
             " suggested_resolve_in_s, close_in_s, resolve_in_s, cancellation_json, rationale, model, prompt_version,"
-            " ai_mode, status, reject_code, market_id, received_at_utc, expires_at_utc, decided_at_utc)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " ai_mode, status, reject_code, market_id, received_at_utc, expires_at_utc, decided_at_utc, generic_json)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (cnd_id, c.candidate_id, req_hash, req.stream_id, run["run_id"], req.source_epoch, c.template_id,
              fingerprint, c.episode_fingerprint, c.question, c.yes.label, c.yes.predicate, c.no.label,
              c.no.predicate, _dumps(list(c.subjects)), _dumps(list(c.evidence_ids)), _dumps(refs),
              c.announced_at_media_ms, c.suggested_close_in_s, c.suggested_resolve_in_s, close_in_s, resolve_in_s,
              _dumps(list(c.cancellation_conditions)), c.rationale, c.model, c.prompt_version, mode, status, code,
              market_id, received, _fmt(now + timedelta(seconds=settings.candidate_expiry_s)),
-             received if status in ("OPENED", "REJECTED") else None),
+             received if status in ("OPENED", "REJECTED") else None,
+             _dumps(generic) if generic is not None else None),
         )
         _trace(conn, kind="PROPOSAL", subject_id=cnd_id, client_id=c.candidate_id, stream_id=req.stream_id,
                run_id=run["run_id"], market_id=market_id, source_epoch=req.source_epoch, model=c.model,
@@ -519,7 +651,8 @@ def submit_proposal(svc: Services, req: ProposalRequest, actor_ref: str) -> tupl
                code=code, validation={"reject_code": code, "evidence_resolved": len(refs),
                                       "suggested_close_in_s": c.suggested_close_in_s, "close_in_s": close_in_s,
                                       "suggested_resolve_in_s": c.suggested_resolve_in_s, "resolve_in_s": resolve_in_s,
-                                      "episode_fingerprint": fingerprint},
+                                      "episode_fingerprint": fingerprint, "template_id": c.template_id,
+                                      "generic_kind": c.generic.kind if c.generic is not None else None},
                actor_kind="WORKER", actor_ref=actor_ref, now=now)
         row = conn.execute("SELECT * FROM ai_candidates WHERE cnd_id = ?", (cnd_id,)).fetchone()
         log.info("AI candidate %s status=%s code=%s mode=%s", cnd_id, status, code, mode)

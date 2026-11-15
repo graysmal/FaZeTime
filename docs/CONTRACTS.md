@@ -812,3 +812,14 @@ A missing, extra or malformed `generic` object is a schema error, HTTP 422, and 
   - **`END_VALUE_AT_LEAST`** needs the two values to agree. It voids within one display unit of the threshold.
   - Disagreement returns `UNRESOLVABLE`.
 - All cited evidence is at or after `lock_media_ms`, as §9.17 requires.
+
+**8. Implementation rulings** (2026-11-15, coordinator, from the API engineer's report):
+- **Malformed `generic` is a schema error.** Wrong keys or values give 422, not recorded. The item 2 kind/params check is a backstop, re-run on the stored object at approval.
+- **All seven `generic` fields are required.** The cues may be empty strings.
+- **`subjects` stays required.** Send `[]` for a generic candidate with no named subject.
+- **Labels and predicates are compared as H2H compares them:** case-insensitively, ignoring punctuation and spaces. A label with no letters or digits counts as empty.
+- **`phrase`:** 1–3 ASCII words separated by single spaces, letters and apostrophes only, at most 80 chars.
+- **`threshold`:** an integer or finite float. Booleans and strings are rejected.
+- **Fingerprint check:** only the `gen:` prefix and the `:<kind>` suffix are checked, on the lowercased form. The middle parts are not matched against `source_epoch` or `episode_start_media_ms`.
+- **Storage guards:** migration 0006 adds a JSON check of at most 4096 bytes on `generic_json`. Triggers require it for GENERIC and forbid it for every other template, and make `template_id` and `generic_json` immutable.
+- **Viewer isolation:** viewer snapshots, `/v1/me` and PUBLIC/USER events never carry `generic`, the cues or `template_id`. This is tested.

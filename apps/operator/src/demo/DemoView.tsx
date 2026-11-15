@@ -10,6 +10,7 @@ import type { AiCandidate, AiResolution, MarketLimits, MarketReceipt, OperatorMa
 import { useAlert } from '../ui/alert';
 import { AuthThumb } from '../ui/AuthThumb';
 import { candidateDeadlines } from '../ui/deadlines';
+import { approvalCloseInS, genericKindLabel, isGenericCandidate, ruleNamesSide } from '../ui/generic';
 import { useMutation, useNow, usePoll, type MutationState } from '../ui/hooks';
 import {
   alertKey,
@@ -68,6 +69,16 @@ function Card({ state, children }: { state: string; children: ReactNode }) {
 
 // ---- cards --------------------------------------------------------------------------------------------------
 
+/** One compact YES or NO rule (a generic candidate's predicate), as text. The side word is added only if missing. */
+function Rule({ side, label, predicate }: { side: 'yes' | 'no'; label: string; predicate: string }) {
+  return (
+    <p className={`demo-rule ${side}`}>
+      {!ruleNamesSide(predicate, label) && <span className="demo-rule-side">{label}: </span>}
+      {predicate}
+    </p>
+  );
+}
+
 function CandidateCard({
   client,
   c,
@@ -82,26 +93,42 @@ function CandidateCard({
   onDone: () => void;
 }) {
   const act = useMutation<OperatorReceipt>(() => onDone());
+  // §9.19 item 5: a generic candidate is approved with its own close_in_s, counted from approval, so the
+  // receipt-anchored minimum lead no longer limits the approval time. H2H sends null, as before.
+  const closeInS = approvalCloseInS(c);
   const d =
     serverNowMs === null
       ? null
       : candidateDeadlines(c, serverNowMs, {
           evidenceFreshS: limits?.evidence_fresh_s ?? 90,
           minLeadMs: limits?.min_lead_ms ?? 30_000,
-          override: false,
+          override: closeInS !== null,
         });
   const left = d?.approveMs ?? null;
   const late = left !== null && left <= 0;
   const busy = act.state.status === 'busy' || act.state.status === 'ok';
+  const kind = genericKindLabel(c);
   return (
     <Card state="candidate">
+      {kind && (
+        <div className="demo-kind" data-testid="demo-kind">
+          {kind}
+        </div>
+      )}
       <h2 className="demo-question" data-testid="demo-question">
         {c.question}
       </h2>
-      <div className="demo-sides">
-        <span className="demo-chip yes">{c.yes.label}</span>
-        <span className="demo-chip no">{c.no.label}</span>
-      </div>
+      {isGenericCandidate(c) ? (
+        <div className="demo-rules" data-testid="demo-rules">
+          <Rule side="yes" label={c.yes.label} predicate={c.yes.predicate} />
+          <Rule side="no" label={c.no.label} predicate={c.no.predicate} />
+        </div>
+      ) : (
+        <div className="demo-sides">
+          <span className="demo-chip yes">{c.yes.label}</span>
+          <span className="demo-chip no">{c.no.label}</span>
+        </div>
+      )}
       <div className={`demo-count ${late ? 'late' : left !== null && left < 15_000 ? 'urgent' : ''}`} data-testid="demo-countdown">
         {countdownText(left)}
       </div>
@@ -111,7 +138,7 @@ function CandidateCard({
           type="button"
           className="demo-btn go"
           disabled={busy || late}
-          onClick={() => void act.run(() => client.approveCandidate(c.id, null))}
+          onClick={() => void act.run(() => client.approveCandidate(c.id, closeInS))}
         >
           Approve
         </button>

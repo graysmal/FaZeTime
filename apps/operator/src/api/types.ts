@@ -219,6 +219,28 @@ export interface AiEvidenceRef {
   untrusted?: boolean;
 }
 
+// ---- §9.19 generic AI markets (D37/D39) ------------------------------------------------------------------
+
+export const GENERIC_TEMPLATE_ID = 'GENERIC_BINARY_V1';
+export const GENERIC_KINDS = ['EPISODE_OUTCOME', 'END_VALUE_AT_LEAST', 'SAY_PHRASE', 'DURATION_OVER'] as const;
+export type GenericKind = (typeof GENERIC_KINDS)[number];
+
+/**
+ * §9.19 item 1 `generic` object of a GENERIC_BINARY_V1 candidate (null for H2H). Read leniently: an unknown kind
+ * or spec_version is kept as a string. success_cue / failure_cue are untrusted model text: this console never
+ * renders them.
+ */
+export interface AiGeneric {
+  spec_version: 'gen-1' | string;
+  kind: GenericKind | string;
+  unit: string;
+  /** Exactly the keys of its kind: win_verb | label + threshold | phrase | duration_s. */
+  params: Record<string, unknown>;
+  episode_start_media_ms: number;
+  success_cue?: string | null;
+  failure_cue?: string | null;
+}
+
 export interface AiCandidate {
   id: string;
   candidate_id: string;
@@ -228,11 +250,15 @@ export interface AiCandidate {
   reject_code: string | null;
   actionable: boolean;
   market_id: string | null;
-  template_id: string;
+  /** H2H_WINNER_V1 or GENERIC_BINARY_V1 (§9.19 item 6). Optional so an older server still parses. */
+  template_id?: string | null;
+  /** §9.19 item 6: the stored generic object, or null (H2H). Absent on older servers. */
+  generic?: AiGeneric | null;
   episode_fingerprint: string;
   question: string;
   yes: { label: string; predicate: string };
   no: { label: string; predicate: string };
+  /** Exactly 2 for H2H_WINNER_V1; 0 or 1 for GENERIC_BINARY_V1 (§9.19 item 1). */
   subjects: string[];
   evidence_ids: string[];
   evidence: AiEvidenceRef[];
