@@ -57,7 +57,9 @@ During initial setup, prove a basic call before building the full bookie. Start 
 
 The managed CLI currently documents macOS/Linux support and a pinned beta version, with slightly different supported runtimes for its starter. Pin the combination that the team actually tests. Public SDK package notes explicitly identify some APIs as undeployed previews; do not build from a method name without checking live endpoint support. [C3, C4]
 
-## 3. Phase 10: raffle winner and creator FaceTime
+## 3. Phase 10: raffle winner and creator FaceTime (DEFERRED, D41)
+
+Deferred by the owner on 2026-11-15; kept for reference. P11 (§4) takes priority.
 
 The preferred automated option is one outbound group call inviting the winning user and the team member acting as streamer. Group calling is documented but enabled per line. It uses one call ID and one line slot rather than two independent calls. Free/shared recipients require current phone verification. Group video has a separate capability gate. [C5]
 

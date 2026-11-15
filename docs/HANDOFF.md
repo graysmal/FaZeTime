@@ -23,7 +23,7 @@
 Phase state:
 - P0 and P1 are complete.
 - P2–P6 are built, deployed and reviewed. **Their real-world gates are still pending**: the Twitch run, two real outcomes, and a 4242 checkout.
-- P7–P10 have not started. P11 is cut (D17).
+- P7–P9 and P11 have not started. P10 is deferred (D41); P11 is reinstated and comes before it.
 
 ## How to run a live take (runbook)
 
@@ -56,7 +56,7 @@ Phase state:
    - approve, settle, payouts.
    Record a positive and a negative outcome in `docs/evidence/p3-p5/`, with sanitized timings and no transcripts.
 4. **P7:** two consecutive full rehearsals, plus a subset of the fault drill (worker restart, viewer reload, webhook repeat). The reviewer signs off.
-5. **If time remains before the 09:00 freeze:** P8 (weighted raffle draw, backend) and P9 (armed spoken "Raffle" trigger). Then P10 as a **manual** FaceTime handoff (D05/D18).
+5. **If time remains before the 09:00 freeze:** P8 (weighted raffle draw, backend) and P9 (armed spoken "Raffle" trigger). Then P11 (absent-viewer AI bookie; single-user Chert call within the D18 50-minute budget, or a disclosed fallback). P10 is deferred (D41).
 6. **After judging:** the VM is torn down automatically at 18:00 CT; run `python3 -I infra/vultr/budget_guard.py teardown` to end it early. The owner revokes the reusable Tailscale auth key.
 
 ## Current work: game-agnostic AI markets (D37), started 2026-11-15 ~00:30 CT

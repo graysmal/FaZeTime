@@ -1,6 +1,6 @@
 # Current execution status
 
-Updated: 2026-11-15 ~02:50 CT. Plan version: 1.0 + contract v1 (CONTRACTS §9, items 9.15–9.18). State: CORE BUILT AND DEPLOYED; real-world gates P3–P6 pending; P7–P10 not started. **D37 (game-agnostic AI markets) is integrated and deployed on the Pi (worker profile `generic`); the Twitch gate is pending.** See HANDOFF for the runbook.
+Updated: 2026-11-15 ~02:50 CT. Plan version: 1.0 + contract v1 (CONTRACTS §9, items 9.15–9.18). State: CORE BUILT AND DEPLOYED; real-world gates P3–P6 pending; P7–P9 and P11 not started; P10 deferred (D41). **D37 (game-agnostic AI markets) is integrated and deployed on the Pi (worker profile `generic`); the Twitch gate is pending.** See HANDOFF for the runbook.
 
 **Deadline:** submission cutoff 12:00 CT Sun 2026-11-15 (D10). About 15 h were left at 21:00.
 
@@ -10,7 +10,7 @@ Updated: 2026-11-15 ~02:50 CT. Plan version: 1.0 + contract v1 (CONTRACTS §9, i
 |---|---|
 | P0 | ~23:15 |
 | Core P1–P7 | ~06:00 |
-| P8–P11 expansion | ~09:00 |
+| P8, P9, P11 expansion (P10 deferred, D41) | ~09:00 |
 | Feature freeze | 09:00 |
 | Rehearsal and buffer | 09:00–12:00 |
 
@@ -30,8 +30,8 @@ Updated: 2026-11-15 ~02:50 CT. Plan version: 1.0 + contract v1 (CONTRACTS §9, i
 | P7 Integrated core | NOT_STARTED | None |
 | P8 Weighted raffle | NOT_STARTED | None |
 | P9 Spoken raffle trigger | NOT_STARTED | None |
-| P10 Winner call | NOT_STARTED | None |
-| P11 Absent-viewer bookie | NOT_STARTED | First expansion cut (D17) |
+| P10 Winner call | DEFERRED (D41) | None; specification kept |
+| P11 Absent-viewer bookie | NOT_STARTED | Prioritized over P10 (D41) |
 
 ## P0 packets
 
@@ -46,7 +46,7 @@ Updated: 2026-11-15 ~02:50 CT. Plan version: 1.0 + contract v1 (CONTRACTS §9, i
 | P0-G contracts | v1 FROZEN | CONTRACTS §9; decisions D23–D29 |
 
 - **Critical unknowns:** the team Twitch channel/OBS capture through Twitch; Pi ASR throughput; Chert line capabilities; Pi power supply. The Gemini free-tier quotas are now VERIFIED: Flash-Lite 3.5 and 3.1 at 500 RPD each, Gemma 4 at 14.4K RPD (`docs/evidence/p0/P0-C-gemini.md`).
-- **Approved cuts:** manual FaceTime handoff (D05); bundled panel instead of the hosted iframe (D14); P11 is the first expansion to cut (D17).
+- **Approved cuts:** manual FaceTime handoff (D05); bundled panel instead of the hosted iframe (D14); P10 winner call deferred (D41, superseding D17's priority clause). P11 is no longer cut.
 - **Not approved:** replacing Twitch with local playback for final acceptance.
 
 Keep this file to current facts. Link detailed evidence rather than pasting logs. Only the coordinator updates overall phase state.

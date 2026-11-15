@@ -4,7 +4,7 @@ This register supports [PROJECT_PLAN](../PROJECT_PLAN.md); phase gates remain au
 
 | Risk | Severity | Early evidence / response | Stop or fallback |
 |---|---|---|---|
-| Actual deadline unknown | Critical | P0 confirm cutoff, judging, remaining builders | Cannot promise P11 delivery without time; prioritize with owner |
+| Actual deadline unknown | Critical | P0 confirm cutoff, judging, remaining builders | Cannot promise P11 delivery without time; owner prioritized P11 over P10 (D41) |
 | Twitch reader blocked or codec fails | Critical | P0 actual channel/network 10–15-min capture | Timebox Streamlink, try authorized Twitch tab capture; if both fail core blocked |
 | Stream delay makes market retrospective | Critical | Measure source cue through UI, compare action boundary | Record longer setup, reject late proposal; do not use spontaneous 1v3 first |
 | AI invents event/outcome | Critical | Negative fixtures, evidence citations, held-out result | Abstain/void; approval mode if owner accepts; no confidence threshold shortcut |
@@ -14,7 +14,7 @@ This register supports [PROJECT_PLAN](../PROJECT_PLAN.md); phase gates remain au
 | Student credits need cash activation | High | Check actual entitlement and prepay plan | Stay on working free tier; ask owner about concrete minimum if essential |
 | Chert trial expires before judging | High | Record exact grant start/end including time zone | Schedule spike/rehearsal wisely; ask sponsor extension or use accepted manual call |
 | Chert transport free but AI/LiveKit not | High | Verify each separate project's quotas | Tested free path only; do not assume all bundled |
-| Group video not enabled | High | P0 sponsor confirmation and two-phone test | Manual FaceTime accepted; single call is only partial integration |
+| Group video not enabled | Low while P10 is deferred (D41) | P0 sponsor confirmation and two-phone test | Applies to P10 only; manual FaceTime accepted if P10 resumes; P11 needs only a single-user call |
 | Calling takes longer than market | High | Measure ring/answer/confirmation distribution | Dedicated long-window bookie scene; late refusal is correct |
 | Pi too slow / ARM dependency unavailable | High | Benchmark actual OS, wheels, sustained STT | Move inference to laptop; API can remain Pi |
 | Venue client isolation/NAT | High | Test browser/worker connectivity before coding topology | Colocate or verified HTTPS tunnel; no unapproved cloud spend |

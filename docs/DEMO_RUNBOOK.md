@@ -51,11 +51,11 @@ Let `L` be the measured setup-cue-to-visible-proposal delay, `B` the intended hu
 | 0:55–1:25 | Place a test-currency wager; show current pool estimate and server lock. | One market, funded accounts, enough measured lead-in. |
 | 1:25–2:00 | Show the result cue, AI evidence, settled wallet, and outcome feedback. | Clear result and quality-gated automatic settlement. |
 | 2:00–2:30 | Show cumulative eligible raffle weights and a deduplicated raffle trigger/draw. | Qualifying settled stakes; no void stakes. |
-| 2:30–3:00 | Explain retention/revenue concept and show a working call briefly, or the honest call status/fallback. | Call capability already rehearsed; no live dependency on an uncertain bridge. |
+| 2:30–3:00 | Explain retention/revenue concept and show the absent-viewer bookie call (P11) briefly, or its honest call status/fallback. The winner call (P10) is deferred (D41). | Call capability already rehearsed; no live dependency on an uncertain bridge. |
 
 These windows are targets. Recut and retime the prerecorded video only after measuring the actual feed. Start with OBS already broadcasting and use a recognisable scene cue; do not start a cold stream in the three-minute slot. Pre-warm allowed model resources without precomputing the demonstration answer. If automatic qualification fails, a visible review/manual action is acceptable as a disclosed limitation, not a hidden claim of autonomous success; it does not pass an automatic-mode acceptance gate.
 
-Do not cram the longer bookie conversation into this primary market. Keep a separate measured scene for Q&A or a second demonstration: the person is absent according to presence state, has opted in, receives context, confirms outcome and stake, and the backend revalidates funds and deadline. A missed call, ambiguous reply, or expired market produces no wager. Never charge a saved card merely because the transcript contains an amount.
+Do not cram the longer bookie conversation into this primary market. Keep a separate measured scene for it (the call demonstration, D41): the person is absent according to presence state, has opted in, receives context, confirms outcome and stake, and the backend revalidates funds and deadline. A missed call, ambiguous reply, or expired market produces no wager. Never charge a saved card merely because the transcript contains an amount.
 
 ## Preflight and rehearsal gates
 

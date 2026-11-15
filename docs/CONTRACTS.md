@@ -830,7 +830,9 @@ A missing, extra or malformed `generic` object is a schema error, HTTP 422, and 
 
 These additions are for operator visibility and viewer UX. None of them changes money, market state or settlement rules.
 
-**1. AI activity feed: the "thoughts" the advanced console shows.**
+**1. AI activity feed: WITHDRAWN** (owner, ~03:10 CT: not worth the build time). Nothing below in this item is implemented. The proposer's reasons stay in the worker's `ai_trace.jsonl` on the Pi.
+
+~~AI activity feed: the "thoughts" the advanced console shows.~~
 - **`POST /v1/worker/ai-activity`** (MEDIA_WORKER).
   - Body: `{schema_version: 1, stream_id, source_epoch, items[1..50]}`.
   - Each item: `{at_utc, media_ms|null, role: OBSERVER|PROPOSER|RESOLVER|STREAM, outcome (≤40 chars, e.g. ABSTAIN, REJECT:INSUFFICIENT_LEAD, POSTED:PENDING, OBSERVED, READS), kind|null (generic kind), text (≤400 chars), fields (flat object, ≤12 keys, scalar values ≤120 chars)}`.

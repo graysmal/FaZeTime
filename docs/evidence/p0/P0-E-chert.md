@@ -1,6 +1,6 @@
 # Capability record: Chert FaceTime (P0-E)
 
-- **Capability / owning phase:** outbound FaceTime for the raffle winner (P10) and the bookie (P11).
+- **Capability / owning phase:** outbound FaceTime for the bookie (P11, prioritized) and the raffle winner (P10, deferred per D41).
 - **Provider:** Chert managed FaceTime API (`facetime.trychert.com/api/v1`).
   - CLI `@trychert/facetime`: npm latest is 0.1.0-beta.21 (2026-11-14), while the docs pin beta.19.
   - JS SDK 0.3.0; PyPI `chert-sdk` 0.2.3.
@@ -33,7 +33,7 @@
 
 **Demo recipients:** the owner named one teammate's phone. It is stored only in `.env.local` as `DEMO_CALL_ALLOWLIST` (E.164) and is never committed or logged; reference it as ***9335. Every live call still needs the owner's go-ahead.
 
-**Status:** BLOCKED, with the accepted fallback recorded. P0's exit gate allows Chert to stay blocked. P10 uses the owner-accepted manual FaceTime handoff (D05, D17) unless all of the following happen before about 09:00 CT:
+**Status:** BLOCKED, with the accepted fallback recorded. P0's exit gate allows Chert to stay blocked. P10 is deferred (D41); if it resumes, it uses the manual FaceTime handoff (D05). P11 (now prioritized) needs Chert outbound calling, which requires all of the following before about 09:00 CT:
 1. The owner adds `CHERT_PROJECT_ID` to `.env.local`.
 2. Read-only GETs to `/lines`, `/workers` and `/integrations` show outbound calling, plus group video if needed.
 3. A $0 LiveKit path is confirmed.

@@ -26,11 +26,11 @@ The original FaZeTime document's phases 1–11 are retained in order. Phase 0 is
 
 **Core complete:** P0–P7 gates pass using Twitch media, model-derived proposal/result, server-owned wallet/pool, real Stripe sandbox top-up, and two actual browser clients. If AI quality requires approval mode, call it supervised AI, record owner acceptance, and do not label it fully automatic.
 
-**Raffle demo complete:** P8–P10 gates pass, with weighted draw, armed spoken trigger, and either verified Chert call or explicitly manual FaceTime handoff.
+**Raffle demo complete:** P8–P9 gates pass, with weighted draw and armed spoken trigger. The winner call (P10) is deferred (D41); until it runs, the draw result is shown without a call.
 
-**Full envisioned demo complete:** P11 passes with a real single-user call, visual market/receipt, explicit verbal confirmation, backend wager, and result notification in a supported channel. A scripted call recording is supporting presentation footage, not a passed integration gate.
+**Full envisioned demo complete (prioritized expansion, D41):** P11 passes with a real single-user call, visual market/receipt, explicit verbal confirmation, backend wager, and result notification in a supported channel; P10 is not a prerequisite. A scripted call recording is supporting presentation footage, not a passed integration gate.
 
-Do not guess how many build hours remain from the ceremony PDF. It contains a noon start, midnight end and next-day judging schedule; confirm event rules and actual remaining time. At P0 allocate the available hours approximately: 15% capability/contract setup, 45% P1–P7 core, 20% P8–P11 expansion, 20% integration/rehearsal buffer. These are planning proportions, not delivery promises. If the actual time is very short, ask the owner which expansion to prioritize; do not hide an uncompleted phase.
+Do not guess how many build hours remain from the ceremony PDF. It contains a noon start, midnight end and next-day judging schedule; confirm event rules and actual remaining time. At P0 allocate the available hours approximately: 15% capability/contract setup, 45% P1–P7 core, 20% P8, P9 and P11 expansion (P10 deferred, D41), 20% integration/rehearsal buffer. These are planning proportions, not delivery promises. The owner has prioritized P11 over P10 (D41); if time is very short, ask the owner before cutting further; do not hide an uncompleted phase.
 
 Freeze new feature work before the final rehearsal block. First cuts are styling polish, chat choice highlighting, referrals, streaks, email campaigns, caller-camera analysis, animated avatars, extra games, multi-stream support, and arbitrary embeds. Preserve real Twitch ingestion, reliable wager/settlement, truthful mode labels, and reset/recovery. Group call polish can yield to the accepted manual handoff. Do not cut accounting correctness to finish a visual effect.
 
@@ -227,7 +227,9 @@ Require correct stream and current ingest epoch. The bookie's TTS, browser UI, o
 
 A real Twitch spoken cue produces one draw; repeat recognition, multiple consumers and clip replay do not draw again. Unarmed speech does nothing. A stale previous-epoch cue is rejected. Reset requires explicit new run/arming. A manual operator trigger can exist as a clearly identified operational fallback, but it does not pass the spoken-trigger gate.
 
-## Phase 10 — contact the raffle winner and streamer
+## Phase 10 — contact the raffle winner and streamer (DEFERRED, D41)
+
+Deferred by the owner on 2026-11-15; specification retained. Do not start without a new owner assignment.
 
 Owner: integrations engineer; reviewer observes actual devices. Depends on persisted P8 winner, P9 trigger and verified Chert line facts.
 
@@ -245,7 +247,7 @@ For automated status, both approved phones exchange actual media and can hear/se
 
 ## Phase 11 — absent-viewer AI bookie
 
-Owner: integrations engineer, backend engineer and reviewer. Depends on P2 presence, P6 wagers, P7 integrity, and P10 call cleanup experience. This is a distinct expansion, not required to prove the narrow core.
+Owner: integrations engineer, backend engineer and reviewer. Depends on P2 presence, P6 wagers, P7 integrity, and verified Chert line facts (P0-E); P10 is deferred (D41), so P11 must prove call cleanup and a second-call release itself. This is a distinct expansion, prioritized over P10, not required to prove the narrow core.
 
 ### Deliverables
 
