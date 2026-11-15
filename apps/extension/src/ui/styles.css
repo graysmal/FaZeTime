@@ -750,3 +750,583 @@ button:disabled {
     opacity: 0.6;
   }
 }
+
+/* =============================================================================================================
+   FaZe theme (owner request, 2026-11-15). Type: FaZed Sans for the logo (letters only; Anton covers the rest
+   per glyph), Anton for headlines, labels, numbers and buttons, Source Sans Pro Black for body text. The fonts
+   are registered on document.fonts by theme.ts; --ft-diamond is the DiamondPatterns texture (set on .ft-root).
+   ============================================================================================================= */
+.ft-root {
+  --ft-font-title: 'FT FaZed Sans', 'FT Anton', Impact, sans-serif;
+  --ft-font-head: 'FT Anton', Impact, 'Arial Narrow', sans-serif;
+  --ft-font-body: 'FT Source Sans', Inter, Roobert, 'Helvetica Neue', Arial, sans-serif;
+  --ft-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  font-family: var(--ft-font-body);
+  font-weight: 900;
+}
+
+/* ---- background: diamond shards under a dark wash ---- */
+.ft-panel {
+  background:
+    linear-gradient(180deg, rgba(14, 14, 17, 0.8), rgba(14, 14, 17, 0.9)),
+    var(--ft-diamond, none) center / cover no-repeat,
+    var(--ft-bg);
+}
+.ft-head {
+  background: rgba(20, 20, 24, 0.82);
+  backdrop-filter: blur(2px);
+}
+.ft-drop,
+.ft-dialog {
+  background:
+    linear-gradient(180deg, rgba(20, 20, 24, 0.9), rgba(20, 20, 24, 0.95)),
+    var(--ft-diamond, none) center / cover no-repeat,
+    var(--ft-surface);
+}
+.ft-stat,
+.ft-choice,
+.ft-banner,
+.ft-status,
+.ft-notice {
+  background-color: rgba(31, 31, 35, 0.82);
+}
+
+/* ---- logo: Fa ZE Time, ZE in FaZe red ---- */
+.ft-word,
+.ft-pill-brand {
+  font-family: var(--ft-font-title);
+  font-weight: 400;
+  font-size: 19px;
+  line-height: 1;
+  letter-spacing: 0.03em;
+  color: #fff;
+}
+.ft-pill-brand {
+  font-size: 15px;
+}
+.ft-word b,
+.ft-pill-brand b {
+  font-weight: 400;
+  color: var(--ft-red);
+  text-shadow: 0 0 10px rgba(228, 0, 43, 0.6);
+}
+
+/* ---- headlines, labels, numbers, buttons: Anton ---- */
+.ft-q {
+  font-family: var(--ft-font-head);
+  font-weight: 400;
+  font-size: 19px;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+}
+.ft-banner h4,
+.ft-dialog h4 {
+  font-family: var(--ft-font-head);
+  font-weight: 400;
+  font-size: 18px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.ft-tab,
+.ft-state,
+.ft-badge,
+.ft-tag,
+.ft-icon-btn,
+.ft-chip-btn,
+.ft-primary,
+.ft-secondary,
+.ft-amount,
+.ft-choice-label,
+.ft-menu h5 {
+  font-family: var(--ft-font-head);
+  font-weight: 400;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.ft-tab {
+  font-size: 14px;
+}
+.ft-primary {
+  font-size: 16px;
+  letter-spacing: 0.1em;
+}
+.ft-choice-label {
+  font-size: 16px;
+  letter-spacing: 0.04em;
+}
+.ft-countdown,
+.ft-pill-time,
+.ft-stat b,
+.ft-stake input {
+  font-family: var(--ft-font-head);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+}
+.ft-countdown {
+  font-size: 15px;
+}
+.ft-stat b {
+  font-size: 22px;
+}
+.ft-countdown small {
+  font-family: var(--ft-font-body);
+  font-weight: 900;
+  letter-spacing: 0;
+}
+/* body copy keeps Source Sans Black at small sizes */
+.ft-hint,
+.ft-fine,
+.ft-label,
+.ft-notice,
+.ft-estimate,
+.ft-position,
+.ft-pooltotal,
+.ft-choice-sub,
+.ft-meta,
+.ft-banner p,
+.ft-item p {
+  font-family: var(--ft-font-body);
+  font-weight: 900;
+}
+.ft-code code {
+  font-weight: 700;
+}
+
+/* ---- collapse: animated height (host) + content fade, rotating chevron ---- */
+.ft-collapsible {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  animation: ft-unfold 0.26s var(--ft-ease) both;
+}
+.ft-collapsible[data-state='closing'] {
+  animation: ft-fold 0.22s ease-in both;
+  pointer-events: none;
+}
+@keyframes ft-unfold {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+@keyframes ft-fold {
+  to {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+.ft-collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  padding: 0;
+}
+.ft-collapse:hover {
+  color: #fff;
+  border-color: var(--ft-red);
+}
+.ft-toggle-icon {
+  fill: currentColor;
+  transition: transform 0.26s var(--ft-ease);
+}
+.ft-toggle-v {
+  transform-origin: 6px 6px;
+  transition: transform 0.26s var(--ft-ease);
+}
+.ft-collapse[aria-expanded='true'] .ft-toggle-v {
+  transform: scaleY(0);
+}
+.ft-collapse[aria-expanded='false'] .ft-toggle-icon {
+  transform: rotate(90deg);
+}
+.ft-panel[data-open='false'] {
+  border-bottom-color: var(--ft-red);
+}
+
+/* ---- tabs: equal width with a sliding red underline ---- */
+.ft-tabs {
+  position: relative;
+  background: rgba(20, 20, 24, 0.6);
+}
+.ft-tab {
+  flex: 1 1 0;
+  border-bottom: none;
+  transition: color 0.2s ease;
+}
+.ft-tab[aria-selected='true'] {
+  border-bottom: none;
+}
+.ft-tab-ink {
+  position: absolute;
+  left: 10px;
+  bottom: -1px;
+  width: calc((100% - 20px - 4px) / 3);
+  height: 3px;
+  background: var(--ft-red);
+  box-shadow: 0 0 10px rgba(228, 0, 43, 0.8);
+  transform: translateX(calc(var(--ft-tab-i, 0) * (100% + 2px)));
+  transition: transform 0.3s var(--ft-ease);
+  pointer-events: none;
+}
+/* ---- tab content: slides in from the side you moved toward ---- */
+.ft-pane {
+  animation: ft-pane-right 0.28s var(--ft-ease) both;
+}
+.ft-pane[data-dir='left'] {
+  animation-name: ft-pane-left;
+}
+@keyframes ft-pane-right {
+  from {
+    opacity: 0;
+    transform: translateX(22px);
+    filter: blur(2px);
+  }
+}
+@keyframes ft-pane-left {
+  from {
+    opacity: 0;
+    transform: translateX(-22px);
+    filter: blur(2px);
+  }
+}
+
+/* ---- every button: a diamond-texture glaze sweeps across on click ---- */
+.ft-root button {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.ft-root button.ft-glaze::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    linear-gradient(105deg, transparent 38%, rgba(255, 255, 255, 0.55) 50%, transparent 62%),
+    var(--ft-diamond, none) center / 260px auto;
+  mix-blend-mode: screen;
+  -webkit-mask-image: linear-gradient(105deg, transparent 25%, #000 45%, #000 55%, transparent 75%);
+  mask-image: linear-gradient(105deg, transparent 25%, #000 45%, #000 55%, transparent 75%);
+  -webkit-mask-size: 300% 100%;
+  mask-size: 300% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  animation: ft-glaze 0.6s ease-out forwards;
+}
+@keyframes ft-glaze {
+  0% {
+    -webkit-mask-position: 100% 0;
+    mask-position: 100% 0;
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    -webkit-mask-position: 0% 0;
+    mask-position: 0% 0;
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ft-collapsible,
+  .ft-pane,
+  .ft-root button.ft-glaze::after {
+    animation: none !important;
+  }
+  .ft-tab-ink,
+  .ft-toggle-icon,
+  .ft-toggle-v {
+    transition: none;
+  }
+}
+
+/* Twitch pins its "Collapse Chat" button (32px, absolute) to the top-left of the chat column. Now that the panel
+   is the first thing in that column, leave room for it so it never sits on the logo and stays clickable. */
+.ft-panel[data-placement='chat'] .ft-head {
+  padding-left: 56px; /* fallback; Panel measures the button and sets the exact inset inline */
+  min-height: 40px;
+}
+
+/* ---- money you can spend: green ---- */
+.ft-money,
+.ft-stat b.ft-money,
+.ft-label b.ft-money {
+  color: var(--ft-ok);
+  text-shadow: 0 0 10px rgba(0, 196, 140, 0.35);
+}
+
+/* ---- notice actions + the hide (×) button ---- */
+.ft-notice-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+.ft-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: var(--ft-muted);
+}
+.ft-x:hover {
+  color: #fff;
+  border-color: var(--ft-red);
+  background: rgba(228, 0, 43, 0.15);
+}
+
+/* ---- profile: person button + card ---- */
+.ft-profile-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  padding: 0;
+}
+.ft-profile-btn:hover,
+.ft-profile-btn[aria-expanded='true'] {
+  color: #fff;
+  border-color: var(--ft-red);
+}
+.ft-profile {
+  position: absolute;
+  top: 44px;
+  right: 8px;
+  z-index: 12;
+  width: 270px;
+  max-width: calc(100% - 16px);
+  padding: 14px 14px 10px;
+  border: 1px solid var(--ft-red);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(18, 18, 22, 0.9), rgba(18, 18, 22, 0.96)),
+    var(--ft-diamond, none) center / cover no-repeat,
+    var(--ft-surface);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6), 0 0 18px rgba(228, 0, 43, 0.25);
+  animation: ft-pop 0.22s var(--ft-ease) both;
+}
+@keyframes ft-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+}
+.ft-profile-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+.ft-profile-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.ft-avatar {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255, 31, 75, 0.55), rgba(120, 0, 22, 0.85) 70%),
+    var(--ft-diamond, none) center / 180px auto;
+  box-shadow: 0 0 0 2px var(--ft-red), 0 0 14px rgba(228, 0, 43, 0.55);
+}
+.ft-avatar span {
+  font-family: var(--ft-font-head);
+  font-size: 24px;
+  letter-spacing: 0.04em;
+  color: #fff;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.5);
+}
+.ft-profile-names {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.ft-profile-name {
+  font-family: var(--ft-font-head);
+  font-weight: 400;
+  font-size: 20px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ft-profile-names .ft-fine {
+  margin: 0;
+}
+.ft-profile-rows {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ft-profile-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 9px;
+  background: rgba(31, 31, 35, 0.85);
+  border: 1px solid var(--ft-border);
+  border-radius: 6px;
+}
+.ft-profile-row dt {
+  font-family: var(--ft-font-head);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ft-muted);
+}
+.ft-profile-row dd {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ft-profile {
+    animation: none;
+  }
+}
+
+/* Header fit: the brand side gives way first, header buttons never wrap. */
+.ft-brand {
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+.ft-head-actions {
+  flex: none;
+}
+.ft-chip-btn {
+  white-space: nowrap;
+}
+
+/* ---- profile: verified tag, verify call-to-action, wallet ---- */
+.ft-verified {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--ft-font-head);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #fff;
+  padding: 2px 9px 2px 7px;
+  border: 1px solid var(--ft-ok);
+  background: rgba(0, 196, 140, 0.18);
+  border-radius: 4px;
+}
+.ft-verified svg {
+  color: var(--ft-ok);
+}
+.ft-verified--no {
+  border-color: var(--ft-warn);
+  background: rgba(255, 176, 32, 0.14);
+  color: #ffd68a;
+}
+.ft-verify {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.ft-verify .ft-hint {
+  margin: 0;
+}
+.ft-profile-wallet {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ft-profile-wallet .ft-fine {
+  margin: 0;
+}
+.ft-profile-label {
+  font-family: var(--ft-font-head);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ft-muted);
+}
+.ft-profile-balance {
+  font-family: var(--ft-font-head);
+  font-weight: 400;
+  font-size: 22px;
+  letter-spacing: 0.03em;
+}
+
+/* The profile card scrolls inside the panel instead of being cut off at the panel's bottom edge. */
+.ft-profile {
+  max-height: calc(100% - 52px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Hints read as plain text: no vertical rule in front of them (owner request). Colour still marks warnings. */
+.ft-hint,
+.ft-hint--warn,
+.ft-hint--watching {
+  border-left: none;
+  padding-left: 0;
+}
+
+/* Compact profile card: clear of the header buttons (top set inline) and of the chat header below. */
+.ft-profile {
+  width: 248px;
+  padding: 10px 12px 8px;
+}
+.ft-profile-top {
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.ft-avatar {
+  width: 42px;
+  height: 42px;
+}
+.ft-avatar span {
+  font-size: 18px;
+}
+.ft-profile-name {
+  font-size: 17px;
+}
+.ft-verify {
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.ft-profile-wallet {
+  gap: 6px;
+}
+.ft-profile .ft-profile-row {
+  padding: 5px 8px;
+}
+.ft-profile-balance {
+  font-size: 18px;
+}
+.ft-profile .ft-primary {
+  padding: 6px 10px;
+  font-size: 14px;
+}
+.ft-profile .ft-hint {
+  font-size: 11px;
+}

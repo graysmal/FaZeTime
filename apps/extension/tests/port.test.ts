@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { BackgroundClient } from '../src/api/client';
 import { PORT_NAME, type PortLike } from '../src/api/protocol';
 import { attachRouter, type RuntimeLike } from '../src/api/router';
@@ -90,5 +90,18 @@ describe('content <-> background port protocol', () => {
     expect(await client.request('getOperation', { nope: 1 })).toMatchObject({ ok: false, kind: 'http', error: { error: { code: 'VALIDATION_FAILED' } } });
     expect(await client.request('fixtures.injectError', { code: 'NOT_A_CODE' })).toMatchObject({ ok: false, error: { error: { code: 'VALIDATION_FAILED' } } });
     client.dispose();
+  });
+});
+
+describe('openJoin (profile "Verify")', () => {
+  it('asks the browser UI to open the popup and reports whether it opened; it never enrolls', async () => {
+    const { handleRequest } = await import('../src/api/router');
+    const enroll = vi.fn();
+    const adapter = { enroll } as never;
+    const msg = { t: 'req' as const, id: 1, method: 'openJoin' as const };
+    expect(await handleRequest(adapter, msg, { openPopup: async () => true })).toEqual({ ok: true, status: 200, body: { opened: true } });
+    expect(await handleRequest(adapter, msg, { openPopup: async () => false })).toEqual({ ok: true, status: 200, body: { opened: false } });
+    expect(await handleRequest(adapter, msg)).toEqual({ ok: true, status: 200, body: { opened: false } });
+    expect(enroll).not.toHaveBeenCalled();
   });
 });

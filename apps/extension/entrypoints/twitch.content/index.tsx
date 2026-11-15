@@ -14,12 +14,14 @@ import { watchKey, wxtKV } from '../../src/storage';
 import { EnvContext, type UiEnv } from '../../src/ui/hooks';
 import { Overlay } from '../../src/ui/Overlay';
 import { Panel } from '../../src/ui/Panel';
+import { DIAMOND_CSS_VALUE, registerFonts } from '../../src/ui/theme';
 
 export default defineContentScript({
   matches: ['https://www.twitch.tv/*'],
   runAt: 'document_idle',
   main(ctx) {
     const instanceId = crypto.randomUUID();
+    registerFonts(document);
     let controller: PanelController | null = null;
     let client: BackgroundClient | null = null;
     let views = 0;
@@ -63,6 +65,7 @@ export default defineContentScript({
 
     const renderInto = (root: HTMLElement, channel: string, node: (env: UiEnv) => ReactElement): MountedView => {
       const env = makeEnv(channel);
+      root.style.setProperty('--ft-diamond', DIAMOND_CSS_VALUE);
       const reactRoot = createRoot(root);
       reactRoot.render(
         <StrictMode>

@@ -138,11 +138,11 @@ try {
 
   // Close / reopen.
   at('close/reopen');
-  await panel.locator('.ft-icon-btn', { hasText: 'Close' }).click();
+  await panel.locator('button[aria-label="Close the FaZeTime panel"]').click();
   await page.waitForTimeout(300);
   const closedH = await page.locator('[data-fazetime-host="panel"]').evaluate((h) => h.getBoundingClientRect().height);
   await shot(page, '06-panel-closed');
-  await panel.locator('.ft-icon-btn', { hasText: 'Open' }).click();
+  await panel.locator('button[aria-label="Open the FaZeTime panel"]').click();
   await page.waitForTimeout(300);
   const openH = await page.locator('[data-fazetime-host="panel"]').evaluate((h) => h.getBoundingClientRect().height);
   record('close and reopen', closedH < 60 && openH > closedH, `closed=${Math.round(closedH)}px open=${Math.round(openH)}px`);
@@ -227,7 +227,7 @@ try {
   else await page.getByRole('button', { name: /expand/i }).first().click();
   await page.locator('[data-fazetime-host="panel"][data-fazetime-placement="chat"]').waitFor({ timeout: 15000 });
   await page.waitForTimeout(1500);
-  const restored = await page.locator('[data-fazetime-host="panel"]').evaluate((h) => ({ h: Math.round(h.getBoundingClientRect().height), afterHeader: h.previousElementSibling?.classList.contains('stream-chat-header') }));
+  const restored = await page.locator('[data-fazetime-host="panel"]').evaluate((h) => ({ h: Math.round(h.getBoundingClientRect().height), afterHeader: h.nextElementSibling?.classList.contains('stream-chat-header') }));
   record('chat expanded: panel restored above chat exactly once', (await single()) && restored.h > 0 && restored.afterHeader === true, JSON.stringify(restored));
   await shot(page, '11-chat-expanded');
 

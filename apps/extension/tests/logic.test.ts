@@ -134,3 +134,20 @@ describe('bet flow reducer', () => {
     expect(describeError({ ...httpErr('INSUFFICIENT_FUNDS').error.error, details: { available_minor: 300, requested_minor: 500 } }).action).toBe('OPEN_TOPUP');
   });
 });
+
+describe('diamond glaze on hover', () => {
+  it('glazes a button once when the pointer enters it, not when moving inside it, and never for touch', async () => {
+    const { glazeOnHover } = await import('../src/ui/theme');
+    document.body.innerHTML = '<button id="b"><span id="s">Wallet</span></button><div id="out"></div>';
+    const b = document.getElementById('b')!;
+    const s = document.getElementById('s')!;
+    const out = document.getElementById('out')!;
+    glazeOnHover({ target: s, relatedTarget: out, pointerType: 'mouse' });
+    expect(b.classList.contains('ft-glaze')).toBe(true);
+    b.classList.remove('ft-glaze');
+    glazeOnHover({ target: b, relatedTarget: s, pointerType: 'mouse' }); // moving within the same button
+    expect(b.classList.contains('ft-glaze')).toBe(false);
+    glazeOnHover({ target: b, relatedTarget: out, pointerType: 'touch' });
+    expect(b.classList.contains('ft-glaze')).toBe(false);
+  });
+});

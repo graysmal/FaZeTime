@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { formatCountdown, remainingMs } from '../lib/time';
 import { MarketCard } from './MarketCard';
+import { glazeFromEvent, glazeOnHover } from './theme';
 import { useEnv, useFullscreen, useNow, usePanel } from './hooks';
 
 const CONTROLS_CLEARANCE_PX = 76; // Keep clear of Twitch's bottom control bar (about 50px) plus margin.
@@ -35,7 +36,7 @@ export function Overlay({ host }: { host: HTMLElement }) {
   const remaining = market ? remainingMs(market.close_at_utc, now, st.offsetMs) : 0;
   const title = market ? market.question : 'No market open';
   return (
-    <div className="ft-overlay" onKeyDown={(e) => e.key === 'Escape' && setExpanded(false)}>
+    <div className="ft-overlay" onKeyDown={(e) => e.key === 'Escape' && setExpanded(false)} onClickCapture={(e) => glazeFromEvent(e.target)} onPointerOver={(e) => glazeOnHover(e)}>
       <button
         type="button"
         className="ft-pill"
@@ -43,7 +44,11 @@ export function Overlay({ host }: { host: HTMLElement }) {
         aria-label={mode === 'live' ? 'FaZeTime market' : 'FaZeTime market (MOCK)'}
         onClick={() => setExpanded((v) => !v)}
       >
-        {mode === 'live' ? <span className="ft-pill-brand">FaZeTime</span> : <span className="ft-badge ft-badge--mock">MOCK</span>}
+        {mode === 'live' ? (
+          <span className="ft-pill-brand">
+            Fa<b>Ze</b>Time
+          </span>
+        ) : <span className="ft-badge ft-badge--mock">MOCK</span>}
         <span className="ft-pill-title">{title}</span>
         {market?.state === 'OPEN' && <span className="ft-pill-time">{remaining > 0 ? formatCountdown(remaining) : 'closing'}</span>}
         {market && market.state !== 'OPEN' && <span className="ft-badge ft-badge--soft">{market.state}</span>}

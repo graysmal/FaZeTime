@@ -154,6 +154,10 @@ export class BackgroundClient implements MarketDataSource, WalletApi {
   dismissTopUp(): Promise<ApiResult<null>> {
     return this.request('dismissTopUp');
   }
+  /** Opens the toolbar popup so the viewer can join (verify). Never enrolls from the page. */
+  openJoin(): Promise<ApiResult<{ opened: boolean }>> {
+    return this.request('openJoin');
+  }
   presence(input: PresenceInput): Promise<ApiResult<unknown>> {
     return this.request('presence', input);
   }

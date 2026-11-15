@@ -51,8 +51,9 @@ describe('MountController (P1-A / P1-E)', () => {
     expect(hosts('panel')).toHaveLength(1);
     expect(hosts('overlay')).toHaveLength(1);
     const panel = hosts('panel')[0]!;
-    expect(panel.previousElementSibling?.classList.contains('stream-chat-header')).toBe(true);
-    expect(panel.nextElementSibling?.classList.contains('chat-room')).toBe(true);
+    expect(panel.nextElementSibling?.classList.contains('stream-chat-header')).toBe(true); // above the chat header
+    expect(panel.nextElementSibling?.nextElementSibling?.classList.contains('chat-room')).toBe(true);
+    expect(panel.previousElementSibling).toBeNull(); // first in the chat sidebar column
     expect(panel.shadowRoot?.querySelector('style')?.textContent).toBe('.x{}');
     expect(renders.panel).toBe(1);
     expect(renders.overlay).toBe(1);

@@ -8,9 +8,19 @@ import type { WagerRequest } from '@fazetime/contracts';
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v) && Object.getPrototypeOf(v) === Object.prototype;
 
-export async function handleRequest(adapter: BackendAdapter, msg: RequestMessage): Promise<ApiResult<unknown>> {
+/** Browser UI the background may drive for a content script. Enrollment itself stays popup-only. */
+export interface RouterUi {
+  /** Open the toolbar popup; resolves false when the browser refuses (e.g. no focused window). */
+  openPopup?: () => Promise<boolean>;
+}
+
+export async function handleRequest(adapter: BackendAdapter, msg: RequestMessage, ui: RouterUi = {}): Promise<ApiResult<unknown>> {
   const params = msg.params;
   switch (msg.method) {
+    case 'openJoin': {
+      const opened = ui.openPopup ? await ui.openPopup() : false;
+      return { ok: true, status: 200, body: { opened } };
+    }
     case 'getSnapshot':
       return adapter.getSnapshot();
     case 'placeWager':
@@ -91,7 +101,7 @@ function safePost(port: PortLike, msg: unknown): void {
   }
 }
 
-export function attachRouter(adapter: BackendAdapter, runtime: RuntimeLike): () => void {
+export function attachRouter(adapter: BackendAdapter, runtime: RuntimeLike, ui: RouterUi = {}): () => void {
   const ports = new Set<PortLike>();
 
   const onConnect = (port: PortLike & { sender?: { id?: string } }) => {
@@ -107,7 +117,7 @@ export function attachRouter(adapter: BackendAdapter, runtime: RuntimeLike): () 
       if (!isRequestMessage(msg)) return;
       let result: ApiResult<unknown>;
       try {
-        result = await handleRequest(adapter, msg);
+        result = await handleRequest(adapter, msg, ui);
       } catch (err) {
         console.error('[FaZeTime] background request failed', err);
         result = httpError('INTERNAL_ERROR', 'The extension background failed; the outcome is unknown.');

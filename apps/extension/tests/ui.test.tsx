@@ -119,7 +119,7 @@ describe('D31: live builds look like a product (no MOCK/DEMO badges or mode chip
   it('panel header and body carry no badge, chips, fixture menu or fixture-origin label', () => {
     const html = panel({ snapshot: live('open_no_position'), adapterMode: 'LIVE', hasFixtures: false });
     expect(html).not.toMatch(/MOCK|DEMO|TEST MONEY|ft-modes|Fixture ▾|Canned fixture|Operator fixture|LIVE API/);
-    expect(html).toContain('FaZe<b>Time</b>');
+    expect(html).toContain('Fa<b>Ze</b>Time');
     expect(html).toContain('Will RedFox win the first Minecraft duel against BlueJay?');
   });
 
@@ -223,9 +223,78 @@ describe('P6-E live Stripe test top-ups (D31 wording, no card fields)', () => {
     expect(one({ status: 'CREDITED', watching: false, previous_run: true })).toContain('Test credits added: $10.00, credited to the previous demo run.');
   });
 
+  it('pending notice has a hide (×) that only hides it; a finished result shows again', () => {
+    const panel = (over: Record<string, unknown>, hidden: boolean) =>
+      render(envWith({ snapshot: stripe('open_no_position'), pendingTopUp: tracking(over), hiddenTopUpFor: hidden ? (tracking(over) as { topup_id: string }).topup_id : null }, 'live'), (
+        <Panel host={document.createElement('div')} placement="chat" notice={null} retryAttach={() => undefined} />
+      ));
+    const shown = panel({}, false);
+    expect(shown).toContain('Finish paying $10.00 in the Stripe tab.');
+    expect(shown).toContain('aria-label="Hide this top-up notice"');
+    expect(panel({}, true)).not.toContain('Finish paying');
+    const done = panel({ status: 'CREDITED', watching: false }, true);
+    expect(done).toContain('Test credits added: $10.00');
+    expect(done).not.toContain('Hide this top-up notice');
+  });
+
+  it('the available balance is marked as money (green)', () => {
+    const html = render(envWith({ snapshot: stripe('open_no_position') }, 'live'), <WalletTab />);
+    expect(html).toMatch(/<span>Available<\/span><b class="ft-money">\$/);
+  });
+
   it('the market card shows "Add funds" (not demo wording) and a fresh estimate', () => {
     const html = render(envWith({ snapshot: stripe('open_no_position') }, 'live'), <MarketCard surface="panel" />);
     expect(html).toContain('Add funds');
     expect(html).not.toContain('Add demo funds');
+  });
+});
+
+describe('profile card (owner request 2026-11-15)', () => {
+  it('builds initials from the display name', async () => {
+    const { initialsFor } = await import('../src/ui/Panel');
+    expect(initialsFor('Faze Gavin')).toBe('FG');
+    expect(initialsFor('gavin')).toBe('GA');
+    expect(initialsFor('faze_neville')).toBe('FN');
+    expect(initialsFor('')).toBe('?');
+    expect(initialsFor(null)).toBe('?');
+  });
+
+  const stripe = (name: string): StreamSnapshot => ({ ...snap(name), modes: { ai_mode: 'OFF', payment_mode: 'STRIPE_TEST', media_source_kind: null } });
+  const liveStatus = (enrolled: boolean) => ({
+    mode: 'LIVE' as const, link: 'WS' as never, enrolled, reenroll: false, displayName: enrolled ? 'Faze Gavin' : null,
+    role: enrolled ? 'VIEWER' : null, apiBase: 'http://fazetime:8000', channel: 'fazegavin1234', message: null,
+  });
+
+  it('not verified: tag, the "verify before betting" note, a Verify button, and Add funds disabled', async () => {
+    const { ProfileCard, VERIFY_NOTE } = await import('../src/ui/Panel');
+    const html = render(envWith({ backend: liveStatus(false), snapshot: stripe('open_no_position') }, 'live'), <ProfileCard onClose={() => undefined} />);
+    expect(html).toMatch(/data-testid="profile-verified">Not verified</);
+    expect(html).toContain(VERIFY_NOTE.replace(/'/g, '&#x27;'));
+    expect(html).toMatch(/<button type="button" class="ft-primary">Verify<\/button>/);
+    expect(html).toMatch(/<button type="button" class="ft-primary ft-profile-add" disabled="">Add funds<\/button>/);
+    expect(html).not.toMatch(/password/i);
+  });
+
+  it('verified: tag with a check, green available balance, and an enabled Add funds; no Verify button', async () => {
+    const { ProfileCard } = await import('../src/ui/Panel');
+    const html = render(envWith({ backend: liveStatus(true), snapshot: stripe('open_no_position') }, 'live'), <ProfileCard onClose={() => undefined} />);
+    expect(html).toMatch(/data-testid="profile-verified"><svg[^]*<\/svg>Verified</);
+    expect(html).toMatch(/class="ft-money ft-profile-balance" data-testid="profile-available">\$/);
+    expect(html).toMatch(/<button type="button" class="ft-primary ft-profile-add">Add funds<\/button>/);
+    expect(html).not.toContain('>Verify<');
+    expect(html).toContain('FG');
+  });
+
+  it('Add funds goes to the Wallet tab when the panel provides it', async () => {
+    const { ProfileCard } = await import('../src/ui/Panel');
+    const html = render(envWith({ backend: liveStatus(true), snapshot: stripe('open_no_position') }, 'live'), (
+      <ProfileCard onClose={() => undefined} onAddFunds={() => undefined} top={48} />
+    ));
+    expect(html).toContain('style="top:48px;max-height:calc(100% - 60px)"');
+  });
+
+  it('the panel header has a profile (person) button', () => {
+    const html = render(envWith({}, 'live'), <Panel host={document.createElement('div')} placement="chat" notice={null} retryAttach={() => undefined} />);
+    expect(html).toContain('aria-label="Your FaZeTime profile"');
   });
 });

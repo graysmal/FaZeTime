@@ -319,7 +319,7 @@ export function MarketCard({ surface }: { surface: 'panel' | 'overlay' }) {
           </div>
           <div className="ft-row">
             <span className="ft-label">
-              Available <b>{formatMinor(snap.wallet.available_minor)}</b>
+              Available <b className="ft-money">{formatMinor(snap.wallet.available_minor)}</b>
             </span>
             {(snap.modes.payment_mode === 'MOCK' || snap.modes.payment_mode === 'STRIPE_TEST') && (
               <button type="button" className="ft-link" onClick={() => (controller.openTopUp('manual'), surface === 'overlay' && requestPanelOpen())}>

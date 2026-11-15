@@ -58,6 +58,7 @@ export type PanelApi = MarketDataSource &
     topUpHint?(topupId: string): Promise<ApiResult<TopUpTracking | null>>;
     reopenTopUpCheckout?(): Promise<ApiResult<TopUpTracking | null>>;
     dismissTopUp?(): Promise<ApiResult<null>>;
+    openJoin?(): Promise<ApiResult<{ opened: boolean }>>;
   };
 
 export interface TopUpState {
@@ -96,6 +97,8 @@ export interface PanelState {
   pendingTopUp: TopUpTracking | null;
   /** The return URL said "cancel" for this top-up: wording only, the status stays the server's. */
   checkoutClosedFor: string | null;
+  /** The viewer hid the notice for this unfinished top-up (×). Display only: it reappears once it finishes. */
+  hiddenTopUpFor: string | null;
 }
 
 const CLOSED_TOPUP: TopUpState = {
@@ -126,6 +129,7 @@ export function initialPanelState(): PanelState {
     backend: null,
     pendingTopUp: null,
     checkoutClosedFor: null,
+    hiddenTopUpFor: null,
   };
 }
 
@@ -437,6 +441,22 @@ export class PanelController {
   async checkTopUpAgain(): Promise<void> {
     const id = this.state.pendingTopUp?.topup_id;
     if (id) await this.topUpHint(id);
+  }
+
+  /**
+   * The user pressed × on an unfinished top-up notice. This only hides the notice here: an open Stripe tab can
+   * still be paid, and if it is, the server credits it and the result notice shows again.
+   */
+  hidePendingTopUp(): void {
+    const cur = this.state.pendingTopUp;
+    if (cur) this.set({ hiddenTopUpFor: cur.topup_id });
+  }
+
+  /** "Verify" in the profile card: open the toolbar popup to join. Resolves whether it actually opened. */
+  async openJoin(): Promise<boolean> {
+    if (!this.api.openJoin) return false;
+    const r = await this.api.openJoin();
+    return r.ok && r.body.opened === true;
   }
 
   /** The user acknowledged a finished top-up result. */

@@ -4,12 +4,47 @@ import { checkTopUp, describeAmountProblem, formatMinor, parseDollarsToMinor } f
 import type { PanelNotice, Placement } from '../content/mount';
 import { describeTopUp } from '../state/topupCopy';
 import { MarketCard } from './MarketCard';
+import { glazeFromEvent, glazeOnHover } from './theme';
 import { PANEL_OPEN_KEY, PROFILE_KEY, panelHeightKey, useEnv, usePanel, useStoredValue, type Profile } from './hooks';
 
 export const PANEL_MIN_PX = 160;
 export const CHAT_MIN_PX = 140;
 export const PANEL_DEFAULT_PX = 360;
 const KEY_STEP_PX = 16;
+/** Collapse/expand animation length; the body stays mounted this long after closing so it can slide away. */
+export const COLLAPSE_MS = 260;
+/** Twitch's "Collapse Chat" button, pinned to the top-left of the chat column (verified 2026-11-15). */
+const TWITCH_COLLAPSE_SELECTOR = '[data-a-target="right-column__toggle-collapse-btn"]';
+const LOGO_GAP_PX = 14;
+
+/**
+ * Left inset for the panel header so the logo starts beside Twitch's Collapse Chat button instead of under
+ * it. Measured (not hard-coded) because Twitch's layout varies; re-measured on resize and every 2 s.
+ */
+function useHeaderInset(doc: Document, host: HTMLElement, enabled: boolean): number | null {
+  const [inset, setInset] = useState<number | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    const measure = () => {
+      const btn = doc.querySelector(TWITCH_COLLAPSE_SELECTOR);
+      const h = host.getBoundingClientRect();
+      const r = btn?.getBoundingClientRect();
+      const overlaps = r && r.width > 0 && r.bottom > h.top && r.top < h.top + 48 && r.right > h.left && r.left < h.right;
+      const next = overlaps ? Math.ceil(r.right - h.left + LOGO_GAP_PX) : null;
+      setInset((prev) => (prev === next ? prev : next));
+    };
+    measure();
+    const view = doc.defaultView;
+    view?.addEventListener('resize', measure);
+    const timer = setInterval(measure, 2000);
+    return () => {
+      view?.removeEventListener('resize', measure);
+      clearInterval(timer);
+    };
+  }, [doc, host, enabled]);
+  return inset;
+}
+const TABS = ['market', 'wallet', 'redeem'] as const;
 const PAGE_STEP_PX = 80;
 
 /** Clamp the panel height so chat keeps at least CHAT_MIN_PX. */
@@ -63,7 +98,25 @@ export function Panel(props: { host: HTMLElement; placement: Placement; notice: 
   const [open, setOpen] = useStoredValue<boolean>(PANEL_OPEN_KEY, true);
   const [height, setHeight, heightLoaded] = useStoredValue<number>(panelHeightKey(env.channel), PANEL_DEFAULT_PX);
   const [tab, setTab] = useState<Tab>('market');
+  // Direction of the last tab change, for the slide-in animation (+1 = moving right, -1 = moving left).
+  const [tabDir, setTabDir] = useState<1 | -1>(1);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const headRef = useRef<HTMLElement>(null);
+  // While collapsing, keep the body rendered so the height animation has something to hide.
+  const [closing, setClosing] = useState(false);
+  const toggleOpen = () => {
+    if (open) {
+      setClosing(true);
+      setTimeout(() => setClosing(false), COLLAPSE_MS);
+    }
+    setOpen(!open);
+  };
+  const selectTab = (t: Tab) => {
+    if (t === tab) return;
+    setTabDir(TABS.indexOf(t) > TABS.indexOf(tab) ? 1 : -1);
+    setTab(t);
+  };
 
   // Expand when something (e.g. the over-video dropdown) needs the panel's top-up dialog.
   useEffect(() => env.onPanelOpenRequest(() => setOpen(true)), [env]);
@@ -78,8 +131,12 @@ export function Panel(props: { host: HTMLElement; placement: Placement; notice: 
       host.style.height = '';
       return;
     }
+    host.style.transition = `height ${COLLAPSE_MS}ms cubic-bezier(0.2, 0.8, 0.2, 1)`;
+    host.style.overflow = 'hidden';
     if (!open) {
-      host.style.height = 'auto';
+      // Collapse to the header bar (an explicit height so the change animates).
+      const head = headRef.current?.getBoundingClientRect().height ?? 0;
+      host.style.height = head > 0 ? `${Math.ceil(head)}px` : 'auto';
       return;
     }
     const container = host.parentElement?.getBoundingClientRect().height ?? 0;
@@ -87,17 +144,32 @@ export function Panel(props: { host: HTMLElement; placement: Placement; notice: 
   }, [host, placement, open, height, heightLoaded]);
 
   const snap = st.snapshot;
+  const showBody = open || closing;
+  const headInset = useHeaderInset(env.doc, host, placement === 'chat');
   return (
-    <div className="ft-panel" data-placement={placement}>
-      <header className="ft-head">
+    <div className="ft-panel" data-placement={placement} data-open={open} onClickCapture={(e) => glazeFromEvent(e.target)} onPointerOver={(e) => glazeOnHover(e)}>
+      <header className="ft-head" ref={headRef} style={headInset !== null ? { paddingLeft: headInset } : undefined}>
         <div className="ft-brand">
           <span className="ft-word">
-            FaZe<b>Time</b>
+            Fa<b>Ze</b>Time
           </span>
           <ModeBadge />
           {snap?.market?.state === 'OPEN' && !open && <span className="ft-badge ft-badge--soft">Market open</span>}
         </div>
         <div className="ft-head-actions">
+          {open && (
+            <button
+              type="button"
+              className="ft-icon-btn ft-profile-btn"
+              aria-haspopup="dialog"
+              aria-expanded={profileOpen}
+              aria-label="Your FaZeTime profile"
+              title="Profile"
+              onClick={() => setProfileOpen((v) => !v)}
+            >
+              <PersonIcon />
+            </button>
+          )}
           {st.hasFixtures && open && (
             <button type="button" className="ft-chip-btn" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((v) => !v)}>
               Fixture ▾
@@ -105,17 +177,22 @@ export function Panel(props: { host: HTMLElement; placement: Placement; notice: 
           )}
           <button
             type="button"
-            className="ft-icon-btn"
+            className="ft-icon-btn ft-collapse"
             aria-expanded={open}
             aria-label={open ? 'Close the FaZeTime panel' : 'Open the FaZeTime panel'}
-            onClick={() => setOpen(!open)}
+            title={open ? 'Collapse' : 'Expand'}
+            onClick={toggleOpen}
           >
-            {open ? 'Close ▴' : 'Open ▾'}
+            {/* "−" when open, "+" when collapsed: the vertical bar folds away. */}
+            <svg className="ft-toggle-icon" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+              <rect className="ft-toggle-h" x="1" y="5" width="10" height="2" />
+              <rect className="ft-toggle-v" x="5" y="1" width="2" height="10" />
+            </svg>
           </button>
         </div>
       </header>
-      {open && (
-        <>
+      {showBody && (
+        <div className="ft-collapsible" data-state={open ? 'open' : 'closing'}>
           <ModeChips modes={snap?.modes} adapter={st.adapterMode} />
           {notice === 'chat_not_found' && (
             <div className="ft-notice ft-notice--warn">
@@ -154,23 +231,176 @@ export function Panel(props: { host: HTMLElement; placement: Placement; notice: 
             </div>
           )}
           {st.pendingTopUp && !st.topUp.open && <TopUpNotice />}
-          <nav className="ft-tabs" role="tablist" aria-label="FaZeTime sections">
-            {(['market', 'wallet', 'redeem'] as const).map((t) => (
-              <button key={t} type="button" role="tab" aria-selected={tab === t} className="ft-tab" onClick={() => setTab(t)}>
+          <nav className="ft-tabs" role="tablist" aria-label="FaZeTime sections" style={{ ['--ft-tab-i' as string]: TABS.indexOf(tab) }}>
+            {TABS.map((t) => (
+              <button key={t} type="button" role="tab" aria-selected={tab === t} className="ft-tab" onClick={() => selectTab(t)}>
                 {t === 'market' ? 'Market' : t === 'wallet' ? 'Wallet' : 'Redeem'}
               </button>
             ))}
+            <span className="ft-tab-ink" aria-hidden="true" />
           </nav>
           <div className="ft-body" role="tabpanel">
-            {tab === 'market' && <MarketCard surface="panel" />}
-            {tab === 'wallet' && <WalletTab />}
-            {tab === 'redeem' && <RedeemTab />}
+            <div key={tab} className="ft-pane" data-dir={tabDir > 0 ? 'right' : 'left'}>
+              {tab === 'market' && <MarketCard surface="panel" />}
+              {tab === 'wallet' && <WalletTab />}
+              {tab === 'redeem' && <RedeemTab />}
+            </div>
           </div>
-          {placement === 'chat' && <ResizeHandle host={host} height={height} onChange={setHeight} />}
-        </>
+          {placement === 'chat' && open && <ResizeHandle host={host} height={height} onChange={setHeight} />}
+        </div>
       )}
       {open && st.topUp.open && <TopUpDialog />}
       {open && menuOpen && st.hasFixtures && <FixtureMenu onClose={() => setMenuOpen(false)} />}
+      {open && profileOpen && (
+        <ProfileCard
+          top={(headRef.current?.getBoundingClientRect().height ?? 40) + 8}
+          onClose={() => setProfileOpen(false)}
+          onAddFunds={() => {
+            setProfileOpen(false);
+            selectTab('wallet');
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function PersonIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="currentColor">
+      <circle cx="8" cy="5" r="3" />
+      <path d="M2 15c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5z" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true">
+      <path d="M2 6.5l2.5 2.5L10 3.5" fill="none" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  );
+}
+
+/** Up to two initials from a display name ("Faze Gavin" -> "FG", "gavin" -> "GA"); "?" when unknown. */
+export function initialsFor(name: string | null | undefined): string {
+  const words = (name ?? '').trim().split(/[\s_.-]+/).filter(Boolean);
+  if (words.length === 0) return '?';
+  const letters = words.length >= 2 ? words[0]![0]! + words[1]![0]! : [...words[0]!].slice(0, 2).join('');
+  return letters.toUpperCase();
+}
+
+export const VERIFY_NOTE = 'You need to verify before you can bet. Verifying means joining this stream from the FaZeTime popup.';
+export const VERIFY_FALLBACK = 'Click the FaZeTime icon in your browser toolbar, then press Join.';
+
+/**
+ * Profile card (owner requests, 2026-11-15): initials avatar, name, claimed Twitch name, available balance with
+ * Add funds, and a Verified tag. "Verified" means this browser has joined (live: the background holds a server
+ * session), which the server already requires for every bet. Verify opens the toolbar popup: joining stays
+ * popup-only (the background refuses enrollment from the page).
+ */
+export function ProfileCard({
+  onClose,
+  onAddFunds,
+  top,
+}: {
+  onClose: () => void;
+  /** "Add funds" goes to the Wallet tab (owner request); falls back to the top-up dialog when absent. */
+  onAddFunds?: () => void;
+  /** Distance from the panel top, just below the header, so the card never covers the header buttons. */
+  top?: number;
+}) {
+  const { controller, mode } = useEnv();
+  const st = usePanel();
+  const [profile] = useStoredValue<Profile | null>(PROFILE_KEY, null);
+  const [verifyHint, setVerifyHint] = useState<string | null>(null);
+  const name = profile?.display_name || st.backend?.displayName || null;
+  const verified = mode === 'live' ? st.backend?.mode === 'LIVE' && st.backend.enrolled : Boolean(profile);
+  const w = st.snapshot?.wallet;
+  const canTopUp = verified && (st.snapshot?.modes.payment_mode === 'MOCK' || st.snapshot?.modes.payment_mode === 'STRIPE_TEST');
+  const verify = async () => {
+    setVerifyHint(null);
+    const opened = await controller.openJoin();
+    if (!opened) setVerifyHint(VERIFY_FALLBACK);
+  };
+  return (
+    <div
+      className="ft-profile"
+      style={top !== undefined ? { top, maxHeight: `calc(100% - ${top + 12}px)` } : undefined}
+      role="dialog"
+      aria-label="Your FaZeTime profile"
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          onClose();
+        }
+      }}
+    >
+      <button type="button" className="ft-x ft-profile-close" aria-label="Close profile" onClick={onClose}>
+        <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true">
+          <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="2" />
+        </svg>
+      </button>
+      <div className="ft-profile-top">
+        <div className="ft-avatar" aria-hidden="true">
+          <span>{initialsFor(name)}</span>
+        </div>
+        <div className="ft-profile-names">
+          <b className="ft-profile-name">{name ?? 'No name yet'}</b>
+          {verified ? (
+            <span className="ft-verified" data-testid="profile-verified">
+              <CheckIcon />
+              Verified
+            </span>
+          ) : (
+            <span className="ft-verified ft-verified--no" data-testid="profile-verified">
+              Not verified
+            </span>
+          )}
+          {profile?.claimed_twitch_login && (
+            <span className="ft-fine">
+              @{profile.claimed_twitch_login}
+              {!verified && <em> (Twitch name not checked)</em>}
+            </span>
+          )}
+        </div>
+      </div>
+      {!verified && (
+        <div className="ft-verify">
+          <p className="ft-hint ft-hint--warn">{VERIFY_NOTE}</p>
+          <button type="button" className="ft-primary" onClick={() => void verify()}>
+            Verify
+          </button>
+          {verifyHint && (
+            <p className="ft-fine" role="status">
+              {verifyHint}
+            </p>
+          )}
+        </div>
+      )}
+      <div className="ft-profile-wallet">
+        <div className="ft-profile-row">
+          <span className="ft-profile-label">Available</span>
+          <b className="ft-money ft-profile-balance" data-testid="profile-available">
+            {w ? formatMinor(w.available_minor) : '…'}
+          </b>
+        </div>
+        <button
+          type="button"
+          className="ft-primary ft-profile-add"
+          disabled={!canTopUp}
+          onClick={() => {
+            if (onAddFunds) onAddFunds();
+            else {
+              controller.openTopUp('manual');
+              onClose();
+            }
+          }}
+        >
+          {mode === 'live' ? 'Add funds' : 'Add demo funds (MOCK)'}
+        </button>
+        {!verified && <p className="ft-fine">Verify first to add funds.</p>}
+      </div>
     </div>
   );
 }
@@ -183,7 +413,9 @@ function ResizeHandle({ host, height, onChange }: { host: HTMLElement; height: n
   const max = Math.max(PANEL_MIN_PX, container() - CHAT_MIN_PX);
 
   useEffect(() => {
-    if (live !== null) host.style.height = `${live}px`;
+    if (live === null) return;
+    host.style.transition = 'none'; // follow the pointer exactly while dragging
+    host.style.height = `${live}px`;
   }, [live, host]);
 
   const commit = (px: number) => onChange(clampPanelHeight(px, container()));
@@ -204,6 +436,7 @@ function ResizeHandle({ host, height, onChange }: { host: HTMLElement; height: n
     if (e.currentTarget.hasPointerCapture(d.pointerId)) e.currentTarget.releasePointerCapture(d.pointerId);
     if (live !== null) commit(live);
     setLive(null);
+    host.style.transition = `height ${COLLAPSE_MS}ms cubic-bezier(0.2, 0.8, 0.2, 1)`;
   };
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     const steps: Record<string, number> = { ArrowUp: -KEY_STEP_PX, ArrowDown: KEY_STEP_PX, PageUp: -PAGE_STEP_PX, PageDown: PAGE_STEP_PX };
@@ -236,14 +469,13 @@ function ResizeHandle({ host, height, onChange }: { host: HTMLElement; height: n
 export function WalletTab() {
   const { controller, mode } = useEnv();
   const st = usePanel();
-  const [profile] = useStoredValue<Profile | null>(PROFILE_KEY, null);
   const w = st.snapshot?.wallet;
   return (
     <div>
       <div className="ft-wallet-grid">
         <div className="ft-stat">
           <span>Available</span>
-          <b>{w ? formatMinor(w.available_minor) : '…'}</b>
+          <b className="ft-money">{w ? formatMinor(w.available_minor) : '…'}</b>
         </div>
         <div className="ft-stat">
           <span>In play</span>
@@ -260,15 +492,6 @@ export function WalletTab() {
         </button>
       )}
       <p className="ft-fine">{mode === 'live' ? TEST_CREDITS_NOTE : 'Demo funds only. Not money, cannot be withdrawn, and only valid in this demo run.'}</p>
-      <div className="ft-stat">
-        <span>Profile (set in the FaZeTime toolbar popup)</span>
-        <b style={{ fontSize: 14 }}>{profile?.display_name || 'No display name yet'}</b>
-        {profile?.claimed_twitch_login && (
-          <span>
-            Claimed Twitch login: {profile.claimed_twitch_login} <em>(not verified)</em>
-          </span>
-        )}
-      </div>
     </div>
   );
 }
@@ -444,11 +667,28 @@ export function TopUpNotice() {
   const st = usePanel();
   const t = st.pendingTopUp;
   if (!t) return null;
+  const { controller } = useEnv();
   const copy = describeTopUp(t, st.checkoutClosedFor === t.topup_id);
+  if (!copy.terminal && st.hiddenTopUpFor === t.topup_id) return null;
   return (
     <div className={`ft-notice${copy.tone === 'err' ? ' ft-notice--warn' : ''}`} role="status">
       <span>{copy.text}</span>
-      <TopUpActions action={copy.action} terminal={copy.terminal} />
+      <span className="ft-notice-actions">
+        <TopUpActions action={copy.action} terminal={copy.terminal} />
+        {!copy.terminal && (
+          <button
+            type="button"
+            className="ft-x"
+            aria-label="Hide this top-up notice"
+            title="Hide. If you still pay in the Stripe tab, the credits will arrive anyway."
+            onClick={() => controller.hidePendingTopUp()}
+          >
+            <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true">
+              <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="2" />
+            </svg>
+          </button>
+        )}
+      </span>
     </div>
   );
 }

@@ -23,6 +23,8 @@ export const METHODS = [
   'topupHint',
   'reopenTopUpCheckout',
   'dismissTopUp',
+  /** Ask the background to open the toolbar popup (where joining happens). It cannot enroll by itself. */
+  'openJoin',
 ] as const;
 export type Method = (typeof METHODS)[number];
 

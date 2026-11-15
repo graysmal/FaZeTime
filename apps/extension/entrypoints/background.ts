@@ -14,6 +14,20 @@ import { MockBackend, type MockState } from '../src/mock/backend';
 
 const MOCK_STATE_KEY = 'session:fazetime.mockState';
 
+/** "Verify" in the panel opens the toolbar popup, where the viewer joins. Chrome 127+; false if refused. */
+const ui = {
+  openPopup: async (): Promise<boolean> => {
+    try {
+      const action = (browser as unknown as { action?: { openPopup?: () => Promise<void> } }).action;
+      if (!action?.openPopup) return false;
+      await action.openPopup();
+      return true;
+    } catch {
+      return false;
+    }
+  },
+};
+
 export default defineBackground(() => {
   const runtime = browser.runtime as unknown as RuntimeLike & MessageRuntimeLike;
   if (FAZETIME_MODE === 'live') {
@@ -28,7 +42,7 @@ export default defineBackground(() => {
         await browser.tabs.create({ url, active: true });
       },
     });
-    attachRouter(adapter, runtime);
+    attachRouter(adapter, runtime, ui);
     attachPopupHandler(adapter, runtime);
     // Test hook for the two-browser smoke (drop the socket like a network loss). No secrets exposed.
     (globalThis as Record<string, unknown>).__fazetimeDebug = {
@@ -46,6 +60,6 @@ export default defineBackground(() => {
       save: (state) => storage.setItem<MockState>(MOCK_STATE_KEY, state),
     },
   });
-  attachRouter(adapter, runtime);
+  attachRouter(adapter, runtime, ui);
   attachPopupHandler(adapter, runtime);
 });
