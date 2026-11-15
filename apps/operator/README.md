@@ -29,7 +29,11 @@ npm run dev        # http://127.0.0.1:5174/operator/
 npm run preview    # serves the built dist/ with the same proxy: http://127.0.0.1:4174/operator/
 ```
 
-**Sign-in** needs an **OPERATOR** invite. Get one from `python -m fazetime_api bootstrap-operator` on the API host; it is printed once, to that terminal only. The page refuses viewer sessions and never stores their token.
+**Two views.** `/operator/` is the minimal **demo view**: one stream pill (LIVE / Connecting… / OFFLINE from source health) and one big card that follows the state (idle with a "test bet" form that creates and opens a fixture market, AI candidate with Approve / Reject, market open with pools and a countdown, betting closed, AI result suggestion with Approve result / Void & refund, fixture winner buttons, last result), plus "Reset for next take" (one confirm). `/operator/#advanced` is the full console below (IDs, modes, evidence, invites, sign-out). Both use the same client, polling (2 s) and fresh-`operation_id`-per-click rules; the demo view shows errors as one sentence and offers "Try again" (same operation) only for an unknown outcome.
+
+**Open access (D35).** With `FAZETIME_OPEN_ACCESS=1` on the API, the console signs itself in through `POST /v1/open/operator-session {device_id}` on load and again after ANY 401 (single flight, then the failed request is retried once with the same body and operation_id). The device_id is kept in `localStorage`; the session stays in `sessionStorage`. Only a 404 from that route (invite mode) shows the sign-in form. Sign-out (Advanced only) clears just the session.
+
+**Sign-in** (invite mode) needs an **OPERATOR** invite. Get one from `python -m fazetime_api bootstrap-operator` on the API host; it is printed once, to that terminal only. The page refuses viewer sessions and never stores their token.
 
 ## End-to-end run against a real local API (Playwright)
 
@@ -74,7 +78,7 @@ Screenshots and `e2e-summary.json` / `e2e-ai-summary.json` go to `artifacts/`, w
 
 ## Behaviour that matters
 
-- **Session.** The `fzs_` token is kept in `sessionStorage` only, for this tab. It is sent only as `Authorization: Bearer`, never in a URL or a log. Any 401 clears it and returns to sign-in, and a 403 on an operator route does the same. Sign-out forgets the token locally; the server has no self-logout route.
+- **Session.** The `fzs_` token is kept in `sessionStorage` only, for this tab. It is sent only as `Authorization: Bearer`, never in a URL or a log. A 401 first tries the silent D35 re-open; only in invite mode does it clear the token and return to sign-in. A 403 on an operator READ does the same; a 403 refusing a mutation (for example approving while the AI mode is OFF) is shown as an error and keeps the session. Sign-out forgets the token locally; the server has no self-logout route.
 - **Mutations** follow §9.7 and §9.10:
   - Every click gets a fresh `crypto.randomUUID()` `operation_id`.
   - Success is shown only from a parsed 2xx receipt that echoes that `operation_id`.
@@ -98,4 +102,4 @@ Screenshots and `e2e-summary.json` / `e2e-ai-summary.json` go to `artifacts/`, w
 - **Settle note:** the fixture settle always sends `note`, which the server stores in the audit row.
 - **Capability probe:** the app reads `/openapi.json` to decide whether to show the evidence panel (§9.16 item 6).
 - **Evidence.** Transcript and model text is rendered as text. Frames are fetched with the bearer header and shown through `blob:` URLs, which are revoked on unmount.
-- **Labels (D31).** The console shows the demo/test-money label, AI mode, funding (payment mode), media source (TEST_FIXTURE is labelled "not Twitch"), market origin, and simulated bot stakes.
+- **Labels (D31).** The Advanced console shows the demo/test-money label, AI mode, funding (payment mode), media source (TEST_FIXTURE is labelled "not Twitch"), market origin, and simulated bot stakes.

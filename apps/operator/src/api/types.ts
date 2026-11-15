@@ -105,6 +105,8 @@ export interface OperatorHealth {
   modes?: Modes;
   ai?: HealthAi;
   market_limits?: MarketLimits;
+  /** D35: true while the server runs with FAZETIME_OPEN_ACCESS (no-sign-in console). */
+  open_access?: boolean;
 }
 
 /** Common receipt fields of every operator mutation (api_operator._mutation). */
@@ -194,6 +196,8 @@ export interface HealthAi {
 
 export interface MarketLimits {
   min_lead_ms: number;
+  fixture_max_close_in_s?: number;
+  fixture_max_resolve_in_s?: number;
   ai_close_in_s?: { min: number; max: number };
   ai_resolve_in_s?: { min: number; max: number };
   candidate_expiry_s?: number;

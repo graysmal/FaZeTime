@@ -14,7 +14,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const appDir = resolve(here, '..');
 const apiDir = resolve(appDir, '../../services/api');
 const BASE = (process.env.FAZETIME_E2E_BASE || 'http://127.0.0.1:18741').replace(/\/$/, '');
-const UI = `${BASE}/operator/`;
+const UI = `${BASE}/operator/#advanced`; // the full console (the demo view is the default)
 const OUT = resolve(appDir, 'artifacts');
 mkdirSync(OUT, { recursive: true });
 

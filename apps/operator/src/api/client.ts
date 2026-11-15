@@ -5,7 +5,10 @@
 // - A network error, timeout, 5xx or unparseable 2xx leaves the outcome UNKNOWN: the UI must not show
 //   success, and may retry only with the SAME operation_id and body (RATE_LIMITED too, after Retry-After).
 // - A 2xx counts as success only if it parses and echoes our operation_id (the server receipt).
-// - 401 on an authenticated call means the session is gone: onUnauthorized() sends the UI to sign-in.
+// - 401 on an authenticated call means the session is gone. With D35 open access, reauthenticate() first gets a
+//   fresh session silently and the request is retried ONCE (same body, so a mutation keeps its operation_id: a
+//   401 is refused before any handler runs, so nothing was applied). Only when that is impossible (the server is
+//   in invite mode) does onUnauthorized() send the UI to sign-in.
 // - The bearer token is only ever sent in the Authorization header, never in a URL, never logged.
 import type { EnrollResponse, MeResponse, StreamSnapshot } from '@fazetime/contracts';
 import type {
@@ -89,10 +92,20 @@ export interface MutationResult<T> {
   httpStatus: number;
 }
 
+/**
+ * Result of a silent re-sign-in (D35):
+ * - 'renewed': a fresh session token is now available; retry once.
+ * - 'invite_mode': the server has no open-access route (404), so a sign-in is needed.
+ * - 'failed': a transient failure (network, 5xx, rate limit). Do not sign out; the next call tries again.
+ */
+export type ReauthOutcome = 'renewed' | 'invite_mode' | 'failed';
+
 export interface ClientConfig {
   getToken: () => string | null;
   onUnauthorized?: (failure: ApiFailure) => void;
   onForbidden?: (failure: ApiFailure) => void;
+  /** D35 open access: get a fresh session silently. Must be single-flight and rate-bounded by the caller. */
+  reauthenticate?: () => Promise<ReauthOutcome>;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
   newOperationId?: () => string;
@@ -146,8 +159,8 @@ function defaultOperationId(): string {
 }
 
 export class OperatorClient {
-  private readonly cfg: Required<Omit<ClientConfig, 'onUnauthorized' | 'onForbidden'>> &
-    Pick<ClientConfig, 'onUnauthorized' | 'onForbidden'>;
+  private readonly cfg: Required<Omit<ClientConfig, 'onUnauthorized' | 'onForbidden' | 'reauthenticate'>> &
+    Pick<ClientConfig, 'onUnauthorized' | 'onForbidden' | 'reauthenticate'>;
 
   constructor(cfg: ClientConfig) {
     this.cfg = {
@@ -158,7 +171,17 @@ export class OperatorClient {
       getToken: cfg.getToken,
       onUnauthorized: cfg.onUnauthorized,
       onForbidden: cfg.onForbidden,
+      reauthenticate: cfg.reauthenticate,
     };
+  }
+
+  private async reauth(): Promise<ReauthOutcome> {
+    if (!this.cfg.reauthenticate) return 'invite_mode';
+    try {
+      return await this.cfg.reauthenticate();
+    } catch {
+      return 'failed';
+    }
   }
 
   newOperationId(): string {
@@ -166,6 +189,10 @@ export class OperatorClient {
   }
 
   async request<T>(path: string, opts: RequestOptions = {}): Promise<{ data: T; status: number }> {
+    return this.send<T>(path, opts, false);
+  }
+
+  private async send<T>(path: string, opts: RequestOptions, retried: boolean): Promise<{ data: T; status: number }> {
     if (!(path.startsWith('/v1/') || path === '/openapi.json') || path.includes('..') || path.includes('//')) {
       throw new Error('refusing a non-API path');
     }
@@ -173,18 +200,25 @@ export class OperatorClient {
     const auth = opts.auth ?? true;
     const isMutation = method === 'POST' && opts.pending !== undefined;
     const headers: Record<string, string> = { Accept: opts.as === 'blob' ? 'image/jpeg' : 'application/json' };
+    let usedToken: string | null = null;
     if (auth) {
-      const token = this.cfg.getToken();
+      let token = this.cfg.getToken();
+      let outcome: ReauthOutcome | null = null;
+      if (!token && !retried && this.cfg.reauthenticate) {
+        outcome = await this.reauth();
+        if (outcome === 'renewed') token = this.cfg.getToken();
+      }
       if (!token) {
         const failure = new ApiFailure({
           kind: 'envelope',
           status: 401,
           info: null,
-          message: 'Not signed in.',
+          message: outcome === 'failed' ? 'Reconnecting to the server.' : 'Not signed in.',
         });
-        this.cfg.onUnauthorized?.(failure);
+        if (outcome !== 'failed') this.cfg.onUnauthorized?.(failure);
         throw failure;
       }
+      usedToken = token;
       headers.Authorization = `Bearer ${token}`;
     }
     if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
@@ -229,6 +263,7 @@ export class OperatorClient {
       throw unknown('network', null, 'Network error: the API did not answer.');
     }
 
+    let retryWithFreshSession = false;
     try {
       if (res.ok) {
         if (opts.as === 'blob') return { data: (await res.blob()) as T, status: res.status };
@@ -260,15 +295,30 @@ export class OperatorClient {
         retrySameOperation: sameOpRetry,
         pending: sameOpRetry ? opts.pending : null,
       });
-      if (auth && status === 401) this.cfg.onUnauthorized?.(failure);
-      if (auth && status === 403 && code === 'FORBIDDEN' && path.startsWith('/v1/operator/')) {
+      if (auth && status === 401) {
+        if (!retried && this.cfg.reauthenticate) {
+          // Another call may already have renewed the session while this one was in flight: then just retry.
+          const current = this.cfg.getToken();
+          const outcome: ReauthOutcome = current && current !== usedToken ? 'renewed' : await this.reauth();
+          if (outcome === 'renewed') retryWithFreshSession = true;
+          else if (outcome === 'failed') throw failure; // transient: keep the UI, the next call tries again
+          else this.cfg.onUnauthorized?.(failure);
+        } else {
+          this.cfg.onUnauthorized?.(failure);
+        }
+      }
+      // A 403 on an operator READ means this is not an operator session. A 403 on a mutation is a refusal of that
+      // action (e.g. approving a candidate while the AI mode is OFF), never a reason to drop the session.
+      if (auth && status === 403 && code === 'FORBIDDEN' && path.startsWith('/v1/operator/') && method === 'GET') {
         this.cfg.onForbidden?.(failure);
       }
-      throw failure;
+      if (!retryWithFreshSession) throw failure;
     } finally {
       clearTimeout(timer);
       opts.signal?.removeEventListener('abort', onAbort);
     }
+    if (opts.signal?.aborted) throw unknown('aborted', null, 'The request was cancelled.');
+    return this.send<T>(path, opts, true);
   }
 
   /**
@@ -311,6 +361,18 @@ export class OperatorClient {
       method: 'POST',
       auth: false,
       body: { ...input, claimed_twitch_login: null },
+    });
+    return data;
+  }
+
+  /** D35: a session for the shared OPERATOR account, no sign-in. 404 means the server is in invite mode. */
+  async openOperatorSession(deviceId: string, signal?: AbortSignal): Promise<EnrollResponse> {
+    const { data } = await this.request<EnrollResponse>('/v1/open/operator-session', {
+      method: 'POST',
+      auth: false,
+      body: { device_id: deviceId },
+      signal,
+      timeoutMs: 8_000,
     });
     return data;
   }

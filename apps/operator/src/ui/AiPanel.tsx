@@ -2,6 +2,7 @@
 // The model only proposes; the server re-validates everything at approval. All model text is untrusted and is
 // rendered as plain React text (never HTML). Frames are fetched with the bearer header (AuthThumb).
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useAlert } from './alert';
 import type { OperatorClient } from '../api/client';
 import {
   AI_MODE_CHOICES,
@@ -331,50 +332,6 @@ export function CandidateCard({
       />
     </article>
   );
-}
-
-function useAlert() {
-  const ctxRef = useRef<AudioContext | null>(null);
-  const [sound, setSound] = useState(true);
-  useEffect(() => {
-    // Browsers only allow audio after a user gesture: create/resume the context on the first click.
-    const unlock = () => {
-      try {
-        const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-        if (Ctx && !ctxRef.current) ctxRef.current = new Ctx();
-        void ctxRef.current?.resume();
-      } catch {
-        ctxRef.current = null;
-      }
-    };
-    window.addEventListener('pointerdown', unlock);
-    return () => {
-      window.removeEventListener('pointerdown', unlock);
-      void ctxRef.current?.close().catch(() => undefined);
-      ctxRef.current = null;
-    };
-  }, []);
-  const beep = useCallback(() => {
-    const ctx = ctxRef.current;
-    if (!sound || !ctx) return;
-    try {
-      for (const [i, f] of [880, 1320].entries()) {
-        const o = ctx.createOscillator();
-        const g = ctx.createGain();
-        const t = ctx.currentTime + i * 0.18;
-        o.frequency.value = f;
-        g.gain.setValueAtTime(0.0001, t);
-        g.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
-        o.connect(g).connect(ctx.destination);
-        o.start(t);
-        o.stop(t + 0.17);
-      }
-    } catch {
-      /* audio is best effort; the visual alert always shows */
-    }
-  }, [sound]);
-  return { sound, setSound, beep };
 }
 
 function CandidatesSection({

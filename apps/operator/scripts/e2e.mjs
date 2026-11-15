@@ -17,7 +17,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const appDir = resolve(here, '..');
 const apiDir = resolve(appDir, '../../services/api');
 const BASE = (process.env.FAZETIME_E2E_BASE || 'http://127.0.0.1:18741').replace(/\/$/, '');
-const UI = `${BASE}/operator/`;
+const UI = `${BASE}/operator/#advanced`; // the full console (the demo view is the default)
 const OUT = resolve(appDir, 'artifacts');
 const CHANNEL = 'fazegavin1234';
 mkdirSync(OUT, { recursive: true });
@@ -296,7 +296,7 @@ try {
   await shot(page, '11-revoked-401.png');
 
   step('no CSP violations', cspViolations.length === 0, cspViolations.slice(0, 3).join(' | '));
-  const unexpected = consoleErrors.filter((t) => !/status of (401|403|409|422)/.test(t));
+  const unexpected = consoleErrors.filter((t) => !/status of (401|403|404|409|422)/.test(t));
   step('no unexpected console errors', unexpected.length === 0, `${consoleErrors.length} console errors, ${unexpected.length} unexpected ${unexpected.slice(0, 3).join(' | ')}`);
   await ctx.close();
 } catch (e) {
