@@ -731,7 +731,8 @@ def test_operator_health_has_modes_worker_detail_and_limits(aw):
     _status(aw.propose(), 201, "PENDING")
     body = aw.h.client.get("/v1/operator/health", headers=aw.operator.h).json()
     assert body["modes"] == {"ai_mode": "APPROVAL", "payment_mode": "UNAVAILABLE",
-                             "media_source_kind": "TWITCH_STREAMLINK"}
+                             "media_source_kind": "TWITCH_STREAMLINK", "open_access": False}
+    assert body["open_access"] is False
     assert body["ai"]["pending_candidates"] == 1 and body["ai"]["allow_automatic"] is False
     worker = body["worker"]
     assert worker["host_id"] == "fazetime" and worker["asr_backlog_ms"] == 0 and worker["queue_depth"] == 0

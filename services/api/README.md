@@ -46,6 +46,7 @@ Migrations (`0001_initial`, `0002_presence`, `0003_media_worker`, `0004_ai`, `00
 | `FAZETIME_LOG_LEVEL` | `INFO` | Tokens, tickets and invite codes are never logged |
 | `FAZETIME_OPERATOR_DIST` | unset | Path to an `apps/operator` build (`dist/` with `index.html`), served same-origin at `/operator/` |
 | `FAZETIME_ALLOW_AUTOMATIC` | `false` | D32 server flag. Without it `POST /v1/operator/ai-mode {mode: AUTOMATIC}` is `403 FORBIDDEN`, and a stored AUTOMATIC acts as APPROVAL. Set only after the P4/P5 quality gate is recorded |
+| `FAZETIME_OPEN_ACCESS` | `false` | D35 open access for the demo (`1`/`true`, also `yes`/`on`, turns it on). On: `POST /v1/enroll` accepts a missing, null or blank `invite_code` and creates a new non-bot VIEWER by name (own session, SEED_GRANT in the active run), and `POST /v1/open/operator-session` exists. Off (default): a missing code is the same `401 UNAUTHENTICATED` as a bad code, and the open route is a plain `404`. Exposed as `open_access` in snapshot/`stream.updated` `modes` and in `GET /v1/operator/health` (top level and `modes`). Bind only to the tailnet address |
 | `FAZETIME_AI_MODE_DEFAULT` | `OFF` | AI mode of a brand-new stream's first run (`OFF`/`SHADOW`/`APPROVAL`/`AUTOMATIC`). D32 names APPROVAL as the default: set `APPROVAL` on the demo host. A reset keeps the previous run's mode |
 | `FAZETIME_CANDIDATE_EXPIRY_S` | `60` | A PENDING AI candidate becomes EXPIRED this long after receipt |
 | `FAZETIME_EVIDENCE_FRESH_S` | `90` | Evidence cited by a proposal must have been received within this window (rechecked at approval) |
@@ -54,7 +55,7 @@ Migrations (`0001_initial`, `0002_presence`, `0003_media_worker`, `0004_ai`, `00
 ## Routes
 
 **Viewer** (Bearer `fzs_…` session):
-- `POST /v1/enroll`: no auth, 10 per 10 min per client.
+- `POST /v1/enroll`: no auth, 10 per 10 min per client. `{invite_code?, display_name, claimed_twitch_login?, device_id}`. A supplied code is always checked as an invite. `invite_code` may be omitted only under `FAZETIME_OPEN_ACCESS` (see below).
 - `GET /v1/me`.
 - `GET /v1/streams/{stream_id}/snapshot`.
 - `POST /v1/wagers`: 201 the first time, 200 with `replayed: true`.
@@ -65,6 +66,10 @@ Migrations (`0001_initial`, `0002_presence`, `0003_media_worker`, `0004_ai`, `00
 - `POST /v1/topups`, `GET /v1/topups/{id}`, `POST /v1/redemptions` and `GET /v1/raffle` return `503 CAPABILITY_UNAVAILABLE`.
 
 Liveness: `GET /healthz`, unauthenticated, with no internals. OpenAPI: `/openapi.json` and `/docs`.
+
+**Open access (D35, only while `FAZETIME_OPEN_ACCESS` is on; otherwise the path is a plain `404 NOT_FOUND`):**
+- `POST /v1/open/operator-session`: no auth, body `{device_id}` (UUID), 10 per 10 min per client. Returns `201` with the enroll response shape `{schema_version, session_token, session_id, expires_at_utc, me}` for the ONE shared OPERATOR account `Operator` (fixed id `auth.OPEN_OPERATOR_USER_ID`, created on first use, never a bot, no wallet, cannot wager: D30). Every call opens a new session and writes an `OPEN_OPERATOR_SESSION` audit row (SYSTEM actor, target SESSION). The token is never logged or stored. `POST /v1/operator/sessions/revoke` with that user id revokes every open operator session.
+- Each open session (viewer or operator) gets its own invite row inserted already consumed, because `sessions.invite_id` is NOT NULL UNIQUE. Its code is random and discarded, so it can never be redeemed.
 
 **Operator** (operator session; every mutation takes an `operation_id`, is idempotent per operator and writes an `audit_log` row):
 

@@ -96,6 +96,7 @@ class Modes(Strict):
     ai_mode: AiMode
     payment_mode: PaymentMode
     media_source_kind: SourceKind | None
+    open_access: StrictBool = False  # D35, additive: always emitted by the server; absent in older payloads
 
 
 class WalletSummary(Strict):
@@ -431,9 +432,17 @@ class PresenceAck(Strict):
 
 # ---- enroll (J) ---------------------------------------------------------------------------------
 class EnrollRequest(Strict):
-    invite_code: Annotated[str, StringConstraints(min_length=1, max_length=64)]
+    # D35: optional. Missing, null or blank means "no code": name-only enrollment when open access is on,
+    # otherwise the same UNAUTHENTICATED as a bad code. A supplied code is always checked as an invite.
+    invite_code: Annotated[str, StringConstraints(max_length=64)] | None = None
     display_name: Annotated[str, StringConstraints(min_length=1, max_length=32)]
     claimed_twitch_login: Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_]{1,25}$")] | None = None
+    device_id: CUuid
+
+
+class OpenOperatorSessionRequest(Strict):
+    """D35: body of POST /v1/open/operator-session (route registered only while open access is on)."""
+
     device_id: CUuid
 
 

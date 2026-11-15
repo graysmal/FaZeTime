@@ -336,9 +336,10 @@ def health(request: Request, principal: Principal = Depends(operator_principal))
         from . import ai  # local import: ai imports this module
 
         sh = body["source_health"]
-        modes = views.modes(run, sh["source_kind"] if sh else None)
+        modes = views.modes(run, sh["source_kind"] if sh else None, open_access=svc.settings.open_access)
         modes["payment_mode"] = _payment_mode(svc, run)
         body["modes"] = modes
+        body["open_access"] = svc.settings.open_access  # D35; also in modes.open_access
         body["ai"] = {
             "ai_mode": modes["ai_mode"],
             "effective_ai_mode": ai.effective_mode(run, svc.settings) if run is not None else "OFF",
@@ -355,6 +356,8 @@ def health(request: Request, principal: Principal = Depends(operator_principal))
             f"media_source_kind {modes['media_source_kind'] or 'none'}",
             "fixture markets are OPERATOR_FIXTURE; AI markets are AI_APPROVED / AI_AUTOMATIC",
         ]
+        if svc.settings.open_access:
+            body["service"]["mode_labels"].append("OPEN ACCESS (D35): name-only join, no-sign-in operator console")
     return JSONResponse(body)
 
 

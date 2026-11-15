@@ -1,14 +1,20 @@
 """Identity (CONTRACTS §9.8): invite codes, sessions, WebSocket tickets. Secrets are stored hashed only.
 
 Never log invite codes, session tokens or tickets. Phone numbers are not an identity factor (D15/D16).
+
+D35 open access (Settings.open_access, default off): a blank invite_code enrolls a new VIEWER by name, and
+POST /v1/open/operator-session issues a session for ONE shared OPERATOR account. sessions.invite_id is
+NOT NULL UNIQUE, so each such session gets its own invite row inserted already consumed, with a random code
+that is never shown or stored; it can never be redeemed. Role and bot flag are still set by the server only.
 """
 
 from __future__ import annotations
 
+import secrets
 import sqlite3
 from datetime import datetime, timedelta
 
-from . import timeutil, views
+from . import domain, timeutil, views
 from .config import Settings
 from .domain import Principal, seed_wallet
 from .errors import ApiError
@@ -16,6 +22,11 @@ from .ids import new_id, new_invite_code, new_session_token, new_ws_ticket, norm
 from .schemas import EnrollRequest
 
 BAD_INVITE = "Invite code is invalid, already used or expired."
+# D35: the one shared open-access operator account. A fixed id makes "get or create" a primary-key lookup
+# (no extra table). Its hex is not uuid4-shaped (char 12 is not the version nibble 4), so it can never collide
+# with new_id() output (tested).
+OPEN_OPERATOR_USER_ID = "usr_" + sha256_hex("fazetime:d35:open-access-operator")[:32]
+OPEN_OPERATOR_DISPLAY_NAME = "Operator"
 
 
 def create_invite(
@@ -60,7 +71,71 @@ def create_invite(
     return record, code
 
 
+def _issue_session(
+    conn: sqlite3.Connection, *, user_id: str, invite_id: str, device_id: str | None, now: datetime,
+    settings: Settings,
+) -> dict:
+    """Session row, SEED_GRANT into the active run for VIEWERs (D30: operators get none), enroll response."""
+    now_s = timeutil.fmt(now)
+    token = new_session_token()
+    session_id = new_id("ses")
+    expires = now + timedelta(seconds=settings.session_ttl_s)
+    conn.execute(
+        "INSERT INTO sessions (session_id, token_hash, user_id, invite_id, device_id, created_at_utc, expires_at_utc)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (session_id, sha256_hex(token), user_id, invite_id, device_id, now_s, timeutil.fmt(expires)),
+    )
+    user = conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()
+    stream = views.get_stream(conn)
+    if stream is not None:
+        run = views.get_active_run(conn, stream["stream_id"])
+        if run is not None and user["role"] == "VIEWER":  # D30: operators get no seed grant
+            seed_wallet(conn, run, user, now)  # enroll into the active run: SEED_GRANT once
+    principal = Principal(user_id, user["role"], bool(user["is_bot"]), session_id, timeutil.fmt(expires))
+    return {
+        "schema_version": 1,
+        "session_token": token,
+        "session_id": session_id,
+        "expires_at_utc": timeutil.fmt(expires),
+        "me": views.me(conn, principal, now),
+    }
+
+
+def _consumed_open_invite(
+    conn: sqlite3.Connection, *, role: str, user_id: str, bind_user_id: str | None, now: datetime,
+    settings: Settings,
+) -> str:
+    """D35: a per-session invite row, inserted already used by user_id. The code is random and discarded."""
+    invite_id = new_id("inv")
+    now_s = timeutil.fmt(now)
+    conn.execute(
+        "INSERT INTO invite_codes (invite_id, code_hash, role, is_bot, bind_user_id, created_by_user_id,"
+        " created_at_utc, expires_at_utc, used_at_utc, used_by_user_id) VALUES (?, ?, ?, 0, ?, NULL, ?, ?, ?, ?)",
+        (invite_id, sha256_hex("open-access:" + secrets.token_urlsafe(32)), role, bind_user_id, now_s,
+         timeutil.fmt(now + timedelta(seconds=settings.invite_ttl_s)), now_s, user_id),
+    )
+    return invite_id
+
+
+def _open_enroll(conn: sqlite3.Connection, *, req: EnrollRequest, now: datetime, settings: Settings) -> dict:
+    """D35 name-only enrollment: always a NEW non-bot VIEWER with its own session and wallet."""
+    user_id = new_id("usr")
+    conn.execute(
+        "INSERT INTO users (user_id, display_name, claimed_twitch_login, role, is_bot, created_at_utc)"
+        " VALUES (?, ?, ?, 'VIEWER', 0, ?)",
+        (user_id, req.display_name, req.claimed_twitch_login, timeutil.fmt(now)),
+    )
+    invite_id = _consumed_open_invite(conn, role="VIEWER", user_id=user_id, bind_user_id=None, now=now,
+                                      settings=settings)
+    return _issue_session(conn, user_id=user_id, invite_id=invite_id, device_id=req.device_id, now=now,
+                          settings=settings)
+
+
 def enroll(conn: sqlite3.Connection, *, req: EnrollRequest, now: datetime, settings: Settings) -> dict:
+    if req.invite_code is None or not req.invite_code.strip():
+        if not settings.open_access:  # D35 off: a missing code is indistinguishable from a bad one
+            raise ApiError("UNAUTHENTICATED", BAD_INVITE)
+        return _open_enroll(conn, req=req, now=now, settings=settings)
     code = normalize_invite_code(req.invite_code)
     if code is None:
         raise ApiError("UNAUTHENTICATED", BAD_INVITE)
@@ -91,28 +166,38 @@ def enroll(conn: sqlite3.Connection, *, req: EnrollRequest, now: datetime, setti
     )
     if claimed.rowcount != 1:  # single use by conditional update
         raise ApiError("UNAUTHENTICATED", BAD_INVITE)
-    token = new_session_token()
-    session_id = new_id("ses")
-    expires = now + timedelta(seconds=settings.session_ttl_s)
-    conn.execute(
-        "INSERT INTO sessions (session_id, token_hash, user_id, invite_id, device_id, created_at_utc, expires_at_utc)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (session_id, sha256_hex(token), user_id, invite["invite_id"], req.device_id, now_s, timeutil.fmt(expires)),
-    )
-    user = conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()
-    stream = views.get_stream(conn)
-    if stream is not None:
-        run = views.get_active_run(conn, stream["stream_id"])
-        if run is not None and user["role"] == "VIEWER":  # D30: operators get no seed grant
-            seed_wallet(conn, run, user, now)  # enroll into the active run: SEED_GRANT once
-    principal = Principal(user_id, user["role"], bool(user["is_bot"]), session_id, timeutil.fmt(expires))
-    return {
-        "schema_version": 1,
-        "session_token": token,
-        "session_id": session_id,
-        "expires_at_utc": timeutil.fmt(expires),
-        "me": views.me(conn, principal, now),
-    }
+    return _issue_session(conn, user_id=user_id, invite_id=invite["invite_id"], device_id=req.device_id, now=now,
+                          settings=settings)
+
+
+def open_operator_session(
+    conn: sqlite3.Connection, *, device_id: str, client_host: str, now: datetime, settings: Settings
+) -> dict:
+    """D35: get or create the ONE shared OPERATOR account (never a bot, no wallet: D30) and open a new session.
+
+    Writes an OPEN_OPERATOR_SESSION audit row in the same transaction. The token is returned once, never logged."""
+    if not settings.open_access:
+        raise ApiError("NOT_FOUND")
+    now_s = timeutil.fmt(now)
+    user = conn.execute("SELECT role, is_bot FROM users WHERE user_id = ?", (OPEN_OPERATOR_USER_ID,)).fetchone()
+    created = user is None
+    if created:
+        conn.execute(
+            "INSERT INTO users (user_id, display_name, claimed_twitch_login, role, is_bot, created_at_utc)"
+            " VALUES (?, ?, NULL, 'OPERATOR', 0, ?)",
+            (OPEN_OPERATOR_USER_ID, OPEN_OPERATOR_DISPLAY_NAME, now_s),
+        )
+    elif user["role"] != "OPERATOR" or user["is_bot"]:  # unreachable: role and bot flag are immutable (trigger)
+        raise ApiError("INTERNAL_ERROR")
+    invite_id = _consumed_open_invite(conn, role="OPERATOR", user_id=OPEN_OPERATOR_USER_ID,
+                                      bind_user_id=OPEN_OPERATOR_USER_ID, now=now, settings=settings)
+    body = _issue_session(conn, user_id=OPEN_OPERATOR_USER_ID, invite_id=invite_id, device_id=device_id, now=now,
+                          settings=settings)
+    domain.audit(conn, actor_user_id=None, actor_kind="SYSTEM", action="OPEN_OPERATOR_SESSION", now=now,
+                 target_type="SESSION", target_id=body["session_id"],
+                 detail={"user_id": OPEN_OPERATOR_USER_ID, "account_created": created, "device_id": device_id,
+                         "client_host": client_host, "via": "D35 open access"})
+    return body
 
 
 def authenticate(conn: sqlite3.Connection, token: str, now: datetime) -> Principal | None:

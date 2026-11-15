@@ -34,6 +34,7 @@ def make_settings(db_path: str, **overrides) -> Settings:
         rl_wager=(1000, 10.0),
         rl_ws_ticket=(1000, 60.0),
         rl_presence=(1000, 60.0),
+        rl_open_operator_session=(1000, 60.0),
     )
     return base.with_overrides(**overrides)
 

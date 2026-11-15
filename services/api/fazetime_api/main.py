@@ -127,6 +127,9 @@ def create_app(settings: Settings | None = None, clock: timeutil.Clock | None = 
         applied = await asyncio.to_thread(db.migrate)  # numbered migrations at startup (D28)
         log.info("ws origins=%s cors origins=%s", ",".join(settings.allowed_origins),
                  ",".join(cors_origins(settings)) or "(none)")
+        if settings.open_access:
+            log.warning("OPEN ACCESS on (D35): name-only enroll and POST /v1/open/operator-session are enabled;"
+                        " bind only to the tailnet address")
         if not any(o.startswith("chrome-extension://") for o in settings.allowed_origins):
             log.warning("no pinned chrome-extension://<id> in FAZETIME_ALLOWED_ORIGINS; extension-page sockets get 4403")
         if applied:
@@ -157,6 +160,8 @@ def create_app(settings: Settings | None = None, clock: timeutil.Clock | None = 
     app.state.clock = clock
     errors.install(app)
     app.include_router(api_viewer.router)
+    if settings.open_access:  # D35: the no-sign-in operator route exists only while open access is on
+        app.include_router(api_viewer.open_router)
     app.include_router(api_operator.router)
     app.include_router(ws.router)
     app.include_router(worker.router)

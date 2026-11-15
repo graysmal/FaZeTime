@@ -209,11 +209,13 @@ def wager_receipt(row: sqlite3.Row, *, replayed: bool = False) -> dict:
     }
 
 
-def modes(run: sqlite3.Row | None, media_source_kind: str | None = None, payment_mode: str = "UNAVAILABLE") -> dict:
+def modes(run: sqlite3.Row | None, media_source_kind: str | None = None, payment_mode: str = "UNAVAILABLE",
+          open_access: bool = False) -> dict:
     return {
         "ai_mode": run["ai_mode"] if run is not None else "OFF",
         "payment_mode": payment_mode,  # STRIPE_TEST only when P6 loaded both test secrets (Settings.payment_mode)
         "media_source_kind": media_source_kind,  # the current epoch's source_kind, null without a worker
+        "open_access": bool(open_access),  # D35 (Settings.open_access): name-only join, no-sign-in operator console
     }
 
 
@@ -297,7 +299,7 @@ def snapshot(
         "server_time_utc": timeutil.fmt(now),
         "event_hwm": max_event_id(conn),
         "stream": stream_info(conn, stream, run, now, settings),
-        "modes": modes(run, health["source_kind"], settings.payment_mode),
+        "modes": modes(run, health["source_kind"], settings.payment_mode, settings.open_access),
         "limits": limits(settings),
         "source_health": health,
         "market": public_market(market) if market is not None else None,

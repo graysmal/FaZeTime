@@ -229,5 +229,6 @@ def test_snapshot_never_shows_draft_and_hwm_is_read_consistently(world):
     assert snap["market"] is None and snap["my_position"] is None
     assert snap["event_hwm"] == _max_event_id(h)
     assert snap["source_health"]["state"] == "STOPPED" and snap["source_health"]["source_kind"] is None
-    assert snap["modes"] == {"ai_mode": "OFF", "payment_mode": "UNAVAILABLE", "media_source_kind": None}
+    assert snap["modes"] == {"ai_mode": "OFF", "payment_mode": "UNAVAILABLE", "media_source_kind": None,
+                             "open_access": False}
     assert h.client.get(f"/v1/streams/str_{'0' * 32}/snapshot", headers=alice.h).status_code == 404

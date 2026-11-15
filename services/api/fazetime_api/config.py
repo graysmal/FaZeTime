@@ -77,6 +77,11 @@ class Settings:
     rl_wager: tuple[int, float] = (20, 10.0)
     rl_ws_ticket: tuple[int, float] = (20, 60.0)
     rl_presence: tuple[int, float] = (30, 60.0)
+    rl_open_operator_session: tuple[int, float] = (10, 600.0)
+    # D35 open access (FAZETIME_OPEN_ACCESS, default off): name-only viewer enrollment and the no-sign-in shared
+    # operator session (POST /v1/open/operator-session, registered only while on). Exposure is bounded by the
+    # tailnet-only bind; money, market and D30 rules are unchanged.
+    open_access: bool = False
     log_level: str = "INFO"
     operator_dist: str | None = None  # optional apps/operator build served same-origin at /operator/
     # P6 Stripe TEST-mode top-ups (§9.18). Secrets never live here: fazetime_api.topups reads STRIPE_SECRET_KEY and
@@ -149,6 +154,7 @@ def load_settings() -> Settings:
         log_level=_env("FAZETIME_LOG_LEVEL", "INFO"),
         operator_dist=os.environ.get("FAZETIME_OPERATOR_DIST") or None,
         allow_automatic=_env_bool("FAZETIME_ALLOW_AUTOMATIC", False),
+        open_access=_env_bool("FAZETIME_OPEN_ACCESS", False),
         ai_mode_default=_env("FAZETIME_AI_MODE_DEFAULT", "OFF").strip().upper(),
         candidate_expiry_s=_env_int("FAZETIME_CANDIDATE_EXPIRY_S", 60),
         evidence_fresh_s=_env_int("FAZETIME_EVIDENCE_FRESH_S", 90),

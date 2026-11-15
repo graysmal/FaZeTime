@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.concurrency import run_in_threadpool
@@ -17,6 +18,7 @@ from .schemas import (
     EnrollResponse,
     ErrorEnvelope,
     Me,
+    OpenOperatorSessionRequest,
     PresenceAck,
     PresenceHeartbeat,
     StreamSnapshot,
@@ -27,7 +29,10 @@ from .schemas import (
 )
 
 router = APIRouter()
+# D35: included by main.create_app ONLY while Settings.open_access is on; otherwise the path is a plain 404.
+open_router = APIRouter()
 ERRORS = {code: {"model": ErrorEnvelope} for code in (401, 403, 404, 409, 422, 429, 500, 503)}
+log = logging.getLogger("fazetime.auth")
 
 
 @router.get("/healthz", tags=["meta"])
@@ -51,6 +56,30 @@ async def enroll(request: Request):
 
     body = await run_in_threadpool(work)
     svc.hub.notify()
+    return JSONResponse(body, status_code=201, headers={"Cache-Control": "no-store"})
+
+
+@open_router.post("/v1/open/operator-session", status_code=201, tags=["open-access"],
+                  openapi_extra=body_schema(OpenOperatorSessionRequest),
+                  responses={201: {"model": EnrollResponse}, **ERRORS})
+async def open_operator_session(request: Request):
+    """D35: a new session for the ONE shared OPERATOR account, with no sign-in. 404 while open access is off."""
+    svc = svc_of(request)
+    if not svc.settings.open_access:
+        raise ApiError("NOT_FOUND")
+    client = client_key(request)
+    svc.limiter.check(("open-operator-session", client), *svc.settings.rl_open_operator_session)
+    req = await parse_body(request, OpenOperatorSessionRequest)
+
+    def work():
+        with svc.db.write() as conn:
+            body = auth.open_operator_session(conn, device_id=req.device_id, client_host=client,
+                                              now=svc.clock.now(), settings=svc.settings)
+            EnrollResponse.model_validate(body)
+            return body
+
+    body = await run_in_threadpool(work)
+    log.info("open-access operator session issued session_id=%s client=%s", body["session_id"], client)  # no token
     return JSONResponse(body, status_code=201, headers={"Cache-Control": "no-store"})
 
 
