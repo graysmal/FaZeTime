@@ -62,6 +62,43 @@ class Config:
     uplink_queue_max: int = 2000
     http_timeout_s: float = 10.0
     host_id: str = field(default_factory=lambda: socket.gethostname()[:64] or "worker")
+    # ---- P4/P5 AI (Gemini, D20 free tier). Off unless FAZETIME_AI_ENABLED=1. Key: GEMINI_API_KEY (env only).
+    ai_enabled: bool = False
+    ai_proposer: bool = True
+    ai_resolver: bool = True
+    ai_model: str = "gemini-3.5-flash-lite"
+    ai_daily_budget: int = 300  # requests per Pacific day, persisted in <data_dir>/gemini_usage.json
+    ai_min_interval_s: float = 6.0  # global: at most 10 requests/min
+    ai_timeout_s: float = 20.0
+    ai_max_output_tokens: int = 600
+    # measured: image tokens depend on media_resolution, not pixel size (384x216 and 854x480 both ~1,100 at the
+    # default; "low" = 264, and a 14 px synthetic chat line stayed legible). Proposer frames are supporting only.
+    ai_media_resolution: str | None = "low"  # proposer calls; None = model default
+    ai_resolver_media_resolution: str | None = None  # resolver calls: model default (~1,100 tokens per crop)
+    ai_thinking_level: str | None = None
+    ai_participants: tuple = ("FaZeGavin", "FaZeNeville")
+    ai_challenge: str = "minecraft-1v1"
+    ai_transcript_window_ms: int = 60_000
+    ai_max_frames: int = 1  # proposer frames per call
+    ai_frame_height: int = 480  # proposer frame height; downscaling does not reduce tokens on this model
+    ai_evidence_max_age_s: float = 75.0  # API rejects evidence received > 90 s ago
+    # frames = only server evd_ ids; frames+transcripts also cites API-acknowledged transcript observations as
+    # <source_epoch>:<sequence> (the format the in-progress API accepts; not yet written into CONTRACTS §9.17)
+    ai_evidence_refs: str = "frames+transcripts"
+    ai_close_in_s: int = 60
+    ai_resolve_in_s: int = 480
+    ai_expected_setup_s: float = 90.0  # announced setup before the fight (D19 recording: >= 90 s)
+    ai_lead_margin_s: float = 15.0
+    ai_proposer_min_gap_s: float = 15.0
+    ai_proposer_max_calls_per_epoch: int = 8
+    ai_resolver_poll_s: float = 10.0
+    ai_resolver_max_calls_per_market: int = 24
+    ai_resolver_frames: int = 2
+    ai_chat_crop: tuple = (0.0, 0.42, 0.62, 0.5)  # x, y, w, h fractions: Minecraft chat (bottom-left)
+    ai_resolve_rule: str = "DEATH_MESSAGE_REQUIRED"  # or DEATH_OR_SPOKEN
+    ai_post_wait: bool = True
+    ai_market_source: str = "auto"  # auto | worker | snapshot | none
+    resolver_session_token: str | None = field(default=None, repr=False)
     streamlink_bin: str = "streamlink"
     ffmpeg_bin: str = "ffmpeg"
 
@@ -86,6 +123,13 @@ class Config:
                 problems.append("FAZETIME_API_BASE must be an http(s) URL")
         if self.asr_hop_ms >= self.asr_window_ms:
             problems.append("asr_hop_ms must be smaller than asr_window_ms")
+        if self.ai_enabled:  # a missing GEMINI_API_KEY is not a problem: AI is then disabled and logged once
+            if self.ai_evidence_refs not in ("frames", "frames+transcripts"):
+                problems.append("FAZETIME_AI_EVIDENCE_REFS must be frames or frames+transcripts")
+            if self.ai_resolve_rule not in ("DEATH_MESSAGE_REQUIRED", "DEATH_OR_SPOKEN"):
+                problems.append("FAZETIME_AI_RESOLVE_RULE must be DEATH_MESSAGE_REQUIRED or DEATH_OR_SPOKEN")
+            if len(self.ai_participants) != 2:
+                problems.append("FAZETIME_AI_PARTICIPANTS must name exactly two participants")
         return problems
 
     def public_dict(self) -> dict:
@@ -93,11 +137,12 @@ class Config:
         out = {}
         for f in fields(self):
             v = getattr(self, f.name)
-            if f.name == "token":
-                out["token_present"] = bool(v)
+            if f.name in ("token", "resolver_session_token"):
+                out[f.name + "_present"] = bool(v)
                 continue
             out[f.name] = str(v) if isinstance(v, Path) else v
         out["source_kind"] = self.source_kind
+        out["gemini_key_present"] = bool(os.environ.get("GEMINI_API_KEY"))
         return out
 
 
@@ -121,4 +166,35 @@ def from_env() -> Config:
     c.ffmpeg_bin = _env("FAZETIME_FFMPEG_BIN", c.ffmpeg_bin)
     if c.api_base:
         c.api_base = c.api_base.rstrip("/")
+    b = lambda v: str(v).lower() in ("1", "true", "yes", "on")  # noqa: E731
+    # auto (default): on when GEMINI_API_KEY is present and an API is configured (not in dry-run); 1 = on; 0 = off
+    ai = str(_env("FAZETIME_AI_ENABLED", "auto")).lower()
+    c.ai_enabled = (bool(os.environ.get("GEMINI_API_KEY")) and bool(c.api_base)) if ai == "auto" else b(ai)
+    c.ai_proposer = b(_env("FAZETIME_AI_PROPOSER", "1"))
+    c.ai_resolver = b(_env("FAZETIME_AI_RESOLVER", "1"))
+    c.ai_model = _env("FAZETIME_AI_MODEL", c.ai_model)
+    c.ai_daily_budget = int(_env("FAZETIME_AI_DAILY_BUDGET", c.ai_daily_budget))
+    c.ai_min_interval_s = float(_env("FAZETIME_AI_MIN_INTERVAL_S", c.ai_min_interval_s))
+    c.ai_timeout_s = float(_env("FAZETIME_AI_TIMEOUT_S", c.ai_timeout_s))
+    mr = lambda v: None if str(v).lower() in ("", "default", "none") else v  # noqa: E731
+    c.ai_media_resolution = mr(_env("FAZETIME_AI_MEDIA_RESOLUTION", c.ai_media_resolution))
+    c.ai_resolver_media_resolution = mr(_env("FAZETIME_AI_RESOLVER_MEDIA_RESOLUTION", c.ai_resolver_media_resolution))
+    c.ai_thinking_level = _env("FAZETIME_AI_THINKING_LEVEL", c.ai_thinking_level)
+    parts = _env("FAZETIME_AI_PARTICIPANTS")
+    if parts:
+        c.ai_participants = tuple(p.strip() for p in parts.split(",") if p.strip())
+    c.ai_frame_height = int(_env("FAZETIME_AI_FRAME_HEIGHT", c.ai_frame_height))
+    c.ai_max_frames = int(_env("FAZETIME_AI_MAX_FRAMES", c.ai_max_frames))
+    c.ai_resolver_frames = int(_env("FAZETIME_AI_RESOLVER_FRAMES", c.ai_resolver_frames))
+    c.ai_evidence_refs = _env("FAZETIME_AI_EVIDENCE_REFS", c.ai_evidence_refs)
+    c.ai_close_in_s = int(_env("FAZETIME_AI_CLOSE_IN_S", c.ai_close_in_s))
+    c.ai_resolve_in_s = int(_env("FAZETIME_AI_RESOLVE_IN_S", c.ai_resolve_in_s))
+    c.ai_expected_setup_s = float(_env("FAZETIME_AI_EXPECTED_SETUP_S", c.ai_expected_setup_s))
+    c.ai_lead_margin_s = float(_env("FAZETIME_AI_LEAD_MARGIN_S", c.ai_lead_margin_s))
+    c.ai_resolve_rule = _env("FAZETIME_AI_RESOLVE_RULE", c.ai_resolve_rule)
+    crop = _env("FAZETIME_AI_CHAT_CROP")
+    if crop:
+        c.ai_chat_crop = tuple(float(x) for x in crop.split(","))
+    c.ai_market_source = _env("FAZETIME_AI_MARKET_SOURCE", c.ai_market_source)
+    c.resolver_session_token = _env("FAZETIME_RESOLVER_SESSION_TOKEN")
     return c

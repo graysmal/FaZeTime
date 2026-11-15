@@ -102,3 +102,35 @@ tail -f ~/fazetime-data/worker.log; scripts/stop_pi.sh
 - An ad pause followed by a pts jump can open two epochs in quick succession (AFTER_GAP, then PTS_DISCONTINUITY 0.1–0.2 s later). Both are correct and both void, but the first epoch is tiny.
 - faster-whisper cannot be interrupted mid-window. The deadline is enforced by bounded decoding plus dropping windows that waited more than 6 s.
 - Overlap dedupe is text-based (suffix/prefix match of up to 8 words), so a word cut at a window edge can still repeat.
+
+## P4/P5 AI proposer and resolver (Gemini, CONTRACTS §9.17)
+
+Off by default. Enable with `FAZETIME_AI_ENABLED=1` (or `run --ai`) and `GEMINI_API_KEY` in `worker.env` (chmod 600; never printed or logged). Model `gemini-3.5-flash-lite` (D20 free tier). There is no paid or canned fallback.
+
+| Module | Role |
+|---|---|
+| `gemini.py` | Single model id. Structured output (`response_json_schema`), `temperature=0`, at most 600 output tokens, 20 s timeout, no SDK retries. A global `Gate` enforces at least 6 s between requests, a daily budget persisted per Pacific day (`gemini_usage.json`, default 300) and an error cooldown. A 429 pauses calls for 60 s, doubling up to 30 min. 401/403 disables the provider. Hard stop: `FAZETIME_AI_STOP=1` or `touch <data_dir>/AI_STOP` |
+| `context.py` | Bounded causal buffer of the current epoch only (an epoch change clears it). Short handles (`T#`, `F#`) that the model must cite. FFmpeg crop/scale. Deterministic cues: names, challenge keywords, countdown, "slain", "<name> wins", injection-like text, cancellation words |
+| `proposer.py` | H2H_WINNER_V1. A deterministic pre-filter (both names plus a challenge keyword) runs before any call. One call, then validation. The template fills the question, labels, predicates and cancellation conditions. `POST /v1/worker/proposals`, prompt `h2h-proposer-1.0` |
+| `resolver.py` | Works on the lock epoch, using evidence after `lock_media_ms` only, with chat-region crops. The decision is recomputed deterministically under `FAZETIME_AI_RESOLVE_RULE`. Contradictions, cancellation cues or a coverage gap give UNRESOLVABLE. Everything else gives WAIT, with backoff, until `resolve_by_utc`. Late replies are dropped. `POST /v1/worker/resolutions`, prompt `h2h-resolver-1.0` |
+
+Knobs (environment): `FAZETIME_AI_DAILY_BUDGET` (300), `FAZETIME_AI_MIN_INTERVAL_S` (6), `FAZETIME_AI_TIMEOUT_S` (20), `FAZETIME_AI_PARTICIPANTS` (`FaZeGavin,FaZeNeville`), `FAZETIME_AI_MEDIA_RESOLUTION` (proposer, `low`), `FAZETIME_AI_RESOLVER_MEDIA_RESOLUTION` (`default`), `FAZETIME_AI_MAX_FRAMES` (1), `FAZETIME_AI_RESOLVER_FRAMES` (2), `FAZETIME_AI_FRAME_HEIGHT` (480), `FAZETIME_AI_CHAT_CROP` (`0,0.42,0.62,0.5`), `FAZETIME_AI_EVIDENCE_REFS` (`frames+transcripts` or `frames`), `FAZETIME_AI_CLOSE_IN_S` (60), `FAZETIME_AI_RESOLVE_IN_S` (480), `FAZETIME_AI_EXPECTED_SETUP_S` (90), `FAZETIME_AI_LEAD_MARGIN_S` (15), `FAZETIME_AI_RESOLVE_RULE` (`DEATH_MESSAGE_REQUIRED` or `DEATH_OR_SPOKEN`), `FAZETIME_AI_MARKET_SOURCE` (`auto`, `worker`, `snapshot` or `none`), `FAZETIME_RESOLVER_SESSION_TOKEN` (optional read-only session for the snapshot fallback), `FAZETIME_AI_PROPOSER` and `FAZETIME_AI_RESOLVER` (1/0).
+
+The resolver needs the locked market: `lock_source_epoch`, `lock_media_ms`, `rules_version` and `resolve_by_utc`. It first tries `GET /v1/worker/market?stream_id=` (proposed, not yet in §9.16/§9.17). If a session token is set, it falls back to the snapshot and derives `lock_media_ms` from its own timeline (plus a 2 s margin). With neither, the resolver stays idle and the operator resolves.
+
+Decisions go to `<data_dir>/ai_trace.jsonl` with model, prompt version, latency, token usage, cited handles and the validation outcome. No images and no secrets are written. Counters appear under `ai` in `worker_status.jsonl`.
+
+Synthetic live smoke (real Gemini, ffmpeg-drawn frames labelled SYNTHETIC, in-memory API, capped by its own gate):
+`uv run python scripts/ai_smoke.py --env-file ../../.env.local --out <dir> --cases a,b1,b2,c --max-requests 4`
+
+Pi run with AI. Add to `~/fazetime-data/worker.env` (chmod 600): `GEMINI_API_KEY=…`, plus the existing `FAZETIME_API_BASE`, `FAZETIME_WORKER_TOKEN` and `FAZETIME_STREAM_ID`. AI is `auto`: it turns on when a key and an API are present, and it is off in `--dry-run` unless `--ai` is given. Without a key it logs one line and stays disabled.
+
+```bash
+cd ~/fazetime/services/worker && ~/.local/bin/uv sync --frozen        # pulls google-genai 3.3.0
+.venv/bin/python -m fazetime_worker check                           # shows gemini_key_present, never the key
+scripts/run_pi.sh                                                    # live: Twitch -> ASR -> proposer/resolver
+grep -E "proposer|resolver|gemini|AI " ~/fazetime-data/worker.log    # decisions; details in worker/ai_trace.jsonl
+touch ~/fazetime-data/worker/AI_STOP                                 # hard stop (rm to resume); or FAZETIME_AI_STOP=1
+scripts/stop_pi.sh
+```
+Between the two recorded takes, reset the run (operator `POST /v1/operator/runs/reset`). Both takes share the fingerprint `h2h:fazegavin|fazeneville:minecraft-1v1`, so in a single run the second take is a `DUPLICATE_EPISODE`.

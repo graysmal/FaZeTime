@@ -13,10 +13,53 @@ from .api_client import ApiClient, DryRunClient, FrameOp, ObservationOp, Registe
 from .asr import AsrWorker, BoundedQueue, FakeEngine, FasterWhisperEngine, Window, Windower
 from .capture import Capture
 from .config import Config
+from .context import ContextBuffer
 from .util import EpochSequencer, StaleEpochError, loadavg, mono_ns, utc_now
 
 log = logging.getLogger("fazetime.worker")
 MAX_FRAME_BYTES = 300 * 1024
+
+
+class EvidenceTap:
+    """Client wrapper: reports acknowledged frame uploads (server evd_ ids) to the AI context buffer."""
+
+    def __init__(self, inner, on_ack, on_obs_ack=None):
+        self.inner, self.on_ack, self.on_obs_ack = inner, on_ack, on_obs_ack
+
+    def post_json(self, path, body):
+        res = self.inner.post_json(path, body)
+        if res.ok and path.endswith("/observations") and self.on_obs_ack is not None:
+            bad = {r.get("sequence") for r in ((res.body or {}).get("rejected") or [])}
+            self.on_obs_ack(body["source_epoch"], [it["sequence"] for it in body["items"]
+                                                   if it["kind"] == "TRANSCRIPT" and it["sequence"] not in bad])
+        return res
+
+    def get_json(self, path, bearer=None):
+        return self.inner.get_json(path, bearer)
+
+    def post_evidence(self, meta, jpeg):
+        res = self.inner.post_evidence(meta, jpeg)
+        if res.ok and (res.body or {}).get("evidence_id"):
+            self.on_ack(meta["source_epoch"], meta["sequence"], res.body["evidence_id"])
+        return res
+
+
+def build_ai(cfg: Config, ctx: ContextBuffer, api, stream_id: str, data_dir: Path):
+    """P4/P5 components (only when FAZETIME_AI_ENABLED=1). Returns (AiThread, GeminiClient, tracker)."""
+    from .context import FrameTransformer
+    from .gemini import Gate, GeminiClient
+    from .proposer import Proposer, Registry, Trace
+    from .resolver import AiThread, HttpMarketSource, MarketTracker, Resolver
+    gate = Gate(cfg.ai_daily_budget, cfg.ai_min_interval_s, data_dir / "gemini_usage.json", data_dir / "AI_STOP")
+    gem = GeminiClient(gate, model=cfg.ai_model, timeout_s=cfg.ai_timeout_s, max_output_tokens=cfg.ai_max_output_tokens,
+                       media_resolution=cfg.ai_media_resolution, thinking_level=cfg.ai_thinking_level)
+    source = None if cfg.ai_market_source == "none" else HttpMarketSource(api, stream_id, cfg.resolver_session_token,
+                                                                         cfg.ai_market_source)
+    tracker, registry, trace = MarketTracker(source), Registry(), Trace(data_dir / "ai_trace.jsonl")
+    tx = FrameTransformer(cfg.ffmpeg_bin)
+    prop = Proposer(cfg, ctx, gem, api, stream_id, tracker, registry, tx, trace) if cfg.ai_proposer else None
+    res = Resolver(cfg, ctx, gem, api, stream_id, tracker, registry, tx, trace) if cfg.ai_resolver else None
+    return AiThread(prop, res), gem, tracker
 
 
 class Pipeline:
@@ -30,7 +73,8 @@ class Pipeline:
         if client is None:
             client = (DryRunClient(self.data_dir / "uplink_dryrun.jsonl") if cfg.dry_run
                       else ApiClient(cfg.api_base, cfg.token, cfg.http_timeout_s))
-        self.client = client
+        self.ctx = ContextBuffer()
+        self.client = EvidenceTap(client, self.ctx.on_evidence_ack, self.ctx.on_observations_ack)
         self.uplink = Uplink(client, cfg.stream_id or "str_" + "0" * 32, max_queue=cfg.uplink_queue_max,
                              batch_max=cfg.batch_max_items, batch_wait_s=cfg.batch_max_wait_s)
         self.queue = BoundedQueue(cfg.asr_queue_max)
@@ -49,10 +93,21 @@ class Pipeline:
         self._hb_lock = threading.Lock()
         self._last_hb_ns = 0
         self.status_path = self.data_dir / "worker_status.jsonl"
+        self.ai = self.gemini = self.market_tracker = None
+        self.ai_disabled_reason = None if cfg.ai_enabled else "CONFIG_OFF"
+        if cfg.ai_enabled and not os.environ.get("GEMINI_API_KEY"):
+            self.ai_disabled_reason = "NO_GEMINI_API_KEY"
+            log.warning("AI proposer/resolver disabled: GEMINI_API_KEY is not set (no fallback; media worker runs)")
+        elif cfg.ai_enabled:
+            ai_api = client if cfg.dry_run or not isinstance(client, ApiClient) else ApiClient(
+                cfg.api_base, cfg.token, cfg.http_timeout_s)  # own HTTP session for the AI thread
+            self.ai, self.gemini, self.market_tracker = build_ai(cfg, self.ctx, ai_api, self.uplink.stream_id,
+                                                                self.data_dir)
 
     # ---- CaptureSink -------------------------------------------------------------------------------
     def on_epoch(self, epoch, reason, previous, variant, started_at_utc):
         self.seq.open(epoch)
+        self.ctx.open_epoch(epoch)  # AI context never spans epochs
         self.queue.drop_epochs_except(epoch)
         self.uplink.put(RegisterEpoch({
             "schema_version": 1, "stream_id": self.uplink.stream_id, "source_epoch": epoch,
@@ -71,6 +126,7 @@ class Pipeline:
         except StaleEpochError:
             self.counts["late_items_dropped"] += 1
             return
+        self.ctx.add_frame(epoch, seq, media_ms, jpeg, width, height, captured_at_utc)
         self.uplink.put(FrameOp(epoch, seq, media_ms, width, height, jpeg, captured_at_utc, flags))
 
     def on_gap(self, epoch, media_ms, reason, captured_at_utc):
@@ -104,6 +160,7 @@ class Pipeline:
                            "no_speech_prob": None if no_speech_prob is None else min(1.0, max(0.0, no_speech_prob)),
                            "model": model[:64], "language": "en"},
             "evidence_id": None, "gap": None}))
+        self.ctx.add_transcript(w.epoch, seq, w.media_start_ms, w.media_end_ms, text, flags, w.captured_at_utc)
 
     # ---- heartbeat / status ---------------------------------------------------------------------------
     def heartbeat_body(self) -> dict:
@@ -134,6 +191,7 @@ class Pipeline:
             self._last_hb_ns = mono_ns()
             res = self.uplink.heartbeat(self.heartbeat_body())
             self.counts["heartbeats_ok" if res.ok else "heartbeats_failed"] += 1
+            self.ctx.set_run(self.uplink.stream_session_id)  # run-scoped AI fingerprints
             if not res.ok:
                 log.warning("heartbeat failed: %s %s", res.status or res.error, res.code)
 
@@ -143,7 +201,15 @@ class Pipeline:
                                            "partial_windows_discarded": self.windower.discarded_partial},
                 "uplink": self.uplink.stats | {"depth": self.uplink.depth(), "last_error": self.uplink.last_error,
                                                "server_current_epoch": self.uplink.server_current_epoch},
-                "counts": self.counts, "loadavg": loadavg()}
+                "counts": self.counts, "loadavg": loadavg(), "ai": self.ai_status()}
+
+    def ai_status(self) -> dict:
+        if self.ai is None:
+            return {"enabled": False, "reason": self.ai_disabled_reason}
+        return {"enabled": True, "gate": self.gemini.gate.state(), "used_today": self.gemini.gate.used_today,
+                "budget": self.gemini.gate.daily_budget, "gemini": self.gemini.stats.as_dict(),
+                "proposer": getattr(self.ai.proposer, "counts", None), "resolver": getattr(self.ai.resolver, "counts", None),
+                "last": dict(self.ai.last), "market": getattr(self.market_tracker.current, "__dict__", None)}
 
     def _loop(self):
         next_hb = mono_ns()
@@ -180,10 +246,15 @@ class Pipeline:
         self.asr.start()
         loop = threading.Thread(target=self._loop, daemon=True, name="heartbeat")
         loop.start()
+        if self.ai is not None:
+            self.ai.start()
         try:
             self.capture.run(duration_s)
         finally:
             self.stop_flag.set()
+            if self.ai is not None:
+                self.ai.stop_flag.set()
+                self.ai.join(timeout=25)
             loop.join(timeout=2)
             self.asr.stop_flag.set()
             self.asr.join(timeout=30)

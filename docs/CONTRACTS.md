@@ -670,6 +670,12 @@ Late or duplicate resolutions for a terminal or other market are recorded and ig
 - `POST /v1/operator/markets/{id}/settle` stays fixture-only. For AI markets the operator either approves a suggestion or voids with a reason (`OPERATOR_CANCELLED`).
 - At `resolve_by_utc`, the sweeper voids the market with `RESOLUTION_TIMEOUT` (§9.3).
 
+**5b. Worker market view (added 2026-11-14 after the P4/P5 worker review).** `GET /v1/worker/market?stream_id=` (MEDIA_WORKER role) returns `{schema_version, market: {market_id, rules_version, state, origin, question, yes_label, no_label, close_at_utc, resolve_by_utc, lock_source_epoch, lock_media_ms} | null}`. That is the run's nonterminal market, or null. The resolver uses it to learn the lock position. It has no balances and no user data.
+
+**5c. Evidence reference format.** A frame is cited by its `evd_` ID. A transcript observation is cited as `<source_epoch>:<sequence>`, and only once the API has accepted it. The backend resolves both kinds and rejects unknown references with `STALE_EVIDENCE`.
+
+**5d. Takes and episodes.** Each recording take uses the same episode fingerprint, so the operator must **reset the run between takes**. Otherwise the second take is rejected as `DUPLICATE_EPISODE`.
+
 **6. Persistence.** Store candidates and resolutions with the model, prompt version, evidence IDs and validation result, as `InferenceTrace` rows, with no secrets. Public market fields `criteria.YES` and `criteria.NO` carry the predicates (side-keyed, §9.3).
 
 ### 9.18 Stripe test top-up contract (v1, for P6)

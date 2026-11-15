@@ -83,6 +83,14 @@ class ApiClient:
         except requests.RequestException as exc:
             return ApiResult(None, None, type(exc).__name__)
 
+    def get_json(self, path: str, bearer: str | None = None) -> ApiResult:
+        """GET with the worker token, or with an explicit read-only session bearer (snapshot fallback)."""
+        headers = {"Authorization": f"Bearer {bearer}"} if bearer else self._headers()
+        try:
+            return self._result(self.session.get(self.base + path, headers=headers, timeout=self.timeout))
+        except requests.RequestException as exc:
+            return ApiResult(None, None, type(exc).__name__)
+
     def post_evidence(self, meta: dict, jpeg: bytes) -> ApiResult:
         files = {"meta": (None, json.dumps(meta, separators=(",", ":")), "application/json"),
                  "file": ("frame.jpg", jpeg, "image/jpeg")}
@@ -138,7 +146,12 @@ class DryRunClient:
                                    "current_source_epoch": body.get("source_epoch")})
         if path.endswith("/observations"):
             return ApiResult(200, {"accepted": len(body["items"]), "duplicates": 0, "rejected": []})
+        if path.endswith(("/proposals", "/resolutions")):  # dry-run: recorded above, never opened or settled
+            return ApiResult(200, {"status": "DRY_RUN", "reject_code": None, "market_id": None})
         return ApiResult(201, {"source_epoch": body.get("source_epoch"), "created": True})
+
+    def get_json(self, path: str, bearer: str | None = None) -> ApiResult:
+        return ApiResult(404, {"error": {"code": "NOT_FOUND"}})
 
     def post_evidence(self, meta: dict, jpeg: bytes) -> ApiResult:
         return ApiResult(201, {"evidence_id": "evd_" + hashlib.sha256(jpeg).hexdigest()[:32], "deduped": False})

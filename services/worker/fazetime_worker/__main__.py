@@ -38,6 +38,8 @@ def _args(argv):
         s.add_argument("--no-keyframes-only", action="store_true", help="decode every video frame (costly at 1080p60)")
         s.add_argument("--frame-height", type=int)
         s.add_argument("--models-dir")
+        s.add_argument("--ai", action="store_true", help="force the P4/P5 Gemini proposer+resolver on")
+        s.add_argument("--no-ai", action="store_true", help="force the P4/P5 Gemini proposer+resolver off")
         s.add_argument("--log-level", default="INFO")
     return p.parse_args(argv)
 
@@ -74,6 +76,10 @@ def build_config(a):
         cfg.frame_height = a.frame_height
     if a.models_dir:
         cfg.models_dir = Path(a.models_dir)
+    if a.ai:
+        cfg.ai_enabled = True
+    if a.no_ai or a.dry_run and not a.ai:
+        cfg.ai_enabled = False  # dry-run spends no model quota unless --ai is given
     return cfg
 
 
