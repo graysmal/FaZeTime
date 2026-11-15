@@ -7,6 +7,9 @@ set -euo pipefail
 cmd="${1:-status}"
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DATA_DIR="${FAZETIME_DATA_DIR:-$HOME/fazetime-data}"
+# Optional private settings (mode 600, never committed): e.g. FAZETIME_AI_MODE_DEFAULT=APPROVAL,
+# FAZETIME_STRIPE_ENV_FILE=$DATA_DIR/stripe.env. Loaded before defaults below.
+if [ -f "$DATA_DIR/api.env" ]; then set -a; . "$DATA_DIR/api.env"; set +a; fi
 PORT="${FAZETIME_PORT:-8000}"
 PID_FILE="$DATA_DIR/api.pid"
 LOG_FILE="$DATA_DIR/api.log"
