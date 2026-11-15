@@ -3,7 +3,8 @@
 * One model id (``MODEL_ID``), structured output via ``response_json_schema``, ``temperature=0``, capped output
   tokens, a request timeout and **no SDK retries** (one HTTP attempt per budgeted request).
 * ``Gate`` is the single, process-wide limiter: a minimum interval between requests, a persisted daily request
-  budget (Pacific day, as the free tier resets), a cooldown after errors and a hard stop switch
+  budget (Pacific day, as the free tier resets) with a share reserved for the resolver (the proposer stops at
+  budget minus reserve), a cooldown after errors and a hard stop switch
   (``FAZETIME_AI_STOP=1`` or the file ``<data_dir>/AI_STOP``).
 * 429 / RESOURCE_EXHAUSTED pauses all AI calls with a growing cooldown. There is no fallback: no canned output,
   no second key, no paid tier. 401/403 disables the provider for the process.
@@ -86,12 +87,18 @@ def pacific_day(now_wall: float | None = None) -> str:
 
 
 class Gate:
-    """Process-wide limiter shared by the proposer and resolver. Thread-safe."""
+    """Process-wide limiter shared by the proposer and resolver. Thread-safe.
+
+    One daily budget counts every request of both roles. ``resolver_reserve`` requests of it are kept for the
+    resolver: a ``role="proposer"`` request is refused (``RESERVED_FOR_RESOLVER``) once the day's total usage
+    reaches ``daily_budget - resolver_reserve``, so every proposal leaves at least the reserve for settlement.
+    The resolver (and callers without a role) may use the whole budget."""
 
     def __init__(self, daily_budget: int = 300, min_interval_s: float = 6.0, state_path: Path | None = None,
                  stop_file: Path | None = None, stop_env: str = "FAZETIME_AI_STOP", clock=time.monotonic,
-                 wall=time.time):
+                 wall=time.time, resolver_reserve: int = 0):
         self.daily_budget = int(daily_budget)
+        self.resolver_reserve = max(0, min(int(resolver_reserve), self.daily_budget))
         self.min_interval_s = float(min_interval_s)
         self.state_path = state_path
         self.stop_file = stop_file
@@ -132,19 +139,35 @@ class Gate:
     def stopped(self) -> bool:
         return os.environ.get(self.stop_env, "") not in ("", "0") or bool(self.stop_file and self.stop_file.exists())
 
-    def state(self) -> str:
+    @property
+    def proposer_limit(self) -> int:
+        return self.daily_budget - self.resolver_reserve
+
+    def limit_for(self, role: str | None) -> int:
+        return self.proposer_limit if role == "proposer" else self.daily_budget
+
+    def remaining(self, role: str | None = None) -> int:
+        """Requests ``role`` may still start today (budget only; cooldowns and the stop switch not included)."""
+        with self.lock:
+            used = self.used_today if pacific_day(self.wall()) == self.day else 0
+            return max(0, self.limit_for(role) - used)
+
+    def state(self, role: str | None = None) -> str:
         now = self.clock()
         if self.disabled_reason:
             return "DISABLED"
         if self.stopped():
             return "STOPPED"
-        if self.used_today >= self.daily_budget and pacific_day(self.wall()) == self.day:
-            return "BUDGET_EXHAUSTED"
+        if pacific_day(self.wall()) == self.day:
+            if self.used_today >= self.daily_budget:
+                return "BUDGET_EXHAUSTED"
+            if self.used_today >= self.limit_for(role):
+                return "RESERVED_FOR_RESOLVER"
         if now < self.cooldown_until:
             return "PAUSED_QUOTA" if self.cooldown_reason == "QUOTA" else "COOLDOWN"
         return "READY"
 
-    def acquire(self) -> int:
+    def acquire(self, role: str | None = None) -> int:
         """Reserve one request (counted before sending). Raises Unavailable; never blocks."""
         with self.lock:
             now = self.clock()
@@ -157,6 +180,8 @@ class Gate:
                 raise Unavailable("STOPPED")
             if self.used_today >= self.daily_budget:
                 raise Unavailable("BUDGET_EXHAUSTED")
+            if self.used_today >= self.limit_for(role):
+                raise Unavailable("RESERVED_FOR_RESOLVER")
             if now < self.cooldown_until:
                 raise Unavailable("PAUSED_QUOTA" if self.cooldown_reason == "QUOTA" else "COOLDOWN",
                                   self.cooldown_until - now)
@@ -303,10 +328,12 @@ class GeminiClient:
     def _err(self, kind: str):
         self.stats.errors[kind] = self.stats.errors.get(kind, 0) + 1
 
-    def generate_json(self, *, system: str, parts: list, schema: dict, media_resolution: str | None = None) -> CallResult:
-        """parts: [("text", str) | ("image", bytes, mime)]. media_resolution overrides the client default."""
+    def generate_json(self, *, system: str, parts: list, schema: dict, media_resolution: str | None = None,
+                      role: str | None = None) -> CallResult:
+        """parts: [("text", str) | ("image", bytes, mime)]. media_resolution overrides the client default.
+        role "proposer" is limited to the budget minus the resolver reserve (Gate)."""
         try:
-            n = self.gate.acquire()
+            n = self.gate.acquire(role)
         except Unavailable as u:
             key = u.reason.split(":")[0]
             self.stats.refused[key] = self.stats.refused.get(key, 0) + 1

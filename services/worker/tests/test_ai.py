@@ -41,6 +41,7 @@ class FakeAiApi:
         self.used_fps = set()
         self.market: MarketView | None = None
         self.fail: list = []
+        self.force_reject: list = []  # reject codes returned (in order) before any other check
 
     def get_json(self, path, bearer=None):
         return ApiResult(404, {"error": {"code": "NOT_FOUND"}})
@@ -65,7 +66,9 @@ class FakeAiApi:
         if body["source_epoch"] != self.ctx.view().epoch:
             return ApiResult(409, {"error": {"code": "STALE_EPOCH"}})
         rej = None
-        if not c["evidence_ids"] or any(e not in self._evidence_ms() for e in c["evidence_ids"]):
+        if self.force_reject:
+            rej = self.force_reject.pop(0)
+        elif not c["evidence_ids"] or any(e not in self._evidence_ms() for e in c["evidence_ids"]):
             rej = "STALE_EVIDENCE"
         elif self.market is not None and self.market.state in ("OPEN", "LOCKED", "EVALUATING"):
             rej = "MARKET_BUSY"
@@ -646,3 +649,183 @@ def test_predicates_fit_contract_and_are_side_keyed(rule):
         assert len(yes) <= 200 and len(no) <= 200
         assert yes.startswith(a) and no.startswith(b) and yes != no
     assert predicates("A" * 40, "B" * 40, rule) is None  # proposer rejects locally (TERMS_TOO_LONG)
+
+
+# ---- Stage 1a: run reset between takes, resolver reserve, configured challenge name ---------------------------
+RUN2 = "run_" + "5" * 32
+MAYBE = "okay so maybe we 1v1 later, face Gavin and phase Neville"
+
+
+def test_run_reset_reenables_proposals_and_fingerprints_without_epoch_change(env):
+    env.cfg.ai_proposer_max_calls_per_epoch = 2
+    # take 1 (run RUN): an abstention and a proposal use the whole cap, and the episode is consumed
+    env.say(MAYBE, start_ms=0)
+    env.frame(3000)
+    env.transport.push(abstain_out("HYPOTHETICAL_OR_PAST"))
+    assert env.prop.tick() == "ABSTAIN:HYPOTHETICAL_OR_PAST"
+    env.say(ANNOUNCE, start_ms=4000)
+    env.frame(7000)
+    env.transport.push(propose_out(announcement_handles=["T2"]))
+    assert env.prop.tick() == "POSTED:PENDING"
+    env.say("1v1 setup now, face Gavin versus phase Neville", start_ms=8000)
+    assert env.prop.tick() == "USED_FINGERPRINT"
+    # operator resets the run between takes: new stream_session_id from the heartbeat, SAME source epoch
+    env.ctx.set_run(RUN2)
+    env.api.used_fps.clear()  # the API scopes episodes to the run (CONTRACTS 9.17 5d)
+    env.say(ANNOUNCE, start_ms=100_000)  # take 2
+    env.frame(103_000)
+    env.transport.push(propose_out())
+    assert env.prop.tick() == "POSTED:PENDING"  # before the fix: EPOCH_CAP (cap was per epoch only)
+    assert env.ctx.view().epoch == EP and env.prop.epoch == EP and env.prop.run_id == RUN2
+    assert env.prop.scope_calls == 1 and len(env.transport.calls) == 3
+    assert env.gate.used_today == 3  # the daily budget is global: a run reset never refunds requests
+    p1, p2 = (p["candidate"] for p in env.api.proposals)
+    assert p1["episode_fingerprint"] == p2["episode_fingerprint"] == "h2h:fazegavin|fazeneville:minecraft-1v1"
+    assert p1["candidate_id"] != p2["candidate_id"] and env.api.proposals[1]["source_epoch"] == EP
+    assert env.registry.used == {p2["episode_fingerprint"]}
+    assert [r["candidate"]["candidate_id"] for r in env.registry.by_id.values()] == [p2["candidate_id"]]
+    env.say("1v1 face Gavin vs phase Neville, get ready", start_ms=104_000)
+    assert env.prop.tick() == "USED_FINGERPRINT"  # take 2's episode is now consumed in the new run
+
+
+def test_run_reset_clears_api_pause_but_keeps_quota_pause(env):
+    env.say(ANNOUNCE, start_ms=0)
+    env.frame(3000)
+    env.api.force_reject.append("AI_OFF")
+    env.transport.push(propose_out())
+    assert env.prop.tick() == "REJECTED:AI_OFF"  # 120 s pause, tied to this run's answers
+    env.say("1v1 face Gavin vs phase Neville", start_ms=4000)
+    assert env.prop.tick() == "PAUSED"
+    env.ctx.set_run(RUN2)
+    env.transport.push(propose_out())
+    assert env.prop.tick() == "POSTED:PENDING"  # the reset lifted the API pause
+    # a provider quota pause is global and survives the next reset
+    env.ctx.set_run(RUN)
+    env.api.used_fps.clear()
+    env.say(ANNOUNCE, start_ms=5000)
+    env.transport.push(FakeApiError(429, "RESOURCE_EXHAUSTED"))
+    assert env.prop.tick() == "QUOTA_PAUSED"
+    env.ctx.set_run(RUN2)
+    env.api.used_fps.clear()
+    env.say(ANNOUNCE, start_ms=6000)
+    assert env.prop.tick() == "PAUSED" and len(env.transport.calls) == 3
+
+
+def test_first_run_id_is_adopted_without_resetting_the_cap(env):
+    env.cfg.ai_proposer_max_calls_per_epoch = 1
+    env.ctx.run_id = None  # worker started before any heartbeat answered
+    env.say(MAYBE, start_ms=0)
+    env.frame(3000)
+    env.transport.push(abstain_out("HYPOTHETICAL_OR_PAST"))
+    assert env.prop.tick() == "ABSTAIN:HYPOTHETICAL_OR_PAST"
+    env.ctx.set_run(RUN)  # first heartbeat: not a reset
+    env.say(ANNOUNCE, start_ms=4000)
+    assert env.prop.tick() == "EPOCH_CAP" and env.prop.run_id == RUN
+
+
+def test_gate_keeps_resolver_reserve_of_one_daily_budget():
+    clock = Clock()
+    g = Gate(daily_budget=5, min_interval_s=0, clock=clock, resolver_reserve=2)
+    assert g.proposer_limit == 3 and g.remaining("proposer") == 3 and g.remaining() == 5
+    for _ in range(3):
+        g.acquire("proposer")
+    with pytest.raises(Unavailable) as e:
+        g.acquire("proposer")
+    assert e.value.reason == "RESERVED_FOR_RESOLVER"
+    assert g.state("proposer") == "RESERVED_FOR_RESOLVER" and g.state() == "READY"
+    g.acquire("resolver")
+    g.acquire("resolver")
+    with pytest.raises(Unavailable) as e:
+        g.acquire("resolver")
+    assert e.value.reason == "BUDGET_EXHAUSTED" and g.used_today == 5
+    # the threshold is on total usage: resolver calls also shrink the proposer's room, so every proposal
+    # still leaves the full reserve for settling it
+    g2 = Gate(daily_budget=5, min_interval_s=0, clock=clock, resolver_reserve=2)
+    for _ in range(3):
+        g2.acquire("resolver")
+    with pytest.raises(Unavailable) as e:
+        g2.acquire("proposer")
+    assert e.value.reason == "RESERVED_FOR_RESOLVER"
+    assert Gate(daily_budget=5, min_interval_s=0, clock=clock).proposer_limit == 5  # default: no reserve
+
+
+def test_proposer_stops_at_budget_minus_reserve_while_resolver_still_calls(env):
+    env.cfg.ai_daily_budget, env.cfg.ai_resolver_reserve = 5, 0.4
+    assert env.cfg.ai_resolver_reserve_requests() == 2  # ceil(5 * 0.4)
+    env.gem.gate = Gate(env.cfg.ai_daily_budget, 0, clock=env.clock,
+                        resolver_reserve=env.cfg.ai_resolver_reserve_requests())
+    for i in range(3):
+        env.say(MAYBE, start_ms=i * 4000)
+        env.frame(i * 4000 + 3000)
+        env.transport.push(abstain_out("HYPOTHETICAL_OR_PAST"))
+        assert env.prop.tick() == "ABSTAIN:HYPOTHETICAL_OR_PAST"
+    env.say(ANNOUNCE, start_ms=12_000)
+    env.frame(15_000)
+    assert env.prop.tick() == "RESERVED_FOR_RESOLVER"  # refused before any context or model work
+    assert len(env.transport.calls) == 3 and env.api.proposals == []
+    assert env.gem.gate.used_today == 3 and env.gem.gate.remaining("resolver") == 2
+    lock_market(env)
+    env.frame(LOCK + 2000)
+    env.transport.push(res_out("YES"))
+    assert env.res.tick() == "POSTED:YES:SETTLED"  # the resolver still had its share
+    assert len(env.transport.calls) == 4 and env.gem.gate.used_today == 4
+
+
+def test_resolver_reserve_config_and_pipeline_wiring(tmp_path, monkeypatch):
+    from fazetime_worker.asr import FakeEngine
+    from fazetime_worker.config import from_env
+    from fazetime_worker.pipeline import Pipeline
+    monkeypatch.delenv("FAZETIME_AI_RESOLVER_RESERVE", raising=False)
+    c = from_env()
+    assert c.ai_resolver_reserve == 0.4 and c.ai_resolver_reserve_requests() == 120  # of 300
+    for raw, want in (("40%", 0.4), ("0.25", 0.25), ("0", 0.0)):
+        monkeypatch.setenv("FAZETIME_AI_RESOLVER_RESERVE", raw)
+        assert from_env().ai_resolver_reserve == want
+    c = Config()
+    c.ai_enabled = True
+    c.ai_daily_budget = 16
+    assert c.ai_resolver_reserve_requests() == 7 and c.validate() == []  # ceil(6.4); proposer keeps 9
+    for bad in (1.0, 40.0, -0.1):
+        c.ai_resolver_reserve = bad
+        assert any("FAZETIME_AI_RESOLVER_RESERVE" in p for p in c.validate())
+    c.ai_resolver_reserve, c.ai_daily_budget = 0.4, 1
+    assert any("leaves the proposer no daily requests" in p for p in c.validate())
+    monkeypatch.setenv("GEMINI_API_KEY", "AIza" + "Z" * 35)
+    for resolver_on, reserve, limit in ((True, 120, 180), (False, 0, 300)):
+        cfg = Config()
+        cfg.ai_enabled, cfg.ai_resolver, cfg.data_dir = True, resolver_on, tmp_path
+        st = Pipeline(cfg, engine=FakeEngine()).ai_status()
+        assert (st["resolver_reserve"], st["proposer_limit"], st["proposer_gate"]) == (reserve, limit, "READY")
+
+
+def test_challenge_name_comes_from_config(env, monkeypatch):
+    from fazetime_worker.config import from_env
+    from fazetime_worker.proposer import make_candidate
+    monkeypatch.delenv("FAZETIME_AI_CHALLENGE", raising=False)
+    d = from_env()
+    assert (d.ai_challenge_name, d.ai_challenge) == ("Minecraft 1v1", "minecraft-1v1")  # default unchanged
+    monkeypatch.setenv("FAZETIME_AI_CHALLENGE", "  Minecraft   UHC duel ")
+    c = from_env()
+    assert (c.ai_challenge_name, c.ai_challenge) == ("Minecraft UHC duel", "minecraft-uhc-duel")
+    for rule in ("DEATH_MESSAGE_REQUIRED", "DEATH_OR_SPOKEN"):
+        c.ai_resolve_rule = rule
+        cand = make_candidate(c, "FaZeGavin", "FaZeNeville", [evd(1)], 0, 60, "r", "m")
+        assert cand["question"] == "Will FaZeGavin win the Minecraft UHC duel against FaZeNeville?"
+        assert all("Minecraft UHC duel" in cand[s]["predicate"] and "Minecraft 1v1" not in cand[s]["predicate"]
+                   for s in ("yes", "no"))
+        assert cand["episode_fingerprint"] == "h2h:fazegavin|fazeneville:minecraft-uhc-duel"
+    c.ai_enabled = True
+    for bad in ("", "x" * 41, "!!!", "Mine\x00craft"):
+        c.ai_challenge_name = bad
+        assert any("FAZETIME_AI_CHALLENGE" in p for p in c.validate())
+    # end to end: the proposer's local episode memory and the posted terms use the same configured challenge
+    env.cfg.ai_challenge_name = "Minecraft UHC duel"
+    env.say(ANNOUNCE)
+    env.frame(3000)
+    env.transport.push(propose_out())
+    assert env.prop.tick() == "POSTED:PENDING"
+    posted = env.api.proposals[0]["candidate"]
+    assert posted["question"] == "Will FaZeGavin win the Minecraft UHC duel against FaZeNeville?"
+    assert env.registry.used == {"h2h:fazegavin|fazeneville:minecraft-uhc-duel"}
+    env.say("1v1 face Gavin vs phase Neville")
+    assert env.prop.tick() == "USED_FINGERPRINT"

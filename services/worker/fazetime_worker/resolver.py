@@ -302,7 +302,8 @@ class Resolver:
         try:
             res = self.gemini.generate_json(system=SYSTEM_RULES + "\n\n" + TASK, parts=built.parts,
                                             schema=model_schema(ResolutionOut),
-                                            media_resolution=self.cfg.ai_resolver_media_resolution)
+                                            media_resolution=self.cfg.ai_resolver_media_resolution,
+                                            role="resolver")
         except Unavailable as u:
             return "GEMINI_UNAVAILABLE:" + u.reason
         except CallError as e:

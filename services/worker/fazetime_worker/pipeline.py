@@ -50,7 +50,10 @@ def build_ai(cfg: Config, ctx: ContextBuffer, api, stream_id: str, data_dir: Pat
     from .gemini import Gate, GeminiClient
     from .proposer import Proposer, Registry, Trace
     from .resolver import AiThread, HttpMarketSource, MarketTracker, Resolver
-    gate = Gate(cfg.ai_daily_budget, cfg.ai_min_interval_s, data_dir / "gemini_usage.json", data_dir / "AI_STOP")
+    # the resolver's share of the one daily budget (no resolver in this process -> nothing to reserve)
+    reserve = cfg.ai_resolver_reserve_requests() if cfg.ai_resolver else 0
+    gate = Gate(cfg.ai_daily_budget, cfg.ai_min_interval_s, data_dir / "gemini_usage.json", data_dir / "AI_STOP",
+                resolver_reserve=reserve)
     gem = GeminiClient(gate, model=cfg.ai_model, timeout_s=cfg.ai_timeout_s, max_output_tokens=cfg.ai_max_output_tokens,
                        media_resolution=cfg.ai_media_resolution, thinking_level=cfg.ai_thinking_level)
     source = None if cfg.ai_market_source == "none" else HttpMarketSource(api, stream_id, cfg.resolver_session_token,
@@ -211,8 +214,11 @@ class Pipeline:
     def ai_status(self) -> dict:
         if self.ai is None:
             return {"enabled": False, "reason": self.ai_disabled_reason}
-        return {"enabled": True, "gate": self.gemini.gate.state(), "used_today": self.gemini.gate.used_today,
-                "budget": self.gemini.gate.daily_budget, "gemini": self.gemini.stats.as_dict(),
+        gate = self.gemini.gate
+        return {"enabled": True, "gate": gate.state(), "proposer_gate": gate.state("proposer"),
+                "used_today": gate.used_today, "budget": gate.daily_budget,
+                "resolver_reserve": gate.resolver_reserve, "proposer_limit": gate.proposer_limit,
+                "gemini": self.gemini.stats.as_dict(),
                 "proposer": getattr(self.ai.proposer, "counts", None), "resolver": getattr(self.ai.resolver, "counts", None),
                 "last": dict(self.ai.last), "market": getattr(self.market_tracker.current, "__dict__", None)}
 

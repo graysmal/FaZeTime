@@ -15,6 +15,17 @@ def _env(name: str, default=None):
     return default if v is None or v == "" else v
 
 
+def _fraction(v) -> float:
+    """'0.4' or '40%' -> 0.4 (range is checked by Config.validate)."""
+    s = str(v).strip()
+    return float(s[:-1]) / 100 if s.endswith("%") else float(s)
+
+
+def challenge_slug(name: str) -> str:
+    """Episode-fingerprint slug for a challenge name: 'Minecraft 1v1' -> 'minecraft-1v1'."""
+    return re.sub(r"[^a-z0-9]+", "-", str(name or "").lower()).strip("-")[:48]
+
+
 @dataclass
 class Config:
     # API (CONTRACTS §9.16). api_base None => dry-run (observations go to a local JSONL only).
@@ -68,6 +79,9 @@ class Config:
     ai_resolver: bool = True
     ai_model: str = "gemini-3.5-flash-lite"
     ai_daily_budget: int = 300  # requests per Pacific day, persisted in <data_dir>/gemini_usage.json
+    # share of ai_daily_budget kept for the resolver: a proposer request is refused once the day's total usage
+    # (both roles) reaches budget - reserve, so every proposal leaves the reserve for settling it
+    ai_resolver_reserve: float = 0.4
     ai_min_interval_s: float = 6.0  # global: at most 10 requests/min
     ai_timeout_s: float = 20.0
     ai_max_output_tokens: int = 600
@@ -77,7 +91,7 @@ class Config:
     ai_resolver_media_resolution: str | None = None  # resolver calls: model default (~1,100 tokens per crop)
     ai_thinking_level: str | None = None
     ai_participants: tuple = ("FaZeGavin", "FaZeNeville")
-    ai_challenge: str = "minecraft-1v1"
+    ai_challenge_name: str = "Minecraft 1v1"  # FAZETIME_AI_CHALLENGE: named in the market question/predicates
     ai_transcript_window_ms: int = 60_000
     ai_max_frames: int = 1  # proposer frames per call
     ai_frame_height: int = 480  # proposer frame height; downscaling does not reduce tokens on this model
@@ -101,6 +115,16 @@ class Config:
     resolver_session_token: str | None = field(default=None, repr=False)
     streamlink_bin: str = "streamlink"
     ffmpeg_bin: str = "ffmpeg"
+
+    @property
+    def ai_challenge(self) -> str:
+        """Fingerprint slug, derived from the challenge name (default 'minecraft-1v1', unchanged)."""
+        return challenge_slug(self.ai_challenge_name)
+
+    def ai_resolver_reserve_requests(self) -> int:
+        """Daily requests only the resolver may use (rounded up, integer math)."""
+        bp = round(self.ai_resolver_reserve * 10_000)
+        return min(self.ai_daily_budget, max(0, (self.ai_daily_budget * bp + 9_999) // 10_000))
 
     @property
     def source_kind(self) -> str:
@@ -130,6 +154,13 @@ class Config:
                 problems.append("FAZETIME_AI_RESOLVE_RULE must be DEATH_MESSAGE_REQUIRED or DEATH_OR_SPOKEN")
             if len(self.ai_participants) != 2:
                 problems.append("FAZETIME_AI_PARTICIPANTS must name exactly two participants")
+            name = self.ai_challenge_name or ""
+            if not (0 < len(name) <= 40) or re.search(r"[\x00-\x1f\x7f]", name) or not self.ai_challenge:
+                problems.append("FAZETIME_AI_CHALLENGE must be 1-40 printable characters with a letter or digit")
+            if not 0.0 <= self.ai_resolver_reserve < 1.0:
+                problems.append("FAZETIME_AI_RESOLVER_RESERVE must be a fraction in [0, 1) or a percentage like 40%")
+            elif self.ai_proposer and self.ai_daily_budget - self.ai_resolver_reserve_requests() <= 0:
+                problems.append("FAZETIME_AI_RESOLVER_RESERVE leaves the proposer no daily requests")
         return problems
 
     def public_dict(self) -> dict:
@@ -141,6 +172,8 @@ class Config:
                 out[f.name + "_present"] = bool(v)
                 continue
             out[f.name] = str(v) if isinstance(v, Path) else v
+        out["ai_challenge"] = self.ai_challenge
+        out["ai_resolver_reserve_requests"] = self.ai_resolver_reserve_requests()
         out["source_kind"] = self.source_kind
         out["gemini_key_present"] = bool(os.environ.get("GEMINI_API_KEY"))
         return out
@@ -174,6 +207,8 @@ def from_env() -> Config:
     c.ai_resolver = b(_env("FAZETIME_AI_RESOLVER", "1"))
     c.ai_model = _env("FAZETIME_AI_MODEL", c.ai_model)
     c.ai_daily_budget = int(_env("FAZETIME_AI_DAILY_BUDGET", c.ai_daily_budget))
+    c.ai_resolver_reserve = _fraction(_env("FAZETIME_AI_RESOLVER_RESERVE", c.ai_resolver_reserve))
+    c.ai_challenge_name = " ".join(str(_env("FAZETIME_AI_CHALLENGE", c.ai_challenge_name)).split())
     c.ai_min_interval_s = float(_env("FAZETIME_AI_MIN_INTERVAL_S", c.ai_min_interval_s))
     c.ai_timeout_s = float(_env("FAZETIME_AI_TIMEOUT_S", c.ai_timeout_s))
     mr = lambda v: None if str(v).lower() in ("", "default", "none") else v  # noqa: E731

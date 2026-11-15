@@ -5,7 +5,8 @@ Flow per tick (the AI thread calls ``tick()`` about once a second):
    (alias-matched, e.g. "face Gavin") plus a challenge keyword ("1v1", "fight", "versus"...). Further local gates
    run before any model call: fingerprint not used/rejected in this run, no nonterminal market, no countdown /
    death / "X wins" cue already in the window (too late), no instruction-like text, new transcript since the last
-   call, a minimum gap between calls and a per-epoch call cap.
+   call, a minimum gap between calls, a call cap per (source epoch, demo run) and the proposer's share of the
+   daily budget (the rest is reserved for the resolver). A run reset clears the cap, fingerprints and API pauses.
 2. One structured Gemini call (``ProposalOut``). Abstention is a first-class answer.
 3. Deterministic validation: schema, known distinct subjects actually present in the cited transcript spans,
    future tense, not started, outcome not visible, cited handles exist, fingerprint unused, lead time feasible,
@@ -89,15 +90,16 @@ def sanitize(text: str, limit: int) -> str:
 PREDICATE_MAX = 200  # CONTRACTS §9.17 / API SideTerms.predicate (Text200)
 
 
-def predicates(a: str, b: str, rule: str) -> tuple[str, str] | None:
-    """Side-keyed predicates; each names its own winner first (API sides_paired). None if too long."""
+def predicates(a: str, b: str, rule: str, challenge: str = "Minecraft 1v1") -> tuple[str, str] | None:
+    """Side-keyed predicates; each names its own winner first (API sides_paired). None if too long.
+    ``challenge`` is the configured challenge name (FAZETIME_AI_CHALLENGE), never model text."""
     def one(w, l):
         if rule == "DEATH_OR_SPOKEN":
-            forms = [f'{w} wins the Minecraft 1v1 against {l}: death message shows {l} killed by {w}, or the '
+            forms = [f'{w} wins the {challenge} against {l}: death message shows {l} killed by {w}, or the '
                      f'stream says "{w} wins" with no contradicting cue.',
                      f'{w} wins the 1v1 against {l}: death message {l} killed by {w}, or "{w} wins" spoken.']
         else:
-            forms = [f'{w} wins the announced Minecraft 1v1 against {l}: the decisive in-game death message shows '
+            forms = [f'{w} wins the announced {challenge} against {l}: the decisive in-game death message shows '
                      f'{l} killed by {w} (e.g. "{l} was slain by {w}").',
                      f"{w} wins the 1v1 against {l}: the decisive death message shows {l} killed by {w}."]
         return next((f for f in forms if len(f) <= PREDICATE_MAX), None)
@@ -115,14 +117,14 @@ CANCELLATION = [
 
 def make_candidate(cfg, a: str, b: str, evidence_ids: list, announced_at_media_ms: int, close_in_s: int,
                    rationale: str, model: str) -> dict | None:
-    preds = predicates(a, b, cfg.ai_resolve_rule)
+    preds = predicates(a, b, cfg.ai_resolve_rule, cfg.ai_challenge_name)
     if preds is None:
         return None
     yes_p, no_p = preds
     return {
         "candidate_id": str(uuid.uuid4()), "template_id": TEMPLATE_ID,
         "episode_fingerprint": fingerprint((a, b), cfg.ai_challenge),
-        "question": f"Will {a} win the Minecraft 1v1 against {b}?"[:200],
+        "question": f"Will {a} win the {cfg.ai_challenge_name} against {b}?"[:200],
         "yes": {"label": a[:40], "predicate": yes_p}, "no": {"label": b[:40], "predicate": no_p},
         "subjects": [a, b], "evidence_ids": evidence_ids[:20], "announced_at_media_ms": int(announced_at_media_ms),
         "suggested_close_in_s": int(close_in_s), "suggested_resolve_in_s": int(cfg.ai_resolve_in_s),
@@ -140,10 +142,15 @@ class Registry:
         self.used: set = set()
         self.run_id: str | None = None
 
-    def set_run(self, run_id):
+    def set_run(self, run_id) -> bool:
+        """A new demo run (the operator resets the run between takes): forget the episodes and candidates this
+        worker submitted. The API scopes episodes to the run, so the same take may be proposed again."""
         with self.lock:
             if run_id and run_id != self.run_id:
                 self.run_id, self.used = run_id, set()
+                self.by_id.clear()  # old-run candidates can no longer be approved (API: WRONG_RUN)
+                return True
+            return False
 
     def add(self, cand: dict, status: str, market_id: str | None):
         with self.lock:
@@ -202,11 +209,15 @@ class Proposer:
         self.trace = trace or Trace(None)
         self.clock, self.sleep = clock, sleep
         self.participants = list(cfg.ai_participants)
+        # Per-scope state. A scope is one source epoch AND one demo run: the operator resets the run between
+        # takes (new stream_session_id from the heartbeat) while the Twitch epoch usually stays the same.
         self.epoch: str | None = None
-        self.calls_this_epoch = 0
+        self.run_id: str | None = None
+        self.scope_calls = 0  # model calls in this scope, capped by ai_proposer_max_calls_per_epoch
         self.last_seq_called = 0
-        self.last_call = -1e18
+        self.last_call = -1e18  # pacing (min gap) is not scope state: it survives a reset
         self.paused_until = -1e18
+        self.pause_kind: str | None = None  # QUOTA (provider-wide, survives a run reset) or API (this run)
         self.counts: dict = {}
 
     def _count(self, outcome: str) -> str:
@@ -214,14 +225,34 @@ class Proposer:
         self.counts[key] = self.counts.get(key, 0) + 1
         return outcome
 
+    def _pause(self, seconds: float, kind: str):
+        self.paused_until, self.pause_kind = self.clock() + seconds, kind
+
+    def _sync_scope(self, view):
+        """Reset the per-scope state on a new source epoch or a new demo run. The Gemini daily budget (Gate)
+        and a provider quota pause are global and are kept."""
+        self.registry.set_run(view.run_id)  # run-scoped fingerprints and submitted candidates
+        if view.run_id and view.run_id != self.run_id:
+            previous, self.run_id = self.run_id, view.run_id
+            if previous is not None:  # a reset, not the first run this process learned
+                calls = self.scope_calls
+                self.scope_calls, self.last_seq_called = 0, 0
+                if self.pause_kind != "QUOTA":
+                    self.paused_until, self.pause_kind = -1e18, None
+                log.info("proposer: new demo run; call cap, fingerprints and API pauses reset (calls_before=%d)",
+                         calls)
+                self.trace.write({"role": "proposer", "outcome": "RUN_CHANGED", "epoch": view.epoch,
+                                  "run": view.run_id, "previous_run": previous, "calls_before": calls,
+                                  "prompt_version": PROMPT_VERSION})
+        if view.epoch and view.epoch != self.epoch:
+            self.epoch, self.scope_calls, self.last_seq_called = view.epoch, 0, 0
+
     # ---- gates ------------------------------------------------------------------------------------------
     def tick(self) -> str:
         view = self.ctx.view()
-        self.registry.set_run(view.run_id)
+        self._sync_scope(view)
         if not view.epoch or view.media_now_ms is None:
             return "NO_EPOCH"
-        if view.epoch != self.epoch:
-            self.epoch, self.calls_this_epoch, self.last_seq_called = view.epoch, 0, 0
         now = self.clock()
         if now < self.paused_until:
             return "PAUSED"
@@ -246,8 +277,11 @@ class Proposer:
             return self._count(self._log("TOO_LATE_OR_OUTCOME_VISIBLE", view))
         if now - self.last_call < self.cfg.ai_proposer_min_gap_s:
             return "DEBOUNCE"
-        if self.calls_this_epoch >= self.cfg.ai_proposer_max_calls_per_epoch:
-            return "EPOCH_CAP"
+        if self.scope_calls >= self.cfg.ai_proposer_max_calls_per_epoch:
+            return "EPOCH_CAP"  # per (epoch, run) scope; the name is kept for existing telemetry
+        gate = getattr(self.gemini, "gate", None)
+        if gate is not None and gate.remaining("proposer") <= 0 < gate.remaining():
+            return "RESERVED_FOR_RESOLVER"  # cheap pre-check (no context/ffmpeg work); Gate.acquire enforces it
         frames = self._frames(view, now)
         if self.cfg.ai_evidence_refs == "frames" and not frames:
             return "NO_FRAME_EVIDENCE"
@@ -279,18 +313,18 @@ class Proposer:
         try:
             res = self.gemini.generate_json(system=SYSTEM_RULES + "\n\n" + TASK, parts=built.parts,
                                             schema=model_schema(ProposalOut),
-                                            media_resolution=self.cfg.ai_media_resolution)
+                                            media_resolution=self.cfg.ai_media_resolution, role="proposer")
         except Unavailable as u:
             return "GEMINI_UNAVAILABLE:" + u.reason
         except CallError as e:
             self.last_call, self.last_seq_called = now, newest
-            self.calls_this_epoch += 1
+            self.scope_calls += 1
             if e.kind == "QUOTA":
-                self.paused_until = self.clock() + 60.0
+                self._pause(60.0, "QUOTA")
                 return self._log("QUOTA_PAUSED", view)
             return self._log("MODEL_ERROR:" + e.kind, view)
         self.last_call, self.last_seq_called = now, newest
-        self.calls_this_epoch += 1
+        self.scope_calls += 1
         meta = {"model": self.gemini.model, "model_version": res.model_version, "latency_ms": res.latency_ms,
                 "media_resolution": self.cfg.ai_media_resolution or "default",
                 "usage": res.usage, "context": built.meta, "image_bytes": built.image_bytes,
@@ -363,7 +397,7 @@ class Proposer:
             code = res.code or (str(res.status) if res.status else res.error)
             if code == "STALE_EPOCH":
                 return self._log("REJECT:STALE_EPOCH", view, **meta)
-            self.paused_until = self.clock() + 20.0
+            self._pause(20.0, "API")
             return self._log("POST_FAILED:" + str(code), view, **meta)
         status = rb.get("status") or "DRY_RUN"
         reject = rb.get("reject_code")
@@ -376,6 +410,5 @@ class Proposer:
             return self._log("POSTED:" + status, view, **meta)
         if reject in ("DUPLICATE_EPISODE", "INSUFFICIENT_LEAD"):
             self.registry.used.add(fp)
-        pause = {"MARKET_BUSY": 30.0, "AI_OFF": 120.0, "SOURCE_NOT_LIVE": 10.0}.get(reject, 20.0)
-        self.paused_until = self.clock() + pause
+        self._pause({"MARKET_BUSY": 30.0, "AI_OFF": 120.0, "SOURCE_NOT_LIVE": 10.0}.get(reject, 20.0), "API")
         return self._log("REJECTED:" + str(reject), view, **meta)
