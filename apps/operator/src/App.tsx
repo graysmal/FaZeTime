@@ -13,6 +13,7 @@ import { MarketPanel } from './ui/MarketPanel';
 import { RunPanel } from './ui/RunPanel';
 import { SignIn } from './ui/SignIn';
 import { StatusHeader } from './ui/StatusHeader';
+import { OdysseySky, ThemeSwitch, useTheme } from './ui/theme';
 
 function DemoLabel() {
   return <span className="demo-pill">DEMO · TEST MONEY ONLY</span>;
@@ -60,12 +61,14 @@ function Dashboard({ client, session, onSignOut }: { client: OperatorClient; ses
   const serverNowMs =
     health.data && health.okAt !== null ? Date.parse(health.data.server_time_utc) + Math.max(0, now - health.okAt) : null;
   const refresh = health.refresh;
+  const [theme, setTheme] = useTheme();
 
   return (
     <div className="app">
+      {theme === 'enrage' && <OdysseySky />}
       <header className="topbar">
         <h1>
-          FaZeTime <span className="accent">Operator</span>
+          Fa<span className="logo-ze">Ze</span>Time <span className="accent">Operator</span>
         </h1>
         <DemoLabel />
         {(ai?.pending_candidates ?? 0) > 0 && (
@@ -79,6 +82,7 @@ function Dashboard({ client, session, onSignOut }: { client: OperatorClient; ses
           </span>
         )}
         <span className="spacer" />
+        <ThemeSwitch theme={theme} onChange={setTheme} />
         <a className="btn small" href="#" data-testid="demo-view-link">
           Demo view
         </a>

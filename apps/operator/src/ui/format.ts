@@ -1,12 +1,25 @@
 // Display-only formatting. Money is integer minor units (100 = one demo dollar); never floats.
 
+/**
+ * Display currency (owner request, 2026-11-15): the Odyssey (Θ) theme shows drachmas at 1 ₯ = $1. Display only:
+ * every amount stays in integer cents end to end, and the server, Stripe and the ledger never see a drachma.
+ */
+export type DisplayCurrency = 'USD' | 'DRACHMA';
+let displayCurrency: DisplayCurrency = 'USD';
+export function setDisplayCurrency(c: DisplayCurrency): void {
+  displayCurrency = c;
+}
+export function currencySymbol(): string {
+  return displayCurrency === 'DRACHMA' ? '₯' : '$';
+}
+
 export function formatMinor(minor: number | null | undefined): string {
   if (typeof minor !== 'number' || !Number.isSafeInteger(minor)) return '?';
   const sign = minor < 0 ? '-' : '';
   const abs = Math.abs(minor);
   const dollars = Math.trunc(abs / 100);
   const cents = abs % 100;
-  return `${sign}$${dollars.toLocaleString('en-US')}.${cents.toString().padStart(2, '0')}`;
+  return `${sign}${currencySymbol()}${dollars.toLocaleString('en-US')}.${cents.toString().padStart(2, '0')}`;
 }
 
 /** Milliseconds between two RFC 3339 instants (b − a), or null if either is missing/invalid. */

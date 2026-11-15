@@ -248,7 +248,7 @@ describe('DemoView', () => {
     mounted = await mount(<DemoView client={client} />);
     const c = mounted.container;
     await waitFor(() => c.textContent?.includes('Waiting for the AI to spot a bet'));
-    expect(c.querySelector('header')!.textContent).toBe('FaZeTimeOFFLINE');
+    expect(c.querySelector('header')!.textContent).toBe('FaZeTimeOFFLINEFΘ');
     expect(c.textContent).not.toMatch(/mkt_|run_|str_|ep_|DEMO|test money|OPERATOR_FIXTURE/);
     expect(c.querySelector('[data-testid="advanced-link"]')!.getAttribute('href')).toBe('#advanced');
     expect(byText(c, 'button', 'Sign out')).toBeNull();
@@ -445,14 +445,14 @@ describe('DemoView: §9.19 generic candidates', () => {
     expect(h.body).not.toHaveProperty('close_in_s');
   });
 
-  it('shows one small kind line plus the YES / NO rules, tolerates no subjects, and never shows the cues', async () => {
+  it('shows no kind line above the question, only the YES / NO rules; tolerates no subjects and never shows the cues', async () => {
     const kinds: [string, string, Record<string, unknown>][] = [
       ['EPISODE_OUTCOME', 'Outcome', { win_verb: 'clear' }],
       ['END_VALUE_AT_LEAST', 'Number', { label: 'time left', threshold: 30 }],
       ['SAY_PHRASE', 'Heard on stream', { phrase: 'rush' }],
       ['DURATION_OVER', 'Duration', { duration_s: 90 }],
     ];
-    for (const [kind, label, params] of kinds) {
+    for (const [kind, , params] of kinds) {
       const g = genericCandidate({
         generic: { spec_version: 'gen-1', kind, unit: 'round', params, episode_start_media_ms: 5_000, ...CUES },
         subjects: kind === 'SAY_PHRASE' ? ['FaZeGavin'] : [],
@@ -461,7 +461,8 @@ describe('DemoView: §9.19 generic candidates', () => {
       mounted = await mount(<DemoView client={client} />);
       const c = mounted.container;
       await waitFor(() => card(c)?.dataset.state === 'candidate');
-      expect(c.querySelector('[data-testid="demo-kind"]')!.textContent).toBe(label);
+      expect(c.querySelector('[data-testid="demo-kind"]')).toBeNull();
+      expect(c.textContent).not.toMatch(/^Number/);
       const rules = c.querySelector('[data-testid="demo-rules"]')!;
       expect(rules.querySelector('.demo-rule.yes')!.textContent).toBe(YES_RULE); // already says YES: no repeated label
       expect(rules.querySelector('.demo-rule.no')!.textContent).toBe(NO_RULE);
@@ -565,5 +566,30 @@ describe('client: D35 silent re-open', () => {
     mode = '404';
     expect(await reopen()).toBe('invite_mode');
     expect(onInviteMode).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('DemoView: CALM / ENRAGE theme switch (owner request 2026-11-15)', () => {
+  it('defaults to CALM (FaZe); ENRAGE switches to the Odyssey theme, adds the sky, and is remembered', async () => {
+    try {
+      window.localStorage.removeItem('fazetime.operator.theme');
+    } catch {
+      /* storage may be unavailable in the test DOM */
+    }
+    const { client } = api({ health: healthBody({ ai: AI }) });
+    mounted = await mount(<DemoView client={client} />);
+    const c = mounted.container;
+    await waitFor(() => c.querySelector('[data-testid="theme-switch"]'));
+    expect(document.documentElement.dataset.theme).toBe('faze');
+    expect(c.querySelector('.ody-sky')).toBeNull();
+    const enrage = c.querySelector('button[aria-label="Odyssey theme"]')!;
+    expect(enrage.getAttribute('aria-checked')).toBe('false');
+    await click(enrage);
+    await waitFor(() => document.documentElement.dataset.theme === 'odyssey');
+    expect(c.querySelector('.ody-sky')).not.toBeNull();
+    expect(c.querySelector('button[aria-label="Odyssey theme"]')!.getAttribute('aria-checked')).toBe('true');
+    await click(c.querySelector('button[aria-label="FaZe theme"]') as HTMLElement);
+    await waitFor(() => document.documentElement.dataset.theme === 'faze');
+    expect(c.querySelector('.ody-sky')).toBeNull();
   });
 });

@@ -1202,3 +1202,1229 @@ label.inline-field input {
     opacity: 0.6;
   }
 }
+
+/* =============================================================================================================
+   FaZe theme for the demo view (scoped to .demo so #advanced keeps its compact look).
+   Type: FaZed Sans (titles; letters only, Anton covers digits and punctuation per glyph), Anton (headlines and
+   numbers), Source Sans Pro Black (subtext and body). Texture: the DiamondPatterns artwork. Shapes: cut corners.
+   ============================================================================================================= */
+@font-face {
+  font-family: 'FaZed Sans';
+  src: url('./assets/fonts/Sample_FaZed_Sans.otf') format('opentype');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Anton';
+  src: url('./assets/fonts/Anton-Regular.ttf') format('truetype');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Source Sans Pro';
+  src: url('./assets/fonts/SourceSansPro-Black.ttf') format('truetype');
+  font-weight: 900;
+  font-display: swap;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.demo {
+  --font-title: 'FaZed Sans', 'Anton', Impact, sans-serif;
+  --font-head: 'Anton', Impact, 'Arial Narrow', sans-serif;
+  --font-body: 'Source Sans Pro', system-ui, sans-serif;
+  --faze-red: #e4002b;
+  --faze-hot: #ff1f4b;
+  --edge: #3a2026;
+  --cut: 18px;
+  --cut-sm: 8px;
+  --chamfer: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+  --chamfer-sm: polygon(var(--cut-sm) 0, 100% 0, 100% calc(100% - var(--cut-sm)), calc(100% - var(--cut-sm)) 100%, 0 100%, 0 var(--cut-sm));
+  position: relative;
+  isolation: isolate;
+  font-family: var(--font-body);
+  font-weight: 900;
+}
+/* Faint diamond shards behind the whole page. */
+.demo::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(ellipse at 50% 40%, rgba(12, 13, 16, 0.78), rgba(12, 13, 16, 0.94) 70%),
+    url('./assets/diamond.jpg') center / cover no-repeat,
+    var(--bg);
+  pointer-events: none;
+}
+
+/* ---- header ---- */
+.demo-top h1 {
+  font-family: var(--font-title);
+  font-weight: 400;
+  font-size: 44px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: #fff;
+  text-shadow: 0 0 18px rgba(228, 0, 43, 0.45);
+}
+.stream-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-head);
+  font-weight: 400;
+  font-size: 16px;
+  letter-spacing: 0.12em;
+  padding: 5px 14px 5px 12px;
+  border-radius: 0;
+  clip-path: var(--chamfer-sm);
+}
+.stream-pill.live {
+  background: rgba(228, 0, 43, 0.16);
+  border-color: var(--faze-red);
+  color: #fff;
+}
+.rec-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--faze-hot);
+  box-shadow: 0 0 0 0 rgba(255, 31, 75, 0.7);
+  animation: rec-blink 1.2s ease-in-out infinite;
+}
+@keyframes rec-blink {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(255, 31, 75, 0.6);
+  }
+  50% {
+    opacity: 0.35;
+    box-shadow: 0 0 0 5px rgba(255, 31, 75, 0);
+  }
+}
+
+/* ---- the big card: cut corners, an edge layer, and the diamond texture inside ---- */
+.demo-card {
+  position: relative;
+  isolation: isolate;
+  background: var(--faze-red);
+  border: none;
+  border-radius: 0;
+  clip-path: var(--chamfer);
+  animation: card-in 0.35s ease-out both;
+}
+.demo-card::before {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  z-index: -1;
+  clip-path: var(--chamfer);
+  background:
+    linear-gradient(180deg, rgba(10, 10, 13, 0.7), rgba(10, 10, 13, 0.88)),
+    url('./assets/diamond.jpg') center / cover no-repeat,
+    #0b0b0e;
+}
+.demo-card[data-state='candidate'],
+.demo-card[data-state='suggestion'],
+.demo-card[data-state='fixture_call'] {
+  background: var(--faze-hot);
+  animation: card-in 0.35s ease-out both;
+}
+/* Needs-action cards: the shards show through more, and a red flash plays twice. */
+.demo-card[data-state='candidate']::before,
+.demo-card[data-state='suggestion']::before,
+.demo-card[data-state='fixture_call']::before {
+  background:
+    linear-gradient(180deg, rgba(10, 10, 13, 0.55), rgba(10, 10, 13, 0.82)),
+    url('./assets/diamond.jpg') center / cover no-repeat,
+    #0b0b0e;
+}
+.demo-card[data-state='candidate']::after,
+.demo-card[data-state='suggestion']::after,
+.demo-card[data-state='fixture_call']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: rgba(228, 0, 43, 0.28);
+  opacity: 0;
+  animation: card-flash 1.2s ease-out 2;
+}
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+}
+@keyframes card-flash {
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ---- type ---- */
+.demo-question {
+  font-family: var(--font-head);
+  font-weight: 400;
+  font-size: 46px;
+  line-height: 1.08;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  color: #fff;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6);
+}
+.demo-question.small {
+  font-size: 26px;
+  font-weight: 400;
+  color: #c9ccd3;
+}
+.demo-rules {
+  font-family: var(--font-body);
+  font-weight: 900;
+  font-size: 18px;
+  gap: 6px;
+}
+.demo-rule-side {
+  font-family: var(--font-head);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+}
+.demo-caption {
+  font-family: var(--font-body);
+  font-weight: 900;
+  font-size: 15px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  margin-top: -6px;
+}
+.demo-pool {
+  font-family: var(--font-head);
+  font-weight: 400;
+  font-size: 28px;
+  letter-spacing: 0.03em;
+}
+.demo-status,
+.demo-wait {
+  font-family: var(--font-body);
+  font-weight: 900;
+  font-size: 26px;
+}
+.demo-wait.small {
+  font-size: 17px;
+}
+.demo-verdict {
+  font-family: var(--font-head);
+  font-weight: 400;
+  font-size: 52px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.demo-error {
+  font-family: var(--font-body);
+  font-weight: 900;
+}
+.demo-chip {
+  font-family: var(--font-head);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  border-radius: 0;
+  clip-path: var(--chamfer-sm);
+}
+.demo-link {
+  font-family: var(--font-body);
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+
+/* Diamonds instead of round dots. */
+.watch-dots > span {
+  border-radius: 0;
+  transform: rotate(45deg);
+}
+
+/* ---- buttons: cut corners, glaze sweep and a zoom-out/zoom-in on hover ---- */
+.demo-btn {
+  position: relative;
+  overflow: hidden;
+  font-family: var(--font-head);
+  font-weight: 400;
+  font-size: 26px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-radius: 0;
+  clip-path: var(--chamfer-sm);
+  transition:
+    filter 0.2s ease,
+    background-color 0.2s ease;
+}
+.demo-btn.small {
+  font-size: 16px;
+  border-radius: 0;
+}
+.demo-btn.stop {
+  background: rgba(255, 90, 95, 0.08);
+}
+.demo-btn::after {
+  content: '';
+  position: absolute;
+  top: -20%;
+  bottom: -20%;
+  left: -60%;
+  width: 45%;
+  pointer-events: none;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.55) 45%, rgba(255, 255, 255, 0.85) 50%, transparent 60%);
+  transform: skewX(-20deg);
+  opacity: 0;
+}
+.demo-actions .demo-btn:hover:not(:disabled) {
+  animation: btn-pump 0.42s cubic-bezier(0.3, 0.7, 0.4, 1) forwards;
+  filter: brightness(1.08) saturate(1.1);
+}
+.demo-actions .demo-btn:hover:not(:disabled)::after {
+  animation: btn-glaze 0.7s ease-out forwards;
+}
+.demo-actions .demo-btn.stop:hover:not(:disabled) {
+  background: rgba(255, 90, 95, 0.2);
+  color: #fff;
+}
+.demo-actions .demo-btn.stop::after {
+  background: linear-gradient(100deg, transparent, rgba(255, 140, 145, 0.45) 45%, rgba(255, 220, 222, 0.75) 50%, transparent 60%);
+}
+@keyframes btn-pump {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(0.95);
+  }
+  100% {
+    transform: scale(1.06);
+  }
+}
+@keyframes btn-glaze {
+  0% {
+    left: -60%;
+    opacity: 1;
+  }
+  100% {
+    left: 130%;
+    opacity: 1;
+  }
+}
+
+/* ---- inputs in the test-bet form ---- */
+.demo-testbet input {
+  border-radius: 0;
+  clip-path: var(--chamfer-sm);
+  font-family: var(--font-body);
+  font-weight: 900;
+}
+.demo-testbet label span {
+  font-family: var(--font-body);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* ---- split-flap countdown ---- */
+.flip-clock {
+  --flip-ms: 460ms;
+  --digit-w: 0.74em;
+  --digit-h: 1.18em;
+  font-family: var(--font-head);
+  font-size: 92px;
+  line-height: 1;
+  color: #f5f5f7;
+  user-select: none;
+}
+.flip-clock.urgent {
+  color: var(--warn);
+}
+.flip-clock.late {
+  color: var(--bad);
+}
+.flip-face {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.08em;
+}
+.flip-digit {
+  position: relative;
+  display: inline-block;
+  width: var(--digit-w);
+  height: var(--digit-h);
+  perspective: 3.5em;
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.6));
+}
+.flip-half,
+.flip-flap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 50%;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(0, 0, 0, 0.25)),
+    #1a1b21;
+  backface-visibility: hidden;
+}
+.flip-half.top,
+.flip-flap.top {
+  top: 0;
+  clip-path: polygon(0.12em 0, 100% 0, 100% 100%, 0 100%, 0 0.12em);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.85);
+}
+.flip-half.bottom,
+.flip-flap.bottom {
+  bottom: 0;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 0.12em), calc(100% - 0.12em) 100%, 0 100%);
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.18), rgba(255, 255, 255, 0.03)),
+    #16171c;
+}
+.flip-half > span,
+.flip-flap > span {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: var(--digit-h);
+  line-height: var(--digit-h);
+  text-align: center;
+}
+.flip-half.top > span,
+.flip-flap.top > span {
+  top: 0;
+}
+.flip-half.bottom > span,
+.flip-flap.bottom > span {
+  bottom: 0;
+}
+.flip-flap.top {
+  transform-origin: 50% 100%;
+  z-index: 2;
+  animation: flap-down-top calc(var(--flip-ms) / 2) ease-in forwards;
+}
+.flip-flap.bottom {
+  transform-origin: 50% 0;
+  z-index: 2;
+  transform: rotateX(90deg);
+  animation: flap-down-bottom calc(var(--flip-ms) / 2) ease-out calc(var(--flip-ms) / 2) forwards;
+}
+@keyframes flap-down-top {
+  to {
+    transform: rotateX(-90deg);
+    filter: brightness(0.55);
+  }
+}
+@keyframes flap-down-bottom {
+  from {
+    transform: rotateX(90deg);
+    filter: brightness(1.4);
+  }
+  to {
+    transform: rotateX(0deg);
+    filter: brightness(1);
+  }
+}
+.flip-colon {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.22em;
+  padding: 0 0.04em;
+}
+.flip-colon > i {
+  display: block;
+  width: 0.11em;
+  height: 0.11em;
+  background: currentColor;
+  transform: rotate(45deg);
+}
+
+/* ---- volume: click to mute, press and drag to set ---- */
+.vol {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  color: var(--text);
+  clip-path: var(--chamfer-sm);
+  cursor: ew-resize;
+  touch-action: none;
+  font-family: var(--font-body);
+  font-weight: 900;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+}
+.vol:hover {
+  border-color: var(--faze-red);
+}
+.vol:focus-visible {
+  outline: 3px solid var(--info);
+  outline-offset: 2px;
+}
+.vol.muted {
+  color: var(--muted);
+}
+.vol-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 18px;
+}
+.vol-bars > span {
+  width: 5px;
+  background: rgba(255, 255, 255, 0.14);
+  transform: skewX(-14deg);
+  transition: background-color 0.08s linear;
+}
+.vol-bars > span:nth-child(1) { height: 30%; }
+.vol-bars > span:nth-child(2) { height: 44%; }
+.vol-bars > span:nth-child(3) { height: 58%; }
+.vol-bars > span:nth-child(4) { height: 72%; }
+.vol-bars > span:nth-child(5) { height: 86%; }
+.vol-bars > span:nth-child(6) { height: 100%; }
+.vol-bars > span.on {
+  background: var(--faze-red);
+}
+.vol.dragging .vol-bars > span.on {
+  background: var(--faze-hot);
+  box-shadow: 0 0 6px rgba(255, 31, 75, 0.7);
+}
+.vol-pct {
+  min-width: 4.4em;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rec-dot,
+  .demo-card,
+  .demo-card::after,
+  .demo-actions .demo-btn:hover:not(:disabled),
+  .demo-actions .demo-btn:hover:not(:disabled)::after,
+  .flip-flap {
+    animation: none !important;
+  }
+  .flip-flap {
+    display: none;
+  }
+}
+
+/* ---- YES / NO tags in the LIVE pill style (tinted, cut corners, a glowing dot) ---- */
+.demo-rules {
+  align-items: flex-start;
+  gap: 10px;
+}
+.demo-rule .side-tag {
+  min-width: 70px;
+  justify-content: center;
+}
+.demo-rule {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+}
+.demo-rule-text {
+  color: #e8e9ec;
+}
+.side-tag {
+  --tag: var(--ok);
+  --tag-bg: rgba(47, 191, 113, 0.16);
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-head);
+  font-weight: 400;
+  font-size: 16px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #fff;
+  padding: 5px 14px 5px 12px;
+  background: var(--tag-bg);
+  border: 1px solid var(--tag);
+  clip-path: var(--chamfer-sm);
+}
+.side-tag[data-side='no'] {
+  --tag: var(--faze-red);
+  --tag-bg: rgba(228, 0, 43, 0.16);
+}
+.side-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--tag);
+  box-shadow: 0 0 8px var(--tag);
+}
+.demo-chip.side-tag {
+  font-size: 22px;
+  padding: 7px 18px 7px 14px;
+  color: #fff;
+}
+.demo-chip.side-tag .side-dot {
+  width: 12px;
+  height: 12px;
+}
+
+/* ---- "until betting CLOSES": the key word pops in FaZe red ---- */
+.demo-caption-hot {
+  color: var(--faze-hot);
+  text-shadow: 0 0 12px rgba(255, 31, 75, 0.55);
+}
+
+/* ---- hover glaze + zoom on every demo button (Approve/Reject, results, Reset, Open bet) ---- */
+.demo .demo-btn:hover:not(:disabled) {
+  animation: btn-pump 0.42s cubic-bezier(0.3, 0.7, 0.4, 1) forwards;
+  filter: brightness(1.08) saturate(1.1);
+}
+.demo .demo-btn:hover:not(:disabled)::after {
+  animation: btn-glaze 0.7s ease-out forwards;
+}
+
+/* =============================================================================================================
+   Advanced console (#advanced): same type system. Titles FaZed Sans, headings and buttons Anton, body Source
+   Sans Black. IDs and codes stay monospace so they remain easy to read and compare.
+   ============================================================================================================= */
+.app {
+  font-family: 'Source Sans Pro', system-ui, sans-serif;
+  font-weight: 900;
+}
+.app h1 {
+  font-family: 'FaZed Sans', 'Anton', Impact, sans-serif;
+  font-weight: 400;
+  font-size: 26px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+.app h2,
+.app h3 {
+  font-family: 'Anton', Impact, sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.app h2 {
+  font-size: 18px;
+}
+.app h3 {
+  font-size: 13px;
+}
+.app .btn {
+  font-family: 'Anton', Impact, sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.app input,
+.app select,
+.app textarea {
+  font-family: 'Source Sans Pro', system-ui, sans-serif;
+  font-weight: 900;
+}
+.app .demo-label,
+.app .demo-pill,
+.app .badge {
+  font-family: 'Anton', Impact, sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+}
+.app code,
+.app .mono {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-weight: 400;
+}
+
+/* Logo: the ZE in FaZeTime in FaZe red. */
+.logo-ze {
+  color: var(--faze-red, #e4002b);
+  text-shadow: 0 0 14px rgba(228, 0, 43, 0.65);
+}
+
+
+/* =============================================================================================================
+   ENRAGE = Odyssey theme (owner request, 2026-11-15). Parchment and navy, Greek key borders, Cinzel titles,
+   Barlow Semi Condensed labels, a drifting pixel storm behind everything. Scoped to html[data-theme='odyssey']
+   so CALM (the FaZe theme above) is untouched.
+   ============================================================================================================= */
+@font-face {
+  font-family: 'Cinzel';
+  src: url('./assets/fonts/Cinzel.woff') format('woff');
+  font-weight: 400 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Barlow SC';
+  src: url('./assets/fonts/BarlowSemiCondensed-Medium.woff') format('woff');
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Barlow SC';
+  src: url('./assets/fonts/BarlowSemiCondensed-SemiBold.woff') format('woff');
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Barlow SC';
+  src: url('./assets/fonts/BarlowSemiCondensed-Bold.woff') format('woff');
+  font-weight: 700;
+  font-display: swap;
+}
+
+:root {
+  --meander: url('./assets/meander.svg');
+}
+
+/* ---- the switch (both themes) ---- */
+.theme-switch {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  isolation: isolate;
+}
+.theme-opt {
+  position: relative;
+  z-index: 1;
+  min-width: 78px;
+  padding: 8px 14px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  transition: color 0.25s ease;
+}
+.theme-thumb {
+  position: absolute;
+  z-index: 0;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc(50% - 4px);
+  transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.theme-switch[data-value='enrage'] .theme-thumb {
+  transform: translateX(100%);
+}
+.theme-opt:focus-visible {
+  outline: 2px solid var(--info);
+  outline-offset: 2px;
+}
+/* CALM look of the switch: FaZe dark, cut corners, red thumb */
+.theme-switch {
+  padding: 4px;
+  background: #15161b;
+  border: 1px solid #3a2026;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+}
+.theme-opt {
+  font-family: 'Anton', Impact, sans-serif;
+  font-size: 14px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #9aa0ab;
+}
+.theme-opt[aria-checked='true'] {
+  color: #fff;
+}
+.theme-thumb {
+  background: #e4002b;
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.2);
+}
+.app .theme-opt {
+  min-width: 64px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+/* ---- ENRAGE: palette (also re-skins the advanced console through its variables) ---- */
+html[data-theme='odyssey'] {
+  --bg: #ebe2d1;
+  --panel: rgba(247, 242, 232, 0.9);
+  --panel-2: #efe7d8;
+  --line: #b9b5aa;
+  --text: #1f3550;
+  --muted: #65717d;
+  --accent: #3a5875;
+  --accent-dim: #8aa0b5;
+  --ok: #2f7a4a;
+  --warn: #a8781c;
+  --bad: #a63a3a;
+  --info: #3a5875;
+  --gold: #b38b2e;
+  --terracotta: #b5532f;
+  color-scheme: light;
+}
+html[data-theme='odyssey'] body {
+  background: var(--bg);
+}
+
+/* the backdrop: canvas pixel storm + rain + rare lightning */
+.ody-sky {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+}
+.ody-sky canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.ody-rain i {
+  position: absolute;
+  top: -20%;
+  width: 1px;
+  height: 90px;
+  background: linear-gradient(180deg, transparent, rgba(80, 86, 92, 0.35));
+  transform: rotate(14deg);
+  animation: ody-rain 2s linear infinite;
+}
+@keyframes ody-rain {
+  to {
+    transform: translate(-28vh, 125vh) rotate(14deg);
+  }
+}
+.ody-flash {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 20% 10%, rgba(255, 252, 240, 0.85), transparent 60%);
+  opacity: 0;
+  animation: ody-flash 11s ease-out infinite 3s;
+}
+@keyframes ody-flash {
+  0%, 90%, 100% { opacity: 0; }
+  91% { opacity: 0.9; }
+  92% { opacity: 0.1; }
+  93.5% { opacity: 0.7; }
+  96% { opacity: 0; }
+}
+
+/* the switch, Odyssey look: rounded parchment pill, navy thumb (as in the reference) */
+html[data-theme='odyssey'] .theme-switch {
+  background: #f3ede2;
+  border: 1px solid #d6cfc1;
+  border-radius: 999px;
+  clip-path: none;
+  box-shadow: 0 2px 10px rgba(31, 53, 80, 0.12), inset 0 0 0 3px #faf6ee;
+}
+html[data-theme='odyssey'] .theme-opt {
+  font-family: 'Barlow SC', 'Arial Narrow', sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: #66727e;
+}
+html[data-theme='odyssey'] .theme-opt[aria-checked='true'] {
+  color: #fff;
+}
+html[data-theme='odyssey'] .theme-thumb {
+  background: #3a5875;
+  border-radius: 999px;
+  clip-path: none;
+  box-shadow: none;
+}
+
+/* ---- ENRAGE: demo view ---- */
+html[data-theme='odyssey'] .demo {
+  --font-title: 'Cinzel', Georgia, serif;
+  --font-head: 'Barlow SC', 'Arial Narrow', sans-serif;
+  --font-body: 'Barlow SC', 'Arial Narrow', sans-serif;
+  font-weight: 500;
+  color: var(--text);
+}
+html[data-theme='odyssey'] .demo::before {
+  display: none;
+}
+html[data-theme='odyssey'] .demo-top h1 {
+  font-weight: 700;
+  font-size: 46px;
+  letter-spacing: 0.04em;
+  color: #1f3550;
+  text-shadow: none;
+}
+html[data-theme='odyssey'] .logo-ze {
+  color: var(--gold);
+  text-shadow: none;
+}
+html[data-theme='odyssey'] .stream-pill {
+  font-family: var(--font-head);
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  clip-path: none;
+  border-radius: 2px;
+}
+html[data-theme='odyssey'] .stream-pill.live {
+  background: #3a5875;
+  border-color: #3a5875;
+  color: #fff;
+}
+html[data-theme='odyssey'] .rec-dot {
+  background: #fff;
+  animation-name: ody-dot;
+}
+@keyframes ody-dot {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.6); }
+  50% { opacity: 0.45; box-shadow: 0 0 0 5px rgba(255, 255, 255, 0); }
+}
+
+/* card: parchment slab, thin stone border, Greek key bands top and bottom */
+html[data-theme='odyssey'] .demo-card {
+  clip-path: none;
+  border-radius: 12px;
+  border: 1px solid #a9a9a2;
+  background:
+    var(--meander) left 14px top 12px / auto 18px repeat-x,
+    var(--meander) left 14px bottom 12px / auto 18px repeat-x,
+    rgba(246, 240, 229, 0.88);
+  background-clip: padding-box;
+  box-shadow: 0 10px 34px rgba(31, 53, 80, 0.14);
+  padding: 52px 36px;
+}
+html[data-theme='odyssey'] .demo-card::before {
+  display: none;
+}
+html[data-theme='odyssey'] .demo-card[data-state='candidate'],
+html[data-theme='odyssey'] .demo-card[data-state='suggestion'],
+html[data-theme='odyssey'] .demo-card[data-state='fixture_call'] {
+  border: 2px solid #3a5875;
+  background:
+    var(--meander) left 14px top 12px / auto 18px repeat-x,
+    var(--meander) left 14px bottom 12px / auto 18px repeat-x,
+    rgba(246, 240, 229, 0.92);
+}
+html[data-theme='odyssey'] .demo-card::after {
+  background: rgba(58, 88, 117, 0.16);
+  border-radius: 12px;
+}
+html[data-theme='odyssey'] .demo-question {
+  font-family: var(--font-title);
+  font-weight: 700;
+  text-transform: none;
+  color: #1f3550;
+  text-shadow: none;
+  letter-spacing: 0.01em;
+}
+html[data-theme='odyssey'] .demo-question.small {
+  color: #4b5b6b;
+}
+html[data-theme='odyssey'] .demo-verdict {
+  font-family: var(--font-title);
+  font-weight: 700;
+  text-transform: none;
+}
+html[data-theme='odyssey'] .demo-rule-text {
+  color: #2b3f57;
+}
+html[data-theme='odyssey'] .demo-caption {
+  font-weight: 600;
+  color: #6c7782;
+}
+html[data-theme='odyssey'] .demo-caption-hot {
+  color: var(--terracotta);
+  text-shadow: none;
+}
+html[data-theme='odyssey'] .demo-pool,
+html[data-theme='odyssey'] .demo-status,
+html[data-theme='odyssey'] .demo-wait {
+  font-weight: 600;
+  color: #4b5b6b;
+}
+html[data-theme='odyssey'] .side-tag {
+  clip-path: none;
+  border-radius: 3px;
+  color: #1f3550;
+  font-weight: 700;
+  --tag: #2f7a4a;
+  --tag-bg: rgba(47, 122, 74, 0.12);
+}
+html[data-theme='odyssey'] .side-tag[data-side='no'] {
+  --tag: var(--terracotta);
+  --tag-bg: rgba(181, 83, 47, 0.12);
+}
+html[data-theme='odyssey'] .side-dot {
+  box-shadow: none;
+}
+
+/* flip clock: outlined stone tiles with navy numerals (the reference countdown) */
+html[data-theme='odyssey'] .flip-clock {
+  font-family: 'Barlow SC', 'Arial Narrow', sans-serif;
+  font-weight: 700;
+  color: #1f3550;
+}
+html[data-theme='odyssey'] .flip-clock.urgent {
+  color: var(--gold);
+}
+html[data-theme='odyssey'] .flip-clock.late {
+  color: var(--bad);
+}
+html[data-theme='odyssey'] .flip-digit {
+  filter: none;
+  border: 1.5px solid #a3a5a2;
+  border-radius: 12px;
+  overflow: hidden;
+  width: 0.86em;
+}
+html[data-theme='odyssey'] .flip-half,
+html[data-theme='odyssey'] .flip-flap {
+  clip-path: none;
+  background: #f4eee3;
+}
+html[data-theme='odyssey'] .flip-half.bottom,
+html[data-theme='odyssey'] .flip-flap.bottom {
+  background: #ede6d8;
+}
+html[data-theme='odyssey'] .flip-half.top,
+html[data-theme='odyssey'] .flip-flap.top {
+  border-bottom: 1px solid rgba(31, 53, 80, 0.14);
+}
+html[data-theme='odyssey'] .flip-colon > i {
+  transform: none;
+  border-radius: 50%;
+}
+
+/* buttons: square navy slab with a glowing dot, like "APPLY" */
+html[data-theme='odyssey'] .demo-btn {
+  clip-path: none;
+  border-radius: 0;
+  font-family: var(--font-head);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+}
+html[data-theme='odyssey'] .demo-btn.go {
+  background:
+    radial-gradient(circle at 30px 50%, #fff 0 5px, rgba(255, 255, 255, 0.16) 6px 13px, transparent 14px),
+    #3a5875;
+  border-color: #3a5875;
+  color: #fff;
+  padding-left: 54px;
+}
+html[data-theme='odyssey'] .demo-btn.go.alt {
+  background:
+    radial-gradient(circle at 30px 50%, #fff 0 5px, rgba(255, 255, 255, 0.16) 6px 13px, transparent 14px),
+    #4f6f8f;
+}
+html[data-theme='odyssey'] .demo-btn.stop {
+  background: rgba(246, 240, 229, 0.7);
+  border-color: #a63a3a;
+  color: #a63a3a;
+}
+html[data-theme='odyssey'] .demo-actions .demo-btn.stop:hover:not(:disabled) {
+  background: rgba(166, 58, 58, 0.1);
+  color: #7d2626;
+}
+html[data-theme='odyssey'] .demo-btn.small {
+  background: rgba(246, 240, 229, 0.85);
+  border-color: #a3a5a2;
+  color: #1f3550;
+}
+html[data-theme='odyssey'] .demo-link {
+  color: #4b5b6b;
+}
+html[data-theme='odyssey'] .demo-link:hover:not(:disabled) {
+  color: #1f3550;
+}
+html[data-theme='odyssey'] .demo-error {
+  color: var(--bad);
+}
+html[data-theme='odyssey'] .watch-dots > span {
+  background: #3a5875;
+}
+html[data-theme='odyssey'] .demo-testbet input {
+  clip-path: none;
+  border-radius: 4px;
+}
+html[data-theme='odyssey'] .vol {
+  clip-path: none;
+  border-radius: 999px;
+  background: #f3ede2;
+  border-color: #d6cfc1;
+  color: #1f3550;
+  padding: 6px 14px 6px 12px;
+}
+html[data-theme='odyssey'] .vol-bars > span {
+  background: rgba(31, 53, 80, 0.14);
+}
+html[data-theme='odyssey'] .vol-bars > span.on {
+  background: #3a5875;
+}
+html[data-theme='odyssey'] .vol.dragging .vol-bars > span.on {
+  background: var(--gold);
+  box-shadow: none;
+}
+
+/* ---- ENRAGE: advanced console ---- */
+html[data-theme='odyssey'] .app {
+  font-family: 'Barlow SC', 'Arial Narrow', sans-serif;
+  font-weight: 500;
+  position: relative;
+  isolation: isolate;
+}
+html[data-theme='odyssey'] .app h1 {
+  font-family: 'Cinzel', Georgia, serif;
+  font-weight: 700;
+}
+html[data-theme='odyssey'] .app h2,
+html[data-theme='odyssey'] .app h3,
+html[data-theme='odyssey'] .app .btn,
+html[data-theme='odyssey'] .app .demo-label,
+html[data-theme='odyssey'] .app .demo-pill,
+html[data-theme='odyssey'] .app .badge {
+  font-family: 'Barlow SC', 'Arial Narrow', sans-serif;
+  font-weight: 600;
+}
+html[data-theme='odyssey'] .app input,
+html[data-theme='odyssey'] .app select,
+html[data-theme='odyssey'] .app textarea {
+  font-family: 'Barlow SC', 'Arial Narrow', sans-serif;
+  font-weight: 500;
+}
+html[data-theme='odyssey'] .topbar {
+  border-top-color: #3a5875;
+  background:
+    var(--meander) left 10px bottom 2px / auto 12px repeat-x,
+    var(--panel);
+  padding-bottom: 16px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ody-rain i,
+  .ody-flash {
+    animation: none !important;
+    opacity: 0;
+  }
+  .theme-thumb {
+    transition: none;
+  }
+}
+
+/* ENRAGE: the advanced console's dark wells become parchment */
+html[data-theme='odyssey'] input,
+html[data-theme='odyssey'] select,
+html[data-theme='odyssey'] textarea,
+html[data-theme='odyssey'] .pool,
+html[data-theme='odyssey'] .countdown,
+html[data-theme='odyssey'] .side-terms {
+  background: #f6f1e6;
+}
+html[data-theme='odyssey'] .countdown .bar {
+  background: #d9d2c3;
+}
+
+/* Switch labels: "FaZe" (kept in its brand casing) and the Greek omega, drawn from a serif that has Greek. */
+.theme-opt, html[data-theme='odyssey'] .theme-opt {
+  text-transform: none;
+}
+.theme-opt .omega, html[data-theme='odyssey'] .theme-opt .omega {
+  font-family: 'Times New Roman', Georgia, 'Noto Serif', serif;
+  font-weight: 700;
+  font-size: 1.35em;
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* The switch mirrors the Twitch panel's F | Θ switch exactly (same proportions, a little larger for the page). */
+.theme-switch {
+  padding: 3px;
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+}
+.theme-opt,
+html[data-theme='odyssey'] .theme-opt,
+.app .theme-opt {
+  min-width: 0;
+  width: 56px;
+  padding: 5px 0;
+  text-align: center;
+  font-size: 15px;
+  letter-spacing: 0.06em;
+}
+.theme-thumb {
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: 56px;
+  clip-path: polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px);
+}
+.theme-switch[data-value='enrage'] .theme-thumb {
+  transform: translateX(56px);
+}
+.app .theme-switch {
+  transform: scale(0.85);
+  transform-origin: right center;
+}
+html[data-theme='odyssey'] .theme-switch {
+  padding: 3px;
+}
+
+/* ---- Θ ornaments: laurel-crowned title, Ionic columns flanking the card, owl of Athena watermark ---- */
+html[data-theme='odyssey'] .demo-top h1 {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ody-laurel {
+  color: var(--gold, #b38b2e);
+  flex: none;
+}
+html[data-theme='odyssey'] .demo-slot {
+  position: relative;
+}
+.ody-col {
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  width: 46px;
+  color: #8c8f8c;
+  opacity: 0.75;
+  pointer-events: none;
+}
+.ody-col--left {
+  left: -66px;
+}
+.ody-col--right {
+  right: -66px;
+}
+.ody-column {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+@media (max-width: 1120px) {
+  .ody-col {
+    display: none;
+  }
+}
+.ody-owl-mark {
+  position: absolute;
+  right: 4vw;
+  bottom: 9vh;
+  width: 120px;
+  color: #1f3550;
+  opacity: 0.08;
+  --ody-owl-face: #ebe2d1;
+  --ody-owl-beak: #1f3550;
+}
+.ody-owl {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.theme-opt .omega,
+html[data-theme='odyssey'] .theme-opt .omega {
+  font-size: 1.55em;
+  font-weight: 400;
+}

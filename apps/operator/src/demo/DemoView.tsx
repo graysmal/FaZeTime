@@ -10,13 +10,16 @@ import type { AiCandidate, AiResolution, MarketLimits, MarketReceipt, OperatorMa
 import { useAlert } from '../ui/alert';
 import { AuthThumb } from '../ui/AuthThumb';
 import { candidateDeadlines } from '../ui/deadlines';
-import { approvalCloseInS, genericKindLabel, isGenericCandidate, ruleNamesSide } from '../ui/generic';
+import { approvalCloseInS, isGenericCandidate, ruleNamesSide } from '../ui/generic';
+import { FlipClock } from './FlipClock';
+import { VolumeControl } from './VolumeControl';
+import { OdysseySky, ThemeSwitch, useTheme } from '../ui/theme';
+import { aiName, Column, Laurel } from '../ui/odysseyDecor';
 import { useMutation, useNow, usePoll, type MutationState } from '../ui/hooks';
 import {
   alertKey,
   cardKey,
   connectionSentence,
-  countdownText,
   currentMarket,
   deriveDemoState,
   errorSentence,
@@ -72,10 +75,20 @@ function Card({ state, children }: { state: string; children: ReactNode }) {
 
 /** One compact YES or NO rule (a generic candidate's predicate), as text. The side word is added only if missing. */
 function Rule({ side, label, predicate }: { side: 'yes' | 'no'; label: string; predicate: string }) {
+  // The side goes in a LIVE-style tag. A predicate that already starts with its side word ("YES if …") moves
+  // that word into the tag, so it is never repeated; the text content stays exactly the predicate.
+  const named = ruleNamesSide(predicate, label);
+  const lead = predicate.length - predicate.trimStart().length;
+  const tag = named ? predicate.slice(lead, lead + label.trim().length) : label;
+  const rest = named ? predicate.slice(lead + label.trim().length) : predicate;
   return (
     <p className={`demo-rule ${side}`}>
-      {!ruleNamesSide(predicate, label) && <span className="demo-rule-side">{label}: </span>}
-      {predicate}
+      <span className="side-tag" data-side={side}>
+        <span className="side-dot" aria-hidden="true" />
+        {tag}
+      </span>
+      {!named && <span className="sr-only">: </span>}
+      <span className="demo-rule-text">{rest}</span>
     </p>
   );
 }
@@ -108,14 +121,8 @@ function CandidateCard({
   const left = d?.approveMs ?? null;
   const late = left !== null && left <= 0;
   const busy = act.state.status === 'busy' || act.state.status === 'ok';
-  const kind = genericKindLabel(c);
   return (
     <Card state="candidate">
-      {kind && (
-        <div className="demo-kind" data-testid="demo-kind">
-          {kind}
-        </div>
-      )}
       <h2 className="demo-question" data-testid="demo-question">
         {c.question}
       </h2>
@@ -126,13 +133,17 @@ function CandidateCard({
         </div>
       ) : (
         <div className="demo-sides">
-          <span className="demo-chip yes">{c.yes.label}</span>
-          <span className="demo-chip no">{c.no.label}</span>
+          <span className="demo-chip side-tag yes" data-side="yes">
+            <span className="side-dot" aria-hidden="true" />
+            {c.yes.label}
+          </span>
+          <span className="demo-chip side-tag no" data-side="no">
+            <span className="side-dot" aria-hidden="true" />
+            {c.no.label}
+          </span>
         </div>
       )}
-      <div className={`demo-count ${late ? 'late' : left !== null && left < 15_000 ? 'urgent' : ''}`} data-testid="demo-countdown">
-        {countdownText(left)}
-      </div>
+      <FlipClock ms={left} tone={late ? 'late' : left !== null && left < 15_000 ? 'urgent' : ''} />
       <div className="demo-caption">to approve</div>
       <div className="demo-actions">
         <button
@@ -168,10 +179,10 @@ function OpenCard({ m, serverNowMs }: { m: OperatorMarket; serverNowMs: number |
       <div className="demo-pool" data-testid="demo-pool">
         {poolLine(m)}
       </div>
-      <div className={`demo-count ${left !== null && left < 10_000 ? 'urgent' : ''}`} data-testid="demo-countdown">
-        {countdownText(left)}
+      <FlipClock ms={left} tone={left !== null && left < 10_000 ? 'urgent' : ''} />
+      <div className="demo-caption">
+        until betting <span className="demo-caption-hot">closes</span>
       </div>
-      <div className="demo-caption">until betting closes</div>
     </Card>
   );
 }
@@ -198,7 +209,7 @@ function ClosedCard({ m, serverNowMs }: { m: OperatorMarket; serverNowMs: number
       {watching ? (
         <div className="demo-status demo-watching" data-testid="demo-watching">
           <WatchDots />
-          AI is watching for the result…
+          {aiName()} is watching for the result…
         </div>
       ) : (
         <div className="demo-status" data-testid="demo-closed-status">
@@ -378,7 +389,11 @@ function IdleCard({
         </>
       )}
       <div className={last ? 'demo-wait small' : 'demo-wait'} data-testid="demo-wait">
-        {aiListening ? 'Waiting for the AI to spot a bet' : 'AI is off. Turn it on under Advanced.'}
+        {aiListening
+          ? aiName() === 'AI'
+            ? 'Waiting for the AI to spot a bet'
+            : 'Waiting for the Oracle to foresee a bet'
+          : 'AI is off. Turn it on under Advanced.'}
       </div>
       <TestBet client={client} limits={limits} onDone={onDone} />
     </Card>
@@ -462,7 +477,8 @@ export function DemoView({ client }: { client: OperatorClient }) {
   }, [refreshHealth, refreshCandidates, refreshResolutions]);
 
   // Sound + tab title when the operator is needed (a candidate, a result suggestion, a fixture call).
-  const { sound, setSound, beep, unlocked } = useAlert();
+  const { volume, muted, setVolume, toggleMute, beep, unlocked } = useAlert();
+  const [theme, setTheme] = useTheme();
   const seen = useRef<Set<string>>(new Set());
   const needKey = alertKey(state);
   useEffect(() => {
@@ -529,11 +545,21 @@ export function DemoView({ client }: { client: OperatorClient }) {
 
   return (
     <div className="demo" data-testid="demo-view">
+      {theme === 'enrage' && <OdysseySky />}
       <header className="demo-top">
-        <h1>FaZeTime</h1>
+        <h1>
+          {theme === 'enrage' && <Laurel size={44} />}
+          <span className="logo-word">
+            Fa<span className="logo-ze">Ze</span>Time
+          </span>
+          {theme === 'enrage' && <Laurel size={44} flip />}
+        </h1>
         <span className={`stream-pill ${pill.tone}`} data-testid="stream-pill">
+          {pill.tone === 'live' && <span className="rec-dot" aria-hidden="true" />}
           {pill.text}
         </span>
+        <span className="demo-spacer" />
+        <ThemeSwitch theme={theme} onChange={setTheme} />
       </header>
       <main className="demo-main">
         {connection && (
@@ -542,21 +568,23 @@ export function DemoView({ client }: { client: OperatorClient }) {
           </div>
         )}
         <div key={cardKey(state)} className="demo-slot">
+          {theme === 'enrage' && (
+            <>
+              <span className="ody-col ody-col--left">
+                <Column />
+              </span>
+              <span className="ody-col ody-col--right">
+                <Column />
+              </span>
+            </>
+          )}
           {card}
         </div>
       </main>
       <footer className="demo-bottom">
         {h?.stream ? <ResetBar client={client} streamId={h.stream.stream_id} onDone={refresh} /> : <span />}
         <span className="demo-spacer" />
-        <button
-          type="button"
-          className="demo-link"
-          aria-pressed={sound}
-          onClick={() => setSound(unlocked ? !sound : true)}
-          data-testid="sound-toggle"
-        >
-          {!sound ? 'Sound off' : unlocked ? 'Sound on' : 'Enable sound'}
-        </button>
+        <VolumeControl volume={volume} muted={muted} unlocked={unlocked} onVolume={setVolume} onToggleMute={toggleMute} onCommit={beep} />
         <a className="demo-link" href="#advanced" data-testid="advanced-link">
           Advanced
         </a>

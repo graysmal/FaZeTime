@@ -49,7 +49,14 @@ export default defineConfig({
   },
   server: { host: '127.0.0.1', port: 5174, strictPort: true, proxy, fs: { allow: [repoRoot] } },
   preview: { host: '127.0.0.1', port: 4174, strictPort: true, proxy },
-  build: { outDir: 'dist', emptyOutDir: true, sourcemap: false, target: 'es2022' },
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
+    sourcemap: false,
+    target: 'es2022',
+    // The CSP has no data: in img-src, so the Greek-key SVG must stay a real file (never inlined).
+    assetsInlineLimit: (file: string) => (file.endsWith('.svg') ? false : undefined),
+  },
   test: {
     environment: 'happy-dom',
     include: ['tests/**/*.test.{ts,tsx}'],
