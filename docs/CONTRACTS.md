@@ -740,3 +740,75 @@ The adapter is in `services/api/fazetime_api/integrations/`, pinned to `Stripe-V
 - Logging: the Stripe client logs at most the `cs_test_` prefix plus 4 characters of a session ID, never the full ID or the Checkout URL.
 - The webhook route is fed by the Stripe CLI: `stripe listen --device-name fazetime-api --forward-to <API>/v1/webhooks/stripe`, with the key passed through the environment.
 
+
+### 9.19 Generic AI market contract (v1 additive, for D37/D39; 2026-11-15)
+
+This is an additive change to §9.17, recorded by the coordinator before integration (D37). `H2H_WINNER_V1` and every §9.17 route keep working unchanged. The design comes from `reports/Game agnostic stream prop bets.md`, and fixture evidence is in `docs/evidence/p4/P4-generic-fixture-replay.md`.
+
+**Template `GENERIC_BINARY_V1`.** One yes/no question about one unit of play (an "episode": a game, round, level, match or run, in any game), or about speech heard during one. The worker's catalogue has four kinds:
+
+| `kind` | Question shape (rendered by worker code, never by the model) | `params` |
+|---|---|---|
+| `EPISODE_OUTCOME` | "Will the streamer {win_verb} this {unit}?" | `win_verb` ∈ `win`, `clear`, `complete`, `beat`, `survive`, `finish` |
+| `END_VALUE_AT_LEAST` | "Will {label} be at least {threshold} when this {unit} ends?" | `label` (1–40 chars), `threshold` (number) |
+| `SAY_PHRASE` | 'Will "{phrase}" be heard on stream before this {unit} ends?' | `phrase` (1–3 words, letters and apostrophes) |
+| `DURATION_OVER` | "Will this {unit} last longer than {m:ss}?" | `duration_s` (integer, 30–3600) |
+
+**1. Candidate changes** (`POST /v1/worker/proposals`). The body is the same as in §9.17, with these differences:
+- `template_id`: `"GENERIC_BINARY_V1"`.
+- `subjects`:
+  - 0 or 1 entries for `GENERIC_BINARY_V1`: the streamer, or one side named on screen;
+  - still exactly 2 for `H2H_WINNER_V1`.
+- `generic`:
+  - **Required** for `GENERIC_BINARY_V1`, and **forbidden** for `H2H_WINNER_V1`.
+  - Shape: `{spec_version: "gen-1", kind, unit, params, episode_start_media_ms, success_cue, failure_cue}`.
+  - `unit` is 1–20 chars, such as "level".
+  - `episode_start_media_ms` is an integer ≥ 0 in the candidate's source epoch.
+  - The two cues are each at most 160 chars. They are untrusted model text, stored inert, and never shown to viewers.
+  - `params` is exactly the keys in the table for its `kind`.
+- `episode_fingerprint`: `gen:<source_epoch>:<episode_start_media_ms>:<kind lowercased>`. It is consumed per run exactly as in §9.17 (`DUPLICATE_EPISODE`).
+- `yes`/`no`: labels `Yes`/`No`. The predicates are rendered from the kind by worker code.
+
+**2. Validation.** The order and reject codes are as in §9.17, except the sides check. For `GENERIC_BINARY_V1`, `UNPAIRED_SIDES` is returned unless all of these hold:
+- the labels are non-empty and distinct;
+- the predicates are non-empty and distinct, case-insensitively;
+- `generic.kind` and its `params` are valid;
+- the fingerprint starts with `gen:` and ends with `:<kind lowercased>`;
+- `subjects` has at most 1 entry.
+
+A missing, extra or malformed `generic` object is a schema error, HTTP 422, and is not recorded.
+
+**3. Storage.** Migration `0006` adds `ai_candidates.generic_json TEXT` (nullable; NULL for H2H). Candidates keep `template_id`.
+
+**4. Timing (D39), for all templates.**
+- `ai_close_min_s` becomes **35**: `close_in_s` is clamped to [35, 600], and below 35 is `INSUFFICIENT_LEAD`.
+- `min_lead_ms` stays 30 000. The `resolve_in_s` clamp is unchanged at [60, 900].
+- The worker suggests `close_in_s = 35` and `resolve_in_s = 335` (35 s of betting plus a 300 s horizon).
+
+**5. Approval anchoring.**
+- The API's semantics are unchanged: `close_at` is receipt plus `close_in_s`, and an operator `close_in_s` override counts from approval.
+- **When approving a `GENERIC_BINARY_V1` candidate, the operator console sends `close_in_s` equal to the candidate's clamped `close_in_s`,** so viewers get the full window from approval.
+- The console's H2H behaviour is unchanged.
+
+**6. Read-side additions.**
+- `GET /v1/worker/market` (§9.17 5b) adds:
+  - `template_id`: from the market's originating candidate; null for fixture markets.
+  - `generic`: the stored object, or null.
+- `GET /v1/operator/candidates` adds `template_id` (already stored) and `generic` to each candidate.
+- Viewer payloads are unchanged: the question, the labels and `criteria.YES`/`criteria.NO`. `generic` is never sent to viewers.
+
+**7. Worker resolution semantics.** The `POST /v1/worker/resolutions` route is unchanged; this item fixes the worker's evidence rules for generic markets.
+- **Two voids apply to every kind:**
+  - A worker-side fairness margin of **M = 20 s**: the worker sends `UNRESOLVABLE` when the decisive evidence (the episode end, or the phrase occurrence) is at or before `lock_media_ms + 20 000`.
+  - No result by `resolve_by`: the sweeper voids, unchanged.
+- **`SAY_PHRASE`:** decided by worker code.
+  - A regex over the unprimed transcript after `lock_media_ms + 20 000`, until the episode ends.
+  - YES cites the transcript observation.
+  - NO needs the episode end with the transcript covering the window.
+- **`DURATION_OVER`:** decided by worker code from the episode's start and end media times. It voids within ±15 s of the line, or when the end was not seen as a result.
+- **`EPISODE_OUTCOME` and `END_VALUE_AT_LEAST`:**
+  - Two extraction reads, by different models (`gemini-3.5-flash-lite` and `gemini-3.1-flash-lite`), on different post-end frames. Code then decides.
+  - **`EPISODE_OUTCOME`** needs both reads to agree, plus a printed result word: the generic lexicon, or a word from the frozen cue.
+  - **`END_VALUE_AT_LEAST`** needs the two values to agree. It voids within one display unit of the threshold.
+  - Disagreement returns `UNRESOLVABLE`.
+- All cited evidence is at or after `lock_media_ms`, as §9.17 requires.
