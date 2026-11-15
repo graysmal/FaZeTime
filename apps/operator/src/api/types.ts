@@ -77,6 +77,8 @@ export type OperatorSourceHealth = SourceHealth & {
   asr_backlog_ms?: number | null;
   queue_depth?: number | null;
   last_heartbeat_at_utc?: string | null;
+  heartbeat_age_ms?: number | null;
+  host_id?: string | null;
 };
 
 export interface OperatorHealth {
@@ -99,6 +101,10 @@ export interface OperatorHealth {
   presence: { present_users: number; ttl_ms: number; users: unknown[] } | null;
   reconciliation: Reconciliation;
   counts: { users: number; runs: number; archived_runs: number };
+  /** Present on newer APIs (P4/P5 backend); the console falls back to the snapshot for modes. */
+  modes?: Modes;
+  ai?: HealthAi;
+  market_limits?: MarketLimits;
 }
 
 /** Common receipt fields of every operator mutation (api_operator._mutation). */
@@ -172,3 +178,141 @@ export interface EvidenceList {
 }
 
 export type { MediaHealth };
+
+// ---- §9.17 supervised AI (operator side) -------------------------------------------------------------
+
+export const AI_MODE_CHOICES = ['OFF', 'SHADOW', 'APPROVAL', 'AUTOMATIC'] as const;
+export type AiModeChoice = (typeof AI_MODE_CHOICES)[number];
+
+export interface HealthAi {
+  ai_mode: string;
+  effective_ai_mode: string;
+  allow_automatic: boolean;
+  pending_candidates: number;
+  pending_resolutions: number;
+}
+
+export interface MarketLimits {
+  min_lead_ms: number;
+  ai_close_in_s?: { min: number; max: number };
+  ai_resolve_in_s?: { min: number; max: number };
+  candidate_expiry_s?: number;
+  evidence_fresh_s?: number;
+}
+
+/** A cited evidence reference as the API resolved it (§9.17 item 5c). Text fields are untrusted. */
+export interface AiEvidenceRef {
+  ref: string;
+  kind: 'FRAME' | 'TRANSCRIPT' | string;
+  source_epoch: string;
+  sequence: number;
+  evidence_id: string | null;
+  media_start_ms: number;
+  media_end_ms: number;
+  received_at_utc: string;
+  frame_url?: string | null;
+  transcript_text?: string | null;
+  untrusted?: boolean;
+}
+
+export interface AiCandidate {
+  id: string;
+  candidate_id: string;
+  stream_session_id: string;
+  source_epoch: string;
+  status: 'PENDING' | 'SHADOW' | 'OPENED' | 'REJECTED' | 'EXPIRED' | string;
+  reject_code: string | null;
+  actionable: boolean;
+  market_id: string | null;
+  template_id: string;
+  episode_fingerprint: string;
+  question: string;
+  yes: { label: string; predicate: string };
+  no: { label: string; predicate: string };
+  subjects: string[];
+  evidence_ids: string[];
+  evidence: AiEvidenceRef[];
+  announced_at_media_ms: number;
+  suggested_close_in_s: number;
+  suggested_resolve_in_s: number;
+  close_in_s: number | null;
+  resolve_in_s: number | null;
+  proposed_close_at_utc: string | null;
+  cancellation_conditions: string[];
+  rationale: string;
+  rationale_untrusted: boolean;
+  model: string;
+  prompt_version: string;
+  ai_mode: string;
+  received_at_utc: string;
+  expires_at_utc: string;
+  decided_at_utc: string | null;
+  decided_by_user_id: string | null;
+  decision_note: string | null;
+}
+
+export interface CandidateList {
+  schema_version: 1;
+  server_time_utc: string;
+  stream_session_id: string | null;
+  ai_mode: string | null;
+  effective_ai_mode: string | null;
+  allow_automatic: boolean;
+  candidate_expiry_s: number;
+  candidates: AiCandidate[];
+}
+
+export interface AiResolution {
+  id: string;
+  resolution_id: string;
+  market_id: string;
+  market_state: string | null;
+  market_resolve_by_utc: string | null;
+  rules_version: number;
+  source_epoch: string;
+  decision: 'YES' | 'NO' | 'WAIT' | 'UNRESOLVABLE' | string;
+  status: 'RECORDED' | 'SETTLED' | 'VOIDED' | 'PENDING_APPROVAL' | 'IGNORED' | string;
+  status_reason: string | null;
+  actionable: boolean;
+  evidence_ids: string[];
+  evidence: AiEvidenceRef[];
+  media_interval: { start_ms: number; end_ms: number };
+  predicate_support: { YES: boolean; NO: boolean };
+  contradictions: string[];
+  reason: string;
+  reason_untrusted: boolean;
+  model: string;
+  prompt_version: string;
+  ai_mode: string;
+  received_at_utc: string;
+  decided_at_utc: string | null;
+  decided_by_user_id: string | null;
+}
+
+export interface ResolutionList {
+  schema_version: 1;
+  server_time_utc: string;
+  market_id: string | null;
+  resolutions: AiResolution[];
+}
+
+export interface CandidateApproveReceipt extends OperatorReceipt {
+  candidate: AiCandidate;
+  market: OperatorMarket;
+}
+
+export interface CandidateRejectReceipt extends OperatorReceipt {
+  candidate: AiCandidate;
+}
+
+export interface AiModeReceipt extends OperatorReceipt {
+  stream_session_id: string;
+  ai_mode: string;
+  previous_ai_mode: string;
+  allow_automatic: boolean;
+}
+
+export interface ResolutionApproveReceipt extends OperatorReceipt {
+  resolution: AiResolution;
+  market: OperatorMarket;
+}

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
+import { AuthThumb } from './AuthThumb';
 import type { OperatorClient } from '../api/client';
 import type { Capabilities } from '../api/capabilities';
 import type { EvidenceFrame, EvidenceList, EvidenceObservation } from '../api/types';
@@ -9,42 +10,20 @@ import { usePoll } from './hooks';
 const MAX_OBS = 60;
 const MAX_FRAMES = 12;
 
-/** Fetches one JPEG with the bearer header (an <img src> cannot send it) and revokes the blob URL on unmount. */
 function Thumb({ client, frame }: { client: OperatorClient; frame: EvidenceFrame }) {
-  const [src, setSrc] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    if (frame.file_pruned_at_utc) return undefined;
-    const ctrl = new AbortController();
-    let url: string | null = null;
-    client
-      .evidenceImage(frame.evidence_id, ctrl.signal)
-      .then((blob) => {
-        if (ctrl.signal.aborted) return;
-        url = URL.createObjectURL(blob.type === 'image/jpeg' ? blob : new Blob([blob], { type: 'image/jpeg' }));
-        setSrc(url);
-      })
-      .catch(() => {
-        if (!ctrl.signal.aborted) setFailed(true);
-      });
-    return () => {
-      ctrl.abort();
-      if (url) URL.revokeObjectURL(url);
-    };
-  }, [client, frame.evidence_id, frame.file_pruned_at_utc]);
-
   return (
-    <figure className="thumb" data-testid="evidence-frame">
-      {src ? (
-        <img src={src} alt={`Frame ${frame.sequence} at ${formatMediaMs(frame.media_ms)}`} width={160} height={90} />
-      ) : (
-        <div className="thumb-empty">{frame.file_pruned_at_utc ? 'pruned' : failed ? 'unavailable' : 'loading…'}</div>
-      )}
-      <figcaption className="small">
-        {formatMediaMs(frame.media_ms)} · #{frame.sequence} · {shortId(frame.source_epoch)}
-        {frame.pinned_by_market_id ? ' · pinned' : ''}
-      </figcaption>
-    </figure>
+    <AuthThumb
+      client={client}
+      evidenceId={frame.evidence_id}
+      pruned={frame.file_pruned_at_utc !== null}
+      alt={`Frame ${frame.sequence} at ${formatMediaMs(frame.media_ms)}`}
+      caption={
+        <>
+          {formatMediaMs(frame.media_ms)} · #{frame.sequence} · {shortId(frame.source_epoch)}
+          {frame.pinned_by_market_id ? ' · pinned' : ''}
+        </>
+      }
+    />
   );
 }
 

@@ -86,13 +86,19 @@ export function StatusHeader({ health, healthError, okAt, now, modes, modesError
             {sh?.last_transcript_at_utc ? formatDuration(transcriptAge) : 'none'}
           </Field>
           <Field label="ASR backlog">{backlog === null ? 'not reported by API' : formatDuration(backlog)}</Field>
+          <Field label="Heartbeat age">
+            {typeof sh?.heartbeat_age_ms === 'number' ? formatDuration(sh.heartbeat_age_ms) : 'no worker heartbeat'}
+          </Field>
         </div>
         <div className="card">
           <h3>Modes</h3>
           <Field label="AI mode" title={AI_MODE_TEXT[aiMode] ?? ''}>
             <span className="badge" data-testid="ai-mode">{aiMode}</span>
           </Field>
-          <div className="explain small">{AI_MODE_TEXT[aiMode] ?? 'unrecognized mode (shown as-is)'}</div>
+          <div className="explain small">
+            {AI_MODE_TEXT[aiMode] ?? 'unrecognized mode (shown as-is)'}
+            {h?.ai && h.ai.effective_ai_mode !== h.ai.ai_mode ? ` · acting as ${h.ai.effective_ai_mode}` : ''}
+          </div>
           <Field label="Funding" title={`payment_mode ${payment}`}>
             <span className="badge" data-testid="payment-mode">{payment}</span>
             {modesError !== null && modesError !== undefined && <span className="muted small"> (snapshot failed)</span>}

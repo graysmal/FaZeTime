@@ -26,7 +26,18 @@ function Dashboard({ client, session, onSignOut }: { client: OperatorClient; ses
     async (signal: AbortSignal) => (streamId ? (await client.snapshot(streamId, signal)).modes : null),
     [client, streamId],
   );
-  const modes = usePoll(modesFn, 2_000, streamId !== null);
+  // Newer APIs put modes in operator health; the snapshot poll is only a fallback for older ones.
+  const healthHasModes = Boolean(health.data?.modes);
+  const modes = usePoll(modesFn, 2_000, streamId !== null && health.data !== null && !healthHasModes);
+  const ai = health.data?.ai ?? null;
+  const pending = (ai?.pending_candidates ?? 0) + (ai?.pending_resolutions ?? 0);
+  useEffect(() => {
+    const base = 'FaZeTime Operator (DEMO, test money only)';
+    document.title = pending > 0 ? `(${pending} need action) ${base}` : base;
+    return () => {
+      document.title = base;
+    };
+  }, [pending]);
 
   const [caps, setCaps] = useState<Capabilities | null>(null);
   const [capsError, setCapsError] = useState<unknown>(null);
@@ -56,6 +67,16 @@ function Dashboard({ client, session, onSignOut }: { client: OperatorClient; ses
           FaZeTime <span className="accent">Operator</span>
         </h1>
         <DemoLabel />
+        {(ai?.pending_candidates ?? 0) > 0 && (
+          <span className="badge alert" data-testid="attention-candidates">
+            AI: {ai?.pending_candidates} candidate(s) pending
+          </span>
+        )}
+        {(ai?.pending_resolutions ?? 0) > 0 && (
+          <span className="badge alert" data-testid="attention-resolutions">
+            AI: {ai?.pending_resolutions} resolution(s) to approve
+          </span>
+        )}
         <span className="spacer" />
         <span className="who" data-testid="signed-in-as">
           {session.display_name} · OPERATOR · session until {formatUtcDayTime(session.expires_at_utc)}
@@ -74,26 +95,33 @@ function Dashboard({ client, session, onSignOut }: { client: OperatorClient; ses
         healthError={health.error}
         okAt={health.okAt}
         now={now}
-        modes={streamId ? modes.data ?? null : null}
-        modesError={streamId ? modes.error : null}
+        modes={health.data?.modes ?? (streamId ? modes.data ?? null : null)}
+        modesError={healthHasModes ? null : streamId ? modes.error : null}
       />
       <div className="main-grid">
-        <MarketPanel
-          client={client}
-          onChanged={refresh}
-          health={health.data}
-          serverNowMs={serverNowMs}
-          settleReasonField={caps?.settleReasonField ?? null}
-        />
+        <div className="left">
+          <AiPanel
+            client={client}
+            ai={ai}
+            markets={health.data?.markets ?? []}
+            limits={health.data?.market_limits ?? null}
+            hasStream={Boolean(health.data?.stream)}
+            onChanged={refresh}
+          />
+          <MarketPanel
+            client={client}
+            onChanged={refresh}
+            health={health.data}
+            serverNowMs={serverNowMs}
+            settleReasonField={caps?.settleReasonField ?? 'note'}
+          />
+        </div>
         <div className="side">
           <InvitePanel client={client} />
           <RunPanel client={client} health={health.data} onChanged={refresh} />
         </div>
       </div>
-      <div className="lower-grid">
-        <EvidencePanel client={client} caps={caps} capsError={capsError} onRecheck={() => setCapsNonce((n) => n + 1)} />
-        <AiPanel aiMode={health.data?.run?.ai_mode ?? null} caps={caps} />
-      </div>
+      <EvidencePanel client={client} caps={caps} capsError={capsError} onRecheck={() => setCapsNonce((n) => n + 1)} />
       <footer className="muted small">
         Demo build: test money only, no real payments, no prizes. Every operator action needs a fresh operation_id and is
         audited by the server. Times are server UTC; countdowns are approximate and the server decides every deadline.

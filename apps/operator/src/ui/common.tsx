@@ -16,6 +16,7 @@ const CODE_HINTS: Record<string, string> = {
   INTERNAL_ERROR: 'Server error. The outcome is unknown until confirmed.',
   CAPABILITY_UNAVAILABLE: 'Not available in this phase or build.',
   SOURCE_STALE: 'The Twitch source is not LIVE.',
+  STALE_EPOCH: 'The source epoch changed; evidence from the old epoch no longer counts.',
 };
 
 const CLOSED_HINTS: Record<string, string> = {
@@ -57,12 +58,20 @@ export function ErrorNotice({ error, title }: { error: unknown; title?: string }
       ? String((info.details as Record<string, unknown>).reason ?? '')
       : '';
   const hint = info ? (info.code === 'MARKET_CLOSED' ? CLOSED_HINTS[closedReason] : CODE_HINTS[info.code]) : undefined;
+  const rawReject =
+    info?.details && typeof info.details === 'object' ? (info.details as Record<string, unknown>).reject_code : undefined;
+  const rejectCode = typeof rawReject === 'string' ? rawReject : null;
   return (
     <div className={`notice ${error.outcomeUnknown ? 'unknown' : 'error'}`} role="alert" data-testid="error-notice">
       <div className="notice-head">
         <strong>{title ?? (error.outcomeUnknown ? 'Outcome unknown' : 'Refused')}</strong>
         {info ? <span className="code">{info.code}</span> : <span className="code">{error.kind.toUpperCase()}</span>}
         {error.status !== null && <span className="muted">HTTP {error.status}</span>}
+        {rejectCode && (
+          <span className="code" data-testid="reject-code">
+            reject_code {rejectCode}
+          </span>
+        )}
       </div>
       <div>{error.message}</div>
       {hint && <div className="muted">{hint}</div>}

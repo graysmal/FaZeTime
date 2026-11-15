@@ -100,7 +100,7 @@ function MarketCard({
     if (confirm.kind === 'settle') {
       const side = confirm.side;
       void action
-        .run(() => client.settleMarket(m.market_id, side, settleReasonField ? { field: settleReasonField, text } : null))
+        .run(() => client.settleMarket(m.market_id, side, { field: settleReasonField ?? 'note', text }))
         .then((r) => r && setConfirm(null));
     } else {
       void action.run(() => client.voidMarket(m.market_id, text)).then((r) => r && setConfirm(null));
@@ -186,7 +186,9 @@ function MarketCard({
             ? 'Settlement unlocks after close, while EVALUATING and before resolve_by. One-sided or empty pools VOID automatically at lock.'
             : m.state === 'LOCKED'
               ? 'Locked; the sweeper moves it to EVALUATING.'
-              : 'Only fixture-origin markets settle by hand.'}
+              : FIXTURE_ORIGINS.has(m.origin)
+                ? 'Settle before resolve_by.'
+                : 'AI market: approve a resolution suggestion in Supervised AI, or void it here with a reason.'}
         </div>
       )}
 
@@ -210,9 +212,7 @@ function MarketCard({
           <div className="muted small">
             {confirm.kind === 'void'
               ? 'Sent as the void note.'
-              : settleReasonField
-                ? `Sent as "${settleReasonField}".`
-                : 'This API has no settle-reason field yet, so the reason is not stored. The audit log records you, the operation_id and the winning side.'}
+              : `Sent as the settle ${settleReasonField ?? 'note'}; the server stores it in the audit log with your operation_id.`}
           </div>
           <div className="actions">
             <button type="submit" className={`btn ${confirm.kind === 'void' ? 'danger' : 'primary'}`} disabled={!reasonOk || busy}>

@@ -61,7 +61,16 @@ The script covers these steps:
 9. Revoke the operator session and check the page returns to sign-in on 401.
 10. Check for CSP violations and console errors.
 
-Screenshots and `e2e-summary.json` go to `artifacts/`, which is gitignored. Invite codes and tokens stay in memory, and anything printed is redacted.
+**Supervised-AI e2e (§9.17):** `npm run e2e:ai`, with the same environment and a fresh DB. It takes about 60 s, because the AI close minimum is 45 s.
+1. Set the AI mode to APPROVAL through its confirm, and check AUTOMATIC is shown as unavailable.
+2. Register a TEST_FIXTURE worker epoch with LIVE heartbeats every 2 s, plus announcement transcript and frame evidence.
+3. Submit a decoy candidate. Check the alert (badges, NEW flash, tab title, countdown), then reject it with a reason.
+4. Submit the real candidate and approve it; the market opens as AI_APPROVED.
+5. Two viewers wager YES and NO.
+6. After lock, read `GET /v1/worker/market` for `lock_media_ms`, post evidence after the lock, and submit a YES resolution. It arrives as `PENDING_APPROVAL`.
+7. Approve it through the confirm, then check SETTLED, the payouts and reconciliation.
+
+Screenshots and `e2e-summary.json` / `e2e-ai-summary.json` go to `artifacts/`, which is gitignored. Invite codes and tokens stay in memory, and anything printed is redacted.
 
 ## Behaviour that matters
 
@@ -76,9 +85,17 @@ Screenshots and `e2e-summary.json` go to `artifacts/`, which is gitignored. Invi
   - `GET /v1/streams/{id}/snapshot` every 2 s, for `modes` (payment mode and media source).
   - `GET /v1/operator/evidence` every 3 s, when present.
   - Timers and in-flight requests are cancelled on unmount.
-- **Capability probe.** The app reads `/openapi.json` and shows only features the running API has:
-  - the evidence panel (§9.16 item 6);
-  - an optional settle reason field (`note` or `reason`);
-  - the AI-mode and candidate routes (§9.17). The AI panel is a labelled placeholder until they exist.
+- **Supervised AI panel (§9.17, D32):**
+  - **AI mode** (`POST /v1/operator/ai-mode`): OFF, SHADOW, APPROVAL or AUTOMATIC, always behind a confirm. AUTOMATIC is struck through and disabled unless health `ai.allow_automatic` is true.
+  - **Candidates** (`GET /v1/operator/candidates`, every 2 s): each shows the question, the side-keyed labels and predicates, the subjects, the VOID conditions and the `rationale` ("Model text, untrusted"). Cited evidence shows transcript snippets plus thumbnails fetched with the bearer header.
+  - **Approval countdown:** the time left to approve is the earliest of three deadlines:
+    - expiry, 60 s after receipt;
+    - evidence freshness, 90 s after the oldest cited evidence;
+    - the minimum lead before the receipt-anchored close.
+  - **Approve and Reject:** Approve takes an optional `close_in_s` override (45–600, counted from approval). Reject needs a reason. Both are gated on `actionable`, and typed errors show `details.reject_code`.
+  - **Resolutions** (`GET /v1/operator/resolutions?market_id=`, every 2 s): shown for the current AI market, with the decision, predicate support, media interval, cited evidence, and the contradictions and reason as untrusted text. Approve goes through a confirm, with a resolve_by countdown.
+  - **Alerts:** pending counts from health `ai` appear as pulsing badges and in the tab title. A new candidate flashes and plays a two-tone beep once a click has unlocked audio (toggle "sound alert").
+- **Settle note:** the fixture settle always sends `note`, which the server stores in the audit row.
+- **Capability probe:** the app reads `/openapi.json` to decide whether to show the evidence panel (§9.16 item 6).
 - **Evidence.** Transcript and model text is rendered as text. Frames are fetched with the bearer header and shown through `blob:` URLs, which are revoked on unmount.
 - **Labels (D31).** The console shows the demo/test-money label, AI mode, funding (payment mode), media source (TEST_FIXTURE is labelled "not Twitch"), market origin, and simulated bot stakes.

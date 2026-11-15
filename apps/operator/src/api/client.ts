@@ -9,12 +9,19 @@
 // - The bearer token is only ever sent in the Authorization header, never in a URL, never logged.
 import type { EnrollResponse, MeResponse, StreamSnapshot } from '@fazetime/contracts';
 import type {
+  AiModeChoice,
+  AiModeReceipt,
+  CandidateApproveReceipt,
+  CandidateList,
+  CandidateRejectReceipt,
   EvidenceList,
   InviteReceipt,
   MarketReceipt,
   OperatorHealth,
   OperatorReceipt,
   ResetReceipt,
+  ResolutionApproveReceipt,
+  ResolutionList,
   StreamReceipt,
 } from './types';
 
@@ -107,6 +114,8 @@ const ID_RE = {
   mkt: /^mkt_[0-9a-f]{32}$/,
   evd: /^evd_[0-9a-f]{32}$/,
   str: /^str_[0-9a-f]{32}$/,
+  cnd: /^cnd_[0-9a-f]{32}$/,
+  rsl: /^rsl_[0-9a-f]{32}$/,
 } as const;
 
 /** Server IDs are interpolated into paths only after a strict shape check (they come from responses). */
@@ -363,5 +372,35 @@ export class OperatorClient {
 
   async resetRun(streamId: string) {
     return this.mutate<ResetReceipt>('/v1/operator/runs/reset', { stream_id: checkedId('str', streamId) });
+  }
+
+  // ---- §9.17 supervised AI ---------------------------------------------------------------------------
+  async candidates(signal?: AbortSignal): Promise<CandidateList> {
+    return (await this.request<CandidateList>('/v1/operator/candidates?limit=20', { signal, timeoutMs: 5_000 })).data;
+  }
+
+  async resolutions(marketId: string, signal?: AbortSignal): Promise<ResolutionList> {
+    const q = new URLSearchParams({ market_id: checkedId('mkt', marketId), limit: '20' });
+    return (await this.request<ResolutionList>(`/v1/operator/resolutions?${q.toString()}`, { signal, timeoutMs: 5_000 })).data;
+  }
+
+  /** Opens an AI_APPROVED market. closeInS (45..600, from approval) overrides the receipt-anchored default. */
+  async approveCandidate(candidateId: string, closeInS: number | null) {
+    const body: Record<string, unknown> = {};
+    if (closeInS !== null) body.close_in_s = closeInS;
+    return this.mutate<CandidateApproveReceipt>(`/v1/operator/candidates/${checkedId('cnd', candidateId)}/approve`, body);
+  }
+
+  async rejectCandidate(candidateId: string, reason: string) {
+    return this.mutate<CandidateRejectReceipt>(`/v1/operator/candidates/${checkedId('cnd', candidateId)}/reject`, { reason });
+  }
+
+  async setAiMode(mode: AiModeChoice) {
+    return this.mutate<AiModeReceipt>('/v1/operator/ai-mode', { mode });
+  }
+
+  /** Settles or voids the market exactly as the stored suggestion says (§9.17 item 5). */
+  async approveResolution(resolutionId: string) {
+    return this.mutate<ResolutionApproveReceipt>(`/v1/operator/resolutions/${checkedId('rsl', resolutionId)}/approve`, {});
   }
 }

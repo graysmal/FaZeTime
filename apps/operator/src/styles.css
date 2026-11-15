@@ -614,3 +614,240 @@ footer {
 .pools > .small {
   grid-column: 1 / -1;
 }
+
+/* ---- supervised AI (§9.17) ---- */
+.left {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.panel.ai.attention {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.badge.alert {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.badge.new {
+  background: var(--warn);
+  color: #000;
+  border-color: var(--warn);
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .badge.alert {
+    animation: none;
+  }
+}
+.ai-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.ai-modes > .label {
+  color: var(--muted);
+  font-size: 12px;
+  margin-right: 4px;
+}
+.ai-modes .confirm,
+.ai-modes .notice {
+  flex-basis: 100%;
+}
+.btn.mode.current {
+  background: var(--ok);
+  border-color: var(--ok);
+  color: #000;
+  opacity: 1;
+}
+.btn.mode.unavailable {
+  text-decoration: line-through;
+}
+.ai-section {
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+  margin-top: 6px;
+}
+.ai-section h3 {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+label.inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+.ai-card {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--muted);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin: 6px 0;
+  background: var(--panel-2);
+}
+.ai-card.actionable {
+  border-left-color: var(--accent);
+}
+.ai-card.flash {
+  animation: flash 1s ease-in-out 3;
+}
+@keyframes flash {
+  50% {
+    background: rgba(228, 0, 43, 0.25);
+  }
+}
+.ai-card header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.countdown {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 12px;
+  align-items: center;
+  margin: 6px 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #0f1115;
+  border: 1px solid var(--line);
+}
+.countdown .big {
+  font-size: 30px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--ok);
+  min-width: 96px;
+}
+.countdown.urgent .big {
+  color: var(--warn);
+}
+.countdown.late .big {
+  color: var(--bad);
+}
+.countdown .bar {
+  grid-column: 1 / -1;
+  height: 4px;
+  background: #2a2e37;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.sides {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin: 4px 0;
+}
+.side-terms {
+  display: flex;
+  flex-direction: column;
+  background: #0f1115;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 4px 8px;
+  overflow-wrap: anywhere;
+}
+.side-terms .label {
+  font-size: 11px;
+  font-weight: 700;
+}
+.side-terms.yes .label {
+  color: var(--ok);
+}
+.side-terms.no .label {
+  color: var(--bad);
+}
+.untrusted-box {
+  border: 1px dashed var(--warn);
+  border-radius: 5px;
+  padding: 4px 8px;
+  margin: 6px 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.untrusted-box ul {
+  margin: 2px 0;
+  padding-left: 16px;
+}
+.untrusted-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--warn);
+}
+.untrusted-text {
+  color: #f0e6c8;
+}
+.snippets {
+  margin: 4px 0;
+  padding-left: 16px;
+  overflow-wrap: anywhere;
+}
+.ai-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 6px;
+}
+.approve-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.reject-row {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+  min-width: 0;
+}
+.reject-row label {
+  flex: 1;
+}
+label.inline-field {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+label.inline-field input {
+  width: 72px;
+}
+.hint {
+  color: var(--warn);
+}
+.btn.big-btn {
+  padding: 8px 14px;
+  font-size: 14px;
+}
+.decision-yes {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+.decision-no {
+  color: var(--bad);
+  border-color: var(--bad);
+}
+.decision-wait,
+.decision-unresolvable {
+  color: var(--warn);
+  border-color: var(--warn);
+}

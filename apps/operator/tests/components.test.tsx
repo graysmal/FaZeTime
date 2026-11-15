@@ -138,7 +138,7 @@ describe('MarketPanel', () => {
     await waitFor(() => c.querySelector('[data-testid="error-notice"]'));
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toBe(`/v1/operator/markets/${MKT}/settle`);
-    expect(calls[0].body).toEqual({ winning_side: 'YES', operation_id: calls[0].body?.operation_id });
+    expect(calls[0].body).toEqual({ winning_side: 'YES', note: 'Gavin won on stream', operation_id: calls[0].body?.operation_id });
     const notice = c.querySelector('[data-testid="error-notice"]')!.textContent!;
     expect(notice).toContain('MARKET_CLOSED');
     expect(notice).toContain('HTTP 409');
