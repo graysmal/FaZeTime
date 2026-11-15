@@ -852,3 +852,45 @@ These additions are for operator visibility and viewer UX. None of them changes 
 - It adds them to the observer and proposer prompts as **untrusted** context ("Stream title (untrusted): …; Category: …"). The category may seed the activity name.
 - Each change is written as a local `stream_context` record in the worker's `ai_trace.jsonl`. Nothing is posted to the API, because item 1 was withdrawn. Kill switches: `FAZETIME_AI_STREAM_CONTEXT=0`, and `FAZETIME_AI_RESULT_ETA=0`, which leaves out `expected_result_in_s` for an older API.
 - The Twitch "About" description is not available from Streamlink and is out of scope.
+
+### 9.21 Call-worker (bookie) contract (v1 additive, for P11 inbound calls; D43; 2026-11-15)
+
+Implements the §5 voice-worker tools for the Chert call agent (`services/call-agent`). Additive only: no existing field, enum, error code or route changes. Everything below uses existing error codes with `details.reason`.
+
+**Auth.**
+- `CALL_WORKER` `fzk_` tokens live in `worker_credentials` (role already allowed). Minted on the API host only: `python -m fazetime_api issue-call-worker-token --label L` (printed once; only the hash is stored). Header `Authorization: Bearer fzk_…`; agent env var `FAZETIME_CALL_WORKER_TOKEN`.
+- `/v1/call/*` accepts only `CALL_WORKER` (MEDIA_WORKER → 403, unknown → 401, session token → 403). `/v1/worker/*` keeps refusing `CALL_WORKER` (403). `revoke-worker-tokens` gains an optional `--role`.
+
+**Binding (CallJob).** The caller is never identified from audio, names or caller ID.
+- Table `call_jobs` (ID prefix `cjb_`): `user_id`, `run_id`, `kind = 'BOUND_LINE'`, `state ACTIVE|ENDED`, timestamps, `created_by = 'CLI'`. At most one ACTIVE job (partial unique index).
+- Created only by CLI on the API host: `bind-call-user --user-id usr_…` (the user must be a non-bot VIEWER with a wallet in the active run; an existing ACTIVE job is ended first), ended by `end-call-binding`; `list-viewers` prints `user_id`, display name and available balance for the active run. No HTTP route (avoids D35 open-access exposure). Each state-changing CLI action writes an audit row (`actor_kind CLI`); the read-only `list-viewers` writes none. If a run reset archives the bound run, the overview shows `binding: null` and prepare refuses with WRONG_RUN until the operator rebinds.
+
+**Rate limit and headers.** `rl_call` per credential (default 60 per 10 s). Every response is `Cache-Control: no-store` and errors use the §9.10 envelope.
+
+**1. `GET /v1/call/overview`** → 200, one read transaction:
+- `schema_version`, `server_time_utc`;
+- `stream`: the §9.3 `StreamInfo` or `null`; `source_health` or `null`;
+- `limits`: `stake_min_minor`, `stake_max_minor`, `stake_step_minor`, `stake_default_minor`;
+- `market`: `null` or the run's nonterminal market (else `null`): `market_id`, `rules_version`, `aggregate_version`, `state`, `question`, `yes_label`, `no_label`, `close_at_utc`, `seconds_to_close` (integer ≥ 0, OPEN only, else `null`), `pool` (§9.3 `Pool`), and `estimates`: for each side, `stake_default_minor` and `2 × stake_default_minor`, `{side, stake_minor, est_gross_return_minor}` from `settlement.estimate_gross_return` (an estimate; the pool can move; never fixed odds);
+- `binding`: `null` or `{call_job_id, wallet: WalletSummary, position: <§9.3 my_position or null>}`. No user ID or display name.
+
+**2. `POST /v1/call/intents`** body `{client_request_id: UUID, market_id, rules_version, side: YES|NO, amount_minor}` → 201 (200 on replay):
+- No active binding → 403 FORBIDDEN `details.reason = NO_CALL_BINDING`.
+- Stake limits → 422 INVALID_AMOUNT (same rule as `POST /v1/wagers`).
+- The `place_wager` pre-checks without any economic effect, same order and codes: WRONG_RUN, STALE_MARKET, MARKET_CLOSED (STATE | DEADLINE), SOURCE_STALE, SIDE_CONFLICT, INSUFFICIENT_FUNDS. Plus MARKET_CLOSED `reason = TOO_CLOSE` when fewer than 15 s remain (P11: refuse, never backdate).
+- Any PENDING intent of the job becomes CANCELLED (superseded).
+- Creates `wager_intents` row (ID prefix `wit_`): bound `user_id`, `run_id`, `market_id`, `rules_version`, `side`, `amount_minor`, a fresh server `operation_id` (UUID, later the wager's `operation_id`), `nonce_hash` (sha256 of a fresh 128-bit hex nonce), quoted `aggregate_version` and `est_gross_return_minor`, `expires_at_utc = min(now + 90 s, close_at)`, `status PENDING`.
+- Response: `intent_id`, `nonce` (only on the first 201; `null` on replay), `status`, `market_id`, `question`, `side`, `side_label`, `amount_minor`, `est_gross_return_minor`, `pool`, `close_at_utc`, `expires_at_utc`, `wallet_available_minor`.
+- Idempotent on `(call_job_id, client_request_id)` with a request hash: same body → stored intent; different body → 409 IDEMPOTENCY_CONFLICT.
+
+**3. `POST /v1/call/intents/{intent_id}/confirm`** body `{nonce}` → one write transaction:
+- Unknown intent, or not on the ACTIVE binding → 404 NOT_FOUND. Nonce mismatch (constant-time) → 403 FORBIDDEN `reason = NONCE_MISMATCH`.
+- Already CONFIRMED → 200 with the stored receipt and `replayed: true` (no second wager).
+- CANCELLED, EXPIRED or `now ≥ expires_at_utc` → 409 STALE_MARKET `reason = INTENT_INACTIVE`.
+- Stale quote: the estimate for this side and stake is recomputed from the current pool; if it is lower than quoted → 409 STALE_MARKET `reason = QUOTE_MOVED` (re-quote and re-confirm). Equal or better proceeds.
+- Commits through `domain.place_wager` as the bound user, with the intent's `operation_id`, so §9.6 order, §9.7 idempotency, the close recheck and ledger rules are unchanged. Its errors roll the transaction back and propagate unchanged.
+- On success the intent becomes CONFIRMED with `wager_id` → 201 `{intent_id, status, receipt: WagerReceipt, replayed: false}`. Normal pool, wager and wallet events fire, so the bound viewer's extension updates.
+
+**4. `POST /v1/call/intents/{intent_id}/cancel`** body `{}` → PENDING → CANCELLED (200); repeat cancel → 200; CONFIRMED → 409 STALE_MARKET `reason = ALREADY_CONFIRMED`.
+
+**Agent-side rules (services/call-agent).** The model sees tool results only as data. `confirm` is called by agent code, never with a model-supplied nonce, and only for the latest PENDING intent after its readback and a clear spoken yes in the caller's next turn. The agent says "estimated" for every return figure.

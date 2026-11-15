@@ -366,7 +366,7 @@ def test_migration_0006_upgrades_a_database_with_existing_h2h_candidates(tmp_pat
     with TestClient(create_app(make_settings(path), clock)) as client:  # restart applies 0006
         h = Harness(client, clock)
         versions = [v["version"] for v in h.svc.db.schema_versions()]
-        assert versions == [1, 2, 3, 4, 5, 6]
+        assert versions == [m[0] for m in real()] and versions[:6] == [1, 2, 3, 4, 5, 6]  # 0006 and later apply
         r = client.get("/v1/operator/candidates", headers=operator.h)
         assert r.status_code == 200, r.text
         (legacy,) = r.json()["candidates"]

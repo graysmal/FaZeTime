@@ -10,6 +10,7 @@ import uuid
 
 ID_PREFIXES = ("usr", "ses", "str", "run", "mkt", "wgr", "txn", "evd", "ep", "req", "inv", "top")  # top: P6 §9.18
 ID_PREFIXES = ID_PREFIXES + ("cnd", "rsl")  # P4/P5 §9.17: AI candidate and resolution rows (server IDs)
+ID_PREFIXES = ID_PREFIXES + ("cjb", "wit")  # P11 §9.21: call job (bound line) and wager intent rows (server IDs)
 CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 _CROCKFORD_ALIASES = str.maketrans({"O": "0", "I": "1", "L": "1"})
 UUID_PATTERN = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"

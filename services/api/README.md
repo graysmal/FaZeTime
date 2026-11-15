@@ -21,7 +21,11 @@ uv sync --frozen                                  # install exactly what uv.lock
 uv run --frozen pytest                            # full suite (real SQLite files in tmp dirs)
 uv run --frozen python -m fazetime_api bootstrap-operator   # prints ONE operator invite to this terminal only
 uv run --frozen python -m fazetime_api issue-worker-token --label pi-capture  # prints ONE fzk_ MEDIA_WORKER token
-uv run --frozen python -m fazetime_api revoke-worker-tokens                   # revokes every worker token
+uv run --frozen python -m fazetime_api issue-call-worker-token --label chert  # prints ONE fzk_ CALL_WORKER token (§9.21)
+uv run --frozen python -m fazetime_api revoke-worker-tokens [--role CALL_WORKER|MEDIA_WORKER]  # every worker token, or one role's
+uv run --frozen python -m fazetime_api list-viewers                           # bindable non-bot viewers: user_id, available, bound, name
+uv run --frozen python -m fazetime_api bind-call-user --user-id usr_...       # bind the bookie line (ends any ACTIVE call job first)
+uv run --frozen python -m fazetime_api end-call-binding                       # unbind the line; cancels its PENDING intent
 uv run --frozen python -m fazetime_api serve      # uvicorn, 1 process, FAZETIME_HOST:FAZETIME_PORT (127.0.0.1:8000)
 uv run --frozen python -m fazetime_api reconcile  # ledger reconciliation JSON (exit 1 if not ok)
 uv run --frozen python -m fazetime_api backup /path/backup.db   # online copy via sqlite3 backup API
@@ -29,7 +33,7 @@ uv run --frozen python -m fazetime_api backup /path/backup.db   # online copy vi
 
 You can also run `uv run --frozen uvicorn fazetime_api.main:create_app --factory --host 127.0.0.1 --port 8000`. Never use `--workers` greater than 1: WebSocket fanout and rate limits are in-process.
 
-Migrations (`0001_initial`, `0002_presence`, `0003_media_worker`, `0004_ai`, `0005_topups`) apply at startup and from every CLI command. An applied migration whose file has changed is refused (sha256 check). The data dir defaults to `var/`, holding `var/fazetime.db` and `var/evidence/`. It is gitignored along with `*.db-journal`.
+Migrations (`0001_initial`, `0002_presence`, `0003_media_worker`, `0004_ai`, `0005_topups`, `0006_generic_template`, `0007_call_bookie`) apply at startup and from every CLI command. An applied migration whose file has changed is refused (sha256 check). The data dir defaults to `var/`, holding `var/fazetime.db` and `var/evidence/`. It is gitignored along with `*.db-journal`.
 
 | Env var | Default | Meaning |
 |---|---|---|
@@ -126,6 +130,22 @@ H="Authorization: Bearer $FAZETIME_WORKER_TOKEN"; API=http://fazetime:8000; SID=
 curl -s -H "$H" -H 'Content-Type: application/json' $API/v1/worker/epochs -d "{\"stream_id\":\"$SID\",\"source_epoch\":\"$EP\",\"source_kind\":\"TWITCH_STREAMLINK\",\"reason\":\"PROCESS_START\",\"variant\":null,\"host_id\":\"pi\",\"started_at_utc\":\"$(date -u +%FT%T.000Z)\"}"
 curl -s -H "$H" -F "meta={\"source_epoch\":\"$EP\",\"sequence\":1,\"kind\":\"FRAME\",\"media_ms\":0,\"width\":640,\"height\":360,\"sha256\":\"$(sha256sum f.jpg|cut -c1-64)\"}" -F file=@f.jpg $API/v1/worker/evidence
 ```
+
+## Call-worker (bookie) routes (§9.21, P11, D43)
+
+For the Chert call agent (`services/call-agent`). Code: `fazetime_api/bookie.py`, tables `call_jobs` and `wager_intents` (`0007_call_bookie.sql`).
+
+- **Token:** mint on the API host with `issue-call-worker-token`. Set it on the call-agent host as `FAZETIME_CALL_WORKER_TOKEN` and send `Authorization: Bearer fzk_…`. `/v1/call/*` accepts only `CALL_WORKER`: a MEDIA_WORKER token or any session is `403`, and an unknown or revoked token is `401`. `/v1/worker/*` refuses CALL_WORKER with `403`. Revoke with `revoke-worker-tokens --role CALL_WORKER`.
+- **Binding:** the caller is never identified from audio, names or caller ID. The operator binds the line to one non-bot VIEWER with a wallet in the active run, using `bind-call-user` on the API host. Use `list-viewers` to find the `user_id`. There is no HTTP route for binding, so D35 open access cannot reach it. At most one call job is ACTIVE. Each CLI action that changes state writes a `CLI` audit row; `list-viewers` is read-only and writes none.
+- **Limits and headers:** `rl_call` allows 60 requests per 10 s per credential. Every `/v1/call/*` response is `Cache-Control: no-store`, errors included.
+- **Audit:** each prepare, confirm and cancel writes a `SYSTEM` audit row with `credential_id`, `call_job_id` and `intent_id`.
+
+| Route | Behaviour |
+|---|---|
+| `GET /v1/call/overview` | One read transaction. Returns `{schema_version, server_time_utc, stream, source_health, limits, market, binding}`. `market` is the run's nonterminal market or `null`. It carries `seconds_to_close` (OPEN only, else `null`), `pool`, and `estimates`: per side, for the default stake and twice the default, `floor(s·(T+s)/(W_side+s))`. These are estimates, never fixed odds. `binding` is `{call_job_id, wallet, position}` or `null`, with no user ID or name |
+| `POST /v1/call/intents` | `{client_request_id, market_id, rules_version, side, amount_minor}`. The checks run in this order: `403 NO_CALL_BINDING`, `422 INVALID_AMOUNT` (the `/v1/wagers` rule), then idempotency on (`call_job_id`, `client_request_id`). Then come the `place_wager` pre-checks with no effect: `WRONG_RUN` (including a binding from an ended run), `STALE_MARKET`, `MARKET_CLOSED` STATE / DEADLINE / **TOO_CLOSE** (fewer than 15 s left), `SOURCE_STALE`, `SIDE_CONFLICT`, `INSUFFICIENT_FUNDS`. The call supersedes (CANCELs) the job's PENDING intent. It stores a fresh server `operation_id`, the SHA-256 of a 128-bit nonce, the quoted estimate and `expires_at_utc = min(now + 90 s, close_at)`. It returns 201 with the `nonce` once, and 200 on a replay with `nonce: null` and the current status. A different body is `409 IDEMPOTENCY_CONFLICT`. No money moves |
+| `POST /v1/call/intents/{id}/confirm` | `{nonce}`, in one write transaction. Unknown or not on the ACTIVE job → `404`. Wrong nonce (constant-time) → `403 NONCE_MISMATCH`. Already CONFIRMED → 200 with the stored receipt and `replayed: true`. CANCELLED / EXPIRED / `now ≥ expires_at` → `409 STALE_MARKET INTENT_INACTIVE`. An estimate lower than the quote → `409 STALE_MARKET QUOTE_MOVED`; equal or higher proceeds. The wager then commits through `domain.place_wager` as the bound user with the intent's `operation_id`. Its errors roll everything back and are returned unchanged. The intent update is conditional (rowcount checked), the deadline is rechecked last, and `hub.notify()` runs after commit. Returns 201 `{intent_id, status, receipt, replayed: false}` |
+| `POST /v1/call/intents/{id}/cancel` | `{}`. PENDING → CANCELLED (an intent already past expiry reports EXPIRED). A repeat returns 200. CONFIRMED → `409 STALE_MARKET ALREADY_CONFIRMED` |
 
 ## AI proposals and resolutions (§9.17, P4/P5)
 

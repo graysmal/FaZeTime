@@ -20,7 +20,7 @@ from starlette.staticfiles import StaticFiles
 
 import os
 
-from . import ai, api_operator, api_viewer, errors, timeutil, topups, worker, ws
+from . import ai, api_operator, api_viewer, bookie, errors, timeutil, topups, worker, ws
 from .config import Settings, cors_origins, load_settings
 from .db import Database
 from .deps import Services
@@ -171,6 +171,7 @@ def create_app(settings: Settings | None = None, clock: timeutil.Clock | None = 
     svc.settings = settings = settings.with_overrides(payment_mode=topups.payment_mode(svc))
     svc.sweeper.settings = settings
     app.include_router(ai.operator_router)  # P4/P5 §9.17 operator candidate, AI-mode and resolution routes
+    app.include_router(bookie.router)  # P11 §9.21 CALL_WORKER routes (/v1/call/*); binding is CLI-only
     if settings.operator_dist and os.path.isfile(os.path.join(settings.operator_dist, "index.html")):
         app.mount("/operator", OperatorStatic(directory=settings.operator_dist, html=True), name="operator-ui")
         log.info("operator UI mounted at /operator/ from %s", settings.operator_dist)
@@ -185,4 +186,5 @@ def create_app(settings: Settings | None = None, clock: timeutil.Clock | None = 
         allow_private_network=True,
         max_age=600,
     )
+    app.add_middleware(bookie.NoStoreMiddleware)  # outermost: every /v1/call/* response, errors included
     return app

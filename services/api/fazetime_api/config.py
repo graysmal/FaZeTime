@@ -78,6 +78,7 @@ class Settings:
     rl_ws_ticket: tuple[int, float] = (20, 60.0)
     rl_presence: tuple[int, float] = (30, 60.0)
     rl_open_operator_session: tuple[int, float] = (10, 600.0)
+    rl_call: tuple[int, float] = (60, 10.0)  # P11 §9.21: /v1/call/* per CALL_WORKER credential
     # D35 open access (FAZETIME_OPEN_ACCESS, default off): name-only viewer enrollment and the no-sign-in shared
     # operator session (POST /v1/open/operator-session, registered only while on). Exposure is bounded by the
     # tailnet-only bind; money, market and D30 rules are unchanged.

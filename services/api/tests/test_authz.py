@@ -21,6 +21,12 @@ OPERATOR_POSTS = [
     "/v1/operator/markets/mkt_00000000000000000000000000000000/void",
     "/v1/operator/sessions/revoke",
 ]
+# §9.21: CALL_WORKER fzk_ tokens only; any session (viewer or operator) is FORBIDDEN
+CALL_POSTS = [
+    "/v1/call/intents",
+    "/v1/call/intents/wit_00000000000000000000000000000000/confirm",
+    "/v1/call/intents/wit_00000000000000000000000000000000/cancel",
+]
 
 
 def _code(r, status, code):
@@ -34,7 +40,8 @@ def test_unauthenticated_gets_401_envelope(world):
     h, *_ = world
     for method, path in [("GET", "/v1/me"), ("GET", "/v1/operations/" + op()), ("POST", "/v1/wagers"),
                          ("POST", "/v1/ws-ticket"), ("GET", f"/v1/streams/{h.stream()['stream_id']}/snapshot"),
-                         ("GET", "/v1/operator/health"), ("POST", "/v1/topups")]:
+                         ("GET", "/v1/operator/health"), ("POST", "/v1/topups"), ("GET", "/v1/call/overview"),
+                         *(("POST", p) for p in CALL_POSTS)]:
         r = h.client.request(method, path)
         _code(r, 401, "UNAUTHENTICATED")
         assert r.headers["www-authenticate"] == "Bearer"
@@ -47,10 +54,17 @@ def test_token_in_query_string_is_ignored(world):
     _code(h.client.get(f"/v1/me?token={alice.token}"), 401, "UNAUTHENTICATED")
 
 
-@pytest.mark.parametrize("path", OPERATOR_POSTS)
+@pytest.mark.parametrize("path", OPERATOR_POSTS + CALL_POSTS)
 def test_viewer_cannot_call_operator_routes(world, path):
     h, _, alice, _ = world
     _code(h.client.post(path, headers=alice.h, json={"operation_id": op()}), 403, "FORBIDDEN")
+
+
+@pytest.mark.parametrize("path", CALL_POSTS)
+def test_operator_session_cannot_call_bookie_routes(world, path):
+    h, operator, *_ = world
+    _code(h.client.post(path, headers=operator.h, json={}), 403, "FORBIDDEN")
+    _code(h.client.get("/v1/call/overview", headers=operator.h), 403, "FORBIDDEN")
 
 
 def test_viewer_cannot_read_operator_inspection(world):

@@ -665,6 +665,82 @@ def operator_void(conn: sqlite3.Connection, *, market_id: str, now: datetime) ->
 # ------------------------------------------------------------------------------------------------
 # Wagers (§9.6) — check order inside BEGIN IMMEDIATE is exactly the contract's
 # ------------------------------------------------------------------------------------------------
+def stake_limit_details(settings: Settings) -> dict:
+    lim = settings.limits
+    return {"min_minor": lim.stake_min_minor, "max_minor": lim.stake_max_minor, "step_minor": lim.stake_step_minor}
+
+
+def check_stake_limits(amount_minor: int, settings: Settings, *, operation_id: str | None = None) -> None:
+    """§9.2 stake min/max/step -> INVALID_AMOUNT. The same rule POST /v1/wagers applies before its transaction."""
+    lim = settings.limits
+    if (amount_minor < lim.stake_min_minor or amount_minor > lim.stake_max_minor
+            or amount_minor % lim.stake_step_minor != 0):
+        raise ApiError("INVALID_AMOUNT", "Stake is outside the allowed range or step.",
+                       details=stake_limit_details(settings), operation_id=operation_id)
+
+
+def wager_prechecks(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    stream_session_id: str,
+    market_id: str,
+    rules_version: int,
+    side: str,
+    amount_minor: int,
+    now: datetime,
+    settings: Settings,
+    min_remaining_ms: int = 0,
+) -> tuple[sqlite3.Row, sqlite3.Row, sqlite3.Row, datetime]:
+    """§9.6 checks 2-7 in contract order, with no effects. Returns (run, market, wallet, close_at).
+
+    ``min_remaining_ms`` > 0 adds MARKET_CLOSED reason TOO_CLOSE right after the deadline check (the P11 bookie's
+    prepare step, §9.21). place_wager passes 0, so its behaviour is unchanged.
+    """
+    # 2. WRONG_RUN
+    run = views.get_run(conn, stream_session_id)
+    if run is None or run["state"] != "ACTIVE":
+        raise _wrong_run(conn, run)
+    # 3. STALE_MARKET (unknown market, not in this run, DRAFT, or rules_version mismatch)
+    market = views.get_market(conn, market_id)
+    if (
+        market is None
+        or market["run_id"] != run["run_id"]
+        or market["state"] == "DRAFT"
+        or int(market["rules_version"]) != rules_version
+    ):
+        raise _stale_market(conn, run["run_id"], "That market or rules_version is not current; refresh the snapshot.")
+    # 4. MARKET_CLOSED (state, deadline, pause)
+    if market["state"] != "OPEN":
+        raise _market_closed(market, "STATE", "Betting is closed for this market.")
+    close_at = timeutil.parse(market["close_at_utc"])
+    if now >= close_at:
+        raise _market_closed(market, "DEADLINE", "Betting closed at close_at_utc.")
+    if min_remaining_ms > 0 and close_at - now < timedelta(milliseconds=min_remaining_ms):
+        raise _market_closed(market, "TOO_CLOSE", "Too little time is left before betting closes.")
+    # (No operator pause exists in P2; DRAW_BOUNDARY blocks new markets only, D27.)
+    # 5. SOURCE_STALE (Twitch-origin markets only; fixture origins are exempt and labelled)
+    if market["origin"] in source_health.TWITCH_ORIGINS:
+        health = source_health.current(conn, run["stream_id"], now, settings)
+        if health["state"] != "LIVE":
+            raise ApiError("SOURCE_STALE", "The Twitch source is not live; betting is paused.",
+                           details={"source_state": health["state"]})
+    # 6. SIDE_CONFLICT
+    existing = conn.execute(
+        "SELECT side FROM wagers WHERE market_id = ? AND user_id = ? LIMIT 1", (market["market_id"], user_id)
+    ).fetchone()
+    if existing is not None and existing["side"] != side:
+        raise ApiError("SIDE_CONFLICT", "You already bet the other side of this market.",
+                       details={"existing_side": existing["side"]})
+    # 7. INSUFFICIENT_FUNDS
+    wallet = ledger.wallet_account(conn, run["run_id"], user_id)
+    available = int(wallet["balance_minor"]) if wallet is not None else 0
+    if wallet is None or available < amount_minor:
+        raise ApiError("INSUFFICIENT_FUNDS", "Not enough demo credits.",
+                       details={"available_minor": available, "requested_minor": amount_minor})
+    return run, market, wallet, close_at
+
+
 def place_wager(conn: sqlite3.Connection, *, principal: Principal, req: WagerRequest, clock, settings: Settings):
     """Returns (receipt, replayed). Raises ApiError for every business rejection (never cached)."""
     if principal.role != "VIEWER":  # D30, also enforced by the route dependency
@@ -675,45 +751,11 @@ def place_wager(conn: sqlite3.Connection, *, principal: Principal, req: WagerReq
     replay = check_replay(conn, principal.user_id, req.operation_id, "WAGER", req_hash)
     if replay is not None:
         return replay, True
-    # 2. WRONG_RUN
-    run = views.get_run(conn, req.stream_session_id)
-    if run is None or run["state"] != "ACTIVE":
-        raise _wrong_run(conn, run)
-    # 3. STALE_MARKET (unknown market, not in this run, DRAFT, or rules_version mismatch)
-    market = views.get_market(conn, req.market_id)
-    if (
-        market is None
-        or market["run_id"] != run["run_id"]
-        or market["state"] == "DRAFT"
-        or int(market["rules_version"]) != req.rules_version
-    ):
-        raise _stale_market(conn, run["run_id"], "That market or rules_version is not current; refresh the snapshot.")
-    # 4. MARKET_CLOSED (state, deadline, pause)
-    if market["state"] != "OPEN":
-        raise _market_closed(market, "STATE", "Betting is closed for this market.")
-    close_at = timeutil.parse(market["close_at_utc"])
-    if now >= close_at:
-        raise _market_closed(market, "DEADLINE", "Betting closed at close_at_utc.")
-    # (No operator pause exists in P2; DRAW_BOUNDARY blocks new markets only, D27.)
-    # 5. SOURCE_STALE (Twitch-origin markets only; fixture origins are exempt and labelled)
-    if market["origin"] in source_health.TWITCH_ORIGINS:
-        health = source_health.current(conn, run["stream_id"], now, settings)
-        if health["state"] != "LIVE":
-            raise ApiError("SOURCE_STALE", "The Twitch source is not live; betting is paused.",
-                           details={"source_state": health["state"]})
-    # 6. SIDE_CONFLICT
-    existing = conn.execute(
-        "SELECT side FROM wagers WHERE market_id = ? AND user_id = ? LIMIT 1", (market["market_id"], principal.user_id)
-    ).fetchone()
-    if existing is not None and existing["side"] != req.side:
-        raise ApiError("SIDE_CONFLICT", "You already bet the other side of this market.",
-                       details={"existing_side": existing["side"]})
-    # 7. INSUFFICIENT_FUNDS
-    wallet = ledger.wallet_account(conn, run["run_id"], principal.user_id)
-    available = int(wallet["balance_minor"]) if wallet is not None else 0
-    if wallet is None or available < req.amount_minor:
-        raise ApiError("INSUFFICIENT_FUNDS", "Not enough demo credits.",
-                       details={"available_minor": available, "requested_minor": req.amount_minor})
+    # 2-7. WRONG_RUN, STALE_MARKET, MARKET_CLOSED, SOURCE_STALE, SIDE_CONFLICT, INSUFFICIENT_FUNDS
+    run, market, wallet, close_at = wager_prechecks(
+        conn, user_id=principal.user_id, stream_session_id=req.stream_session_id, market_id=req.market_id,
+        rules_version=req.rules_version, side=req.side, amount_minor=req.amount_minor, now=now, settings=settings,
+    )
     # 8. accept: debit available, credit escrow, insert wager, insert outbox events
     now_s = _fmt(now)
     amount = req.amount_minor

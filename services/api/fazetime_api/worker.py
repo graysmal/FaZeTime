@@ -115,8 +115,9 @@ class WorkerPrincipal:
     label: str
 
 
-def worker_principal(request: Request) -> WorkerPrincipal:
-    """MEDIA_WORKER fzk_ tokens only. A valid viewer/operator session is FORBIDDEN, anything else 401."""
+def credential_principal(request: Request, role: str) -> WorkerPrincipal:
+    """fzk_ worker tokens of exactly ``role`` (MEDIA_WORKER or CALL_WORKER). A valid fzk_ token of the other role,
+    or a valid viewer/operator session, is FORBIDDEN; anything else (missing, unknown, revoked) is 401."""
     svc: Services = svc_of(request)
     scheme, _, token = request.headers.get("authorization", "").partition(" ")
     token = token.strip()
@@ -130,13 +131,18 @@ def worker_principal(request: Request) -> WorkerPrincipal:
             ).fetchone()
             if row is None:
                 raise ApiError("UNAUTHENTICATED", "Worker token is invalid or revoked.")
-            if row["role"] != "MEDIA_WORKER":
-                raise ApiError("FORBIDDEN", "MEDIA_WORKER role required.")
+            if row["role"] != role:
+                raise ApiError("FORBIDDEN", f"{role} role required.")
             return WorkerPrincipal(int(row["credential_id"]), row["role"], row["label"])
         session = auth.authenticate(conn, token, svc.clock.now())
     if session is None:
         raise ApiError("UNAUTHENTICATED", "Worker token is invalid or revoked.")
-    raise ApiError("FORBIDDEN", "MEDIA_WORKER role required.")
+    raise ApiError("FORBIDDEN", f"{role} role required.")
+
+
+def worker_principal(request: Request) -> WorkerPrincipal:
+    """MEDIA_WORKER fzk_ tokens only. A valid viewer/operator session is FORBIDDEN, anything else 401."""
+    return credential_principal(request, "MEDIA_WORKER")
 
 
 def _stream_and_run(conn, stream_id: str):
