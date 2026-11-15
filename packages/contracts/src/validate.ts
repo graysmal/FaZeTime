@@ -282,6 +282,8 @@ export const operatorMarketDraftV: V<OperatorMarketDraft> = obj<OperatorMarketDr
   ...marketShape,
   state: lit('DRAFT'),
   opened_at_utc: nullOnly,
+  close_at_utc: nullOnly,
+  resolve_by_utc: nullOnly,
 });
 
 const walletAfterV = walletV;

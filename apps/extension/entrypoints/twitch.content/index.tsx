@@ -8,6 +8,7 @@ import css from '../../src/ui/styles.css?inline';
 import { BackgroundClient } from '../../src/api/client';
 import { PORT_NAME, type PortLike } from '../../src/api/protocol';
 import { MountController, type MountedView } from '../../src/content/mount';
+import { FAZETIME_MODE, LIVE_CHANNEL } from '../../src/config';
 import { PanelController } from '../../src/state/controller';
 import { watchKey, wxtKV } from '../../src/storage';
 import { EnvContext, type UiEnv } from '../../src/ui/hooks';
@@ -77,13 +78,45 @@ export default defineContentScript({
       };
     };
 
+    // Presence (live builds): visibility + player state every 15 s while a panel is mounted. The
+    // background attaches the device ID and session and calls POST /v1/presence.
+    const tabInstanceId = crypto.randomUUID().toLowerCase();
+    let presenceChannel: string | null = null;
+    const playerState = (): 'PLAYING' | 'PAUSED' | 'BUFFERING' | 'UNKNOWN' => {
+      const video = document.querySelector<HTMLVideoElement>('[data-a-target="video-player"] video');
+      if (!video) return 'UNKNOWN';
+      if (video.paused) return 'PAUSED';
+      return video.readyState < 3 ? 'BUFFERING' : 'PLAYING';
+    };
+    const sendPresence = () => {
+      if (FAZETIME_MODE !== 'live' || !client || !presenceChannel) return;
+      void client.presence({
+        tab_instance_id: tabInstanceId,
+        observed_channel_login: presenceChannel,
+        page_visibility: document.visibilityState === 'visible' ? 'VISIBLE' : 'HIDDEN',
+        player_state: playerState(),
+      });
+    };
+    ctx.setInterval(sendPresence, 15_000);
+    ctx.addEventListener(document, 'visibilitychange', sendPresence);
+
     const mounter = new MountController({
       doc: document,
       getPath: () => location.pathname,
+      allowedChannel: FAZETIME_MODE === 'live' ? LIVE_CHANNEL : null,
       instanceId,
       css,
-      renderPanel: ({ host, root, placement, notice, channel, retryAttach }) =>
-        renderInto(root, channel, () => <Panel host={host} placement={placement} notice={notice} retryAttach={retryAttach} />),
+      renderPanel: ({ host, root, placement, notice, channel, retryAttach }) => {
+        const view = renderInto(root, channel, () => <Panel host={host} placement={placement} notice={notice} retryAttach={retryAttach} />);
+        presenceChannel = channel;
+        ctx.setTimeout(sendPresence, 1500);
+        return {
+          unmount: () => {
+            presenceChannel = null;
+            view.unmount();
+          },
+        };
+      },
       renderOverlay: ({ host, root, channel }) => renderInto(root, channel, () => <Overlay host={host} />),
       log: (message) => console.info('[FaZeTime]', message),
     });

@@ -1,6 +1,6 @@
 {
   "name": "@fazetime/extension",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "FaZeTime Chrome MV3 extension (P1: bundled panel with local MOCK/FIXTURE data only).",
   "type": "module",
@@ -11,7 +11,13 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "copy:documents": "node scripts/copy-to-documents.mjs",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "build:mock": "wxt build",
+    "build:live": "WXT_FAZETIME_MODE=live wxt build",
+    "build:live:pi": "WXT_FAZETIME_MODE=live WXT_FAZETIME_API_BASE=http://fazetime:8000 wxt build",
+    "copy:live": "node scripts/copy-to-documents.mjs chrome-mv3-live fazetime-extension-live",
+    "copy:live:pi": "node scripts/copy-to-documents.mjs chrome-mv3-live-fazetime fazetime-extension-live-pi",
+    "e2e:live": "node scripts/e2e-live.mjs"
   },
   "dependencies": {
     "react": "19.3.1",

@@ -9,6 +9,7 @@ import type {
   FixtureControls,
   FixtureInfo,
   MarketDataSource,
+  PresenceInput,
   RedeemCatalog,
   RedemptionReceipt,
   RedemptionRequest,
@@ -141,6 +142,9 @@ export class BackgroundClient implements MarketDataSource, WalletApi {
   }
   createTopUp(req: TopUpRequest): Promise<ApiResult<TopUpReceipt>> {
     return this.request('createTopUp', req);
+  }
+  presence(input: PresenceInput): Promise<ApiResult<unknown>> {
+    return this.request('presence', input);
   }
   getCatalog(): Promise<ApiResult<RedeemCatalog>> {
     return this.request('getCatalog');

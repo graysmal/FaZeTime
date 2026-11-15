@@ -15,6 +15,7 @@ import {
 import type { PushMessage } from '../api/protocol';
 import type {
   ApiResult,
+  BackgroundStatus,
   FixtureInfo,
   MarketDataSource,
   RedeemItem,
@@ -78,6 +79,7 @@ export interface PanelState {
   redeem: RedeemState;
   fixtureInfo: FixtureInfo | null;
   catalog: RedeemItem[] | null;
+  backend: BackgroundStatus | null;
 }
 
 const CLOSED_TOPUP: TopUpState = {
@@ -105,6 +107,7 @@ export function initialPanelState(): PanelState {
     redeem: { busyItem: null, receipt: null, error: null, retry: null },
     fixtureInfo: null,
     catalog: null,
+    backend: null,
   };
 }
 
@@ -164,6 +167,12 @@ export class PanelController {
   };
 
   onPush = (msg: PushMessage): void => {
+    if (msg.t === 'status') {
+      const prev = this.state.backend;
+      this.set({ backend: msg.status });
+      if (prev && (prev.enrolled !== msg.status.enrolled || prev.link !== msg.status.link)) void this.refresh();
+      return;
+    }
     if (msg.t === 'hello') {
       this.set({ adapterMode: msg.mode, hasFixtures: msg.fixtures, connection: 'connected' });
       void this.refresh(); // Service worker may have restarted: resync from the snapshot.
@@ -180,7 +189,21 @@ export class PanelController {
 
   applySnapshot(result: ApiResult<StreamSnapshot>, opts: { force?: boolean } = {}): void {
     if (!result.ok) {
-      this.set({ snapshotIssue: result.kind === 'http' ? describeError(result.error.error).title : 'Reconnecting to the extension background…' });
+      let issue = 'Reconnecting…';
+      if (result.kind === 'http') {
+        const code = result.error.error.code;
+        issue =
+          code === 'UNAUTHENTICATED'
+            ? 'Not enrolled. Open the FaZeTime toolbar popup and enter your invite code.'
+            : code === 'NOT_FOUND'
+              ? 'No stream is set up on the server yet.'
+              : describeError(result.error.error).title;
+        if (code === 'UNAUTHENTICATED') {
+          this.set({ snapshot: null, snapshotIssue: issue });
+          return;
+        }
+      }
+      this.set({ snapshotIssue: issue });
       return;
     }
     const snap = result.body;

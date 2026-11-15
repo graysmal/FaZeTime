@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { formatCountdown, remainingMs } from '../lib/time';
 import { MarketCard } from './MarketCard';
+import { FAZETIME_MODE } from '../config';
 import { useEnv, useFullscreen, useNow, usePanel } from './hooks';
 
 const CONTROLS_CLEARANCE_PX = 76; // Keep clear of Twitch's bottom control bar (about 50px) plus margin.
@@ -36,8 +37,14 @@ export function Overlay({ host }: { host: HTMLElement }) {
   const title = market ? market.question : 'No market open';
   return (
     <div className="ft-overlay" onKeyDown={(e) => e.key === 'Escape' && setExpanded(false)}>
-      <button type="button" className="ft-pill" aria-expanded={expanded} aria-label="FaZeTime market (MOCK)" onClick={() => setExpanded((v) => !v)}>
-        <span className="ft-badge ft-badge--mock">MOCK</span>
+      <button
+        type="button"
+        className="ft-pill"
+        aria-expanded={expanded}
+        aria-label={FAZETIME_MODE === 'live' ? 'FaZeTime market (demo, test money)' : 'FaZeTime market (MOCK)'}
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <span className="ft-badge ft-badge--mock">{FAZETIME_MODE === 'live' ? 'DEMO' : 'MOCK'}</span>
         <span className="ft-pill-title">{title}</span>
         {market?.state === 'OPEN' && <span className="ft-pill-time">{remaining > 0 ? formatCountdown(remaining) : 'closing'}</span>}
         {market && market.state !== 'OPEN' && <span className="ft-badge ft-badge--soft">{market.state}</span>}

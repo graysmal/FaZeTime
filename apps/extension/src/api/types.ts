@@ -3,7 +3,18 @@
 // implements the same async interfaces over a runtime Port (see protocol.ts). Components depend
 // only on MarketDataSource / WalletApi, so P2 swaps the background adapter without touching UI.
 
-import type { ErrorCode, ErrorEnvelope, StreamSnapshot, WagerReceiptResponse, WagerRequest, WalletSummary } from '@fazetime/contracts';
+import type {
+  ErrorCode,
+  ErrorEnvelope,
+  Me,
+  PageVisibility,
+  PlayerState,
+  PresenceAck,
+  StreamSnapshot,
+  WagerReceiptResponse,
+  WagerRequest,
+  WalletSummary,
+} from '@fazetime/contracts';
 
 /**
  * - ok: a definitive 2xx answer.
@@ -102,10 +113,59 @@ export interface FixtureControls {
   armTimeout(): Promise<FixtureInfo>;
 }
 
+export type LinkState = 'MOCK' | 'IDLE' | 'NEEDS_ENROLL' | 'NO_STREAM' | 'CONNECTING' | 'LIVE' | 'POLLING' | 'ORIGIN_REJECTED';
+
+/** Non-secret background status pushed to tabs and the popup. Never contains the session token. */
+export interface BackgroundStatus {
+  mode: 'MOCK' | 'LIVE';
+  link: LinkState;
+  enrolled: boolean;
+  reenroll: boolean;
+  displayName: string | null;
+  role: string | null;
+  apiBase: string | null;
+  channel: string | null;
+  message: string | null;
+}
+
+export interface PresenceInput {
+  tab_instance_id: string;
+  observed_channel_login: string | null;
+  page_visibility: PageVisibility;
+  player_state: PlayerState;
+}
+
+export interface EnrollInput {
+  invite_code: string;
+  display_name: string;
+  claimed_twitch_login: string | null;
+}
+
 /** What the background owns. */
 export interface BackendAdapter extends MarketDataSource, WalletApi {
   readonly mode: 'MOCK' | 'LIVE';
   readonly fixtures?: FixtureControls;
-  /** Called when authoritative state may have changed (mock mutation; P2: WS event or poll). */
+  /** Called when authoritative state may have changed (mock mutation; live: WS event or poll). */
   onChange(listener: () => void): () => void;
+  status?(): BackgroundStatus;
+  onStatus?(listener: () => void): () => void;
+  /** Latest state for pushes without a network round trip (live adapter). */
+  peekSnapshot?(): ApiResult<StreamSnapshot> | null;
+  /** Number of connected tabs; the live socket runs only while someone watches. */
+  setDemand?(tabs: number): void;
+  presence?(input: PresenceInput): Promise<ApiResult<PresenceAck>>;
+  enroll?(input: EnrollInput): Promise<ApiResult<{ me: Me }>>;
+  signOut?(): Promise<void>;
 }
+
+export const MOCK_STATUS: BackgroundStatus = {
+  mode: 'MOCK',
+  link: 'MOCK',
+  enrolled: false,
+  reenroll: false,
+  displayName: null,
+  role: null,
+  apiBase: null,
+  channel: null,
+  message: null,
+};

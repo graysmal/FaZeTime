@@ -5,8 +5,11 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const src = join(dirname(fileURLToPath(import.meta.url)), '..', '.output', 'chrome-mv3');
-const dest = join(homedir(), 'Documents', 'fazetime-extension');
+// Usage: node scripts/copy-to-documents.mjs [outputDir=chrome-mv3] [documentsFolder=fazetime-extension]
+const [variant = 'chrome-mv3', folder = 'fazetime-extension'] = process.argv.slice(2);
+if (!/^[a-z0-9_-]+$/i.test(variant) || !/^[a-z0-9_-]+$/i.test(folder)) throw new Error('bad arguments');
+const src = join(dirname(fileURLToPath(import.meta.url)), '..', '.output', variant);
+const dest = join(homedir(), 'Documents', folder);
 if (!existsSync(join(src, 'manifest.json'))) {
   console.error(`No build at ${src}. Run "npx wxt build" first.`);
   process.exit(1);

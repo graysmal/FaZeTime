@@ -18,7 +18,7 @@ Updated: 2026-11-14 ~21:05 CT. Plan version: 1.0 + contract v1 freeze. State: P0
 |---|---|---|
 | P0 Capability and contract gates | IN_PROGRESS | `docs/evidence/p0/` (inventory, docs verification, contract review), `spikes/p0-media/README.md`. Contract v1 frozen in CONTRACTS §9 |
 | P1 Extension mocks | BUILT, gate PARTIAL (checkpoint commit on `hackathon-build`) | Coordinator re-ran contracts 190/190, extension 77/77, tsc and the build. Playwright on live Twitch passed 19/19 (mount once, SPA remount, mock wager, insufficient funds → "FaZe Up!", banners, resize, no focus trap). **Still pending:** a manual Flatpak Chrome pass (theater mode, full-screen, chat collapse, popup, Load unpacked) |
-| P2 Server/users/presence/ledger foundation | BUILT, gate PARTIAL (checkpoint commit on `hackathon-build`) | pytest 167 passed, 2 skipped (coordinator re-run). Independent review in progress. **Still pending:** the two-browser live test (extension live adapter, in progress) and the run on the Pi (in progress) |
+| P2 Server/users/presence/ledger foundation | BUILT, gate PARTIAL (checkpoint commit on `hackathon-build`) | pytest 167 passed, 2 skipped (coordinator re-run). Review: **accept with limitations**, no Critical/High (`docs/evidence/p2/P2-review.md`), bound to `6930352`. Fixes M2 (pinned origin) and M3 (constraint tests) are in progress. **Still pending:** the two-browser live test (extension live adapter, in progress) and the run on the Pi (in progress) |
 | P3 Twitch perception | IN_PROGRESS | Worker contract frozen (CONTRACTS §9.16). The worker is choosing the ASR model on the team audio and building `services/worker`. The backend is adding the worker routes |
 | P4 AI proposals | NOT_STARTED | None |
 | P5 AI outcomes | NOT_STARTED | None |

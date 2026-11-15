@@ -508,6 +508,12 @@ These are additive rulings. No schema version change.
     - `ready` carries `schema_version`, `stream_id`, `server_time_utc` and `event_hwm`.
     - The extension ID is pinned with a manifest `key`, and the CORS and WS allowlists use that `chrome-extension://` origin.
 13. **P1-local shapes:** the top-up and redeem response shapes stay local to P1 until P6. The catalog is static.
+14. **Version gaps:**
+    - Every event carries the full aggregate state. Clients apply any event whose `aggregate_version` is greater than the one they hold for that (`stream_session_id`, aggregate).
+    - Jumps of more than 1 are normal (for example, one settlement can bump a wallet several times) and are not gaps.
+    - Clients refetch the snapshot only on (re)connect, on a run change, or on a server `resync` frame.
+15. **Origins:** the allowlists contain exact origins only. By default that is `https://www.twitch.tv` for the WebSocket, plus the pinned `chrome-extension://<id>` from `FAZETIME_ALLOWED_ORIGINS`. Wildcards are not allowed.
+16. **Operators (D30):** OPERATOR-role users cannot wager (403 `FORBIDDEN`), receive no seed grant, and are never raffle-eligible.
 
 ### 9.16 Media-worker contract (v1, for P3)
 

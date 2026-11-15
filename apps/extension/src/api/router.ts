@@ -1,8 +1,8 @@
 // Background side of the port protocol. Owns the adapter; content scripts only send requests.
 
-import { isErrorCode, isRequestMessage, PORT_NAME, type PortLike, type PushMessage, type RequestMessage } from './protocol';
+import { isErrorCode, isRequestMessage, PORT_NAME, POPUP_METHODS, type PopupRequest, type PortLike, type PushMessage, type RequestMessage } from './protocol';
 import { httpError } from './errors';
-import type { ApiResult, BackendAdapter, RedemptionRequest, TopUpRequest } from './types';
+import { MOCK_STATUS, type ApiResult, type BackendAdapter, type PresenceInput, type RedemptionRequest, type TopUpRequest } from './types';
 import type { WagerRequest } from '@fazetime/contracts';
 
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
@@ -24,6 +24,24 @@ export async function handleRequest(adapter: BackendAdapter, msg: RequestMessage
       return adapter.createTopUp(params as unknown as TopUpRequest);
     case 'getCatalog':
       return adapter.getCatalog();
+    case 'status':
+      return { ok: true, status: 200, body: adapter.status?.() ?? MOCK_STATUS };
+    case 'presence': {
+      if (!adapter.presence) return httpError('CAPABILITY_UNAVAILABLE', 'Presence is reported only in live builds.');
+      if (!isPlainObject(params)) return httpError('VALIDATION_FAILED', 'Presence body must be an object.');
+      const p = params as Record<string, unknown>;
+      const vis = ['VISIBLE', 'HIDDEN', 'UNKNOWN'];
+      const player = ['PLAYING', 'PAUSED', 'BUFFERING', 'UNKNOWN'];
+      if (typeof p.tab_instance_id !== 'string' || !vis.includes(String(p.page_visibility)) || !player.includes(String(p.player_state)))
+        return httpError('VALIDATION_FAILED', 'Bad presence body.');
+      const login = typeof p.observed_channel_login === 'string' && /^[a-z0-9_]{1,25}$/.test(p.observed_channel_login) ? p.observed_channel_login : null;
+      return adapter.presence({
+        tab_instance_id: p.tab_instance_id,
+        observed_channel_login: login,
+        page_visibility: p.page_visibility as PresenceInput['page_visibility'],
+        player_state: p.player_state as PresenceInput['player_state'],
+      });
+    }
     case 'redeem':
       if (!isPlainObject(params)) return httpError('VALIDATION_FAILED', 'Redemption body must be an object.');
       return adapter.redeem(params as unknown as RedemptionRequest);
@@ -73,6 +91,7 @@ export function attachRouter(adapter: BackendAdapter, runtime: RuntimeLike): () 
       return;
     }
     ports.add(port);
+    adapter.setDemand?.(ports.size);
     port.onMessage.addListener(async (msg: unknown) => {
       if (!isRequestMessage(msg)) return;
       let result: ApiResult<unknown>;
@@ -84,22 +103,68 @@ export function attachRouter(adapter: BackendAdapter, runtime: RuntimeLike): () 
       }
       safePost(port, { t: 'res', id: msg.id, result });
     });
-    port.onDisconnect.addListener(() => ports.delete(port));
+    port.onDisconnect.addListener(() => {
+      ports.delete(port);
+      adapter.setDemand?.(ports.size);
+    });
     const hello: PushMessage = { t: 'hello', mode: adapter.mode, fixtures: Boolean(adapter.fixtures) };
     safePost(port, hello);
+    safePost(port, { t: 'status', status: adapter.status?.() ?? MOCK_STATUS } satisfies PushMessage);
   };
 
   runtime.onConnect.addListener(onConnect);
   const unsubscribe = adapter.onChange(async () => {
     if (ports.size === 0) return;
-    const result = await adapter.getSnapshot();
+    const result = adapter.peekSnapshot?.() ?? (await adapter.getSnapshot());
     for (const port of ports) safePost(port, { t: 'snapshot', result } satisfies PushMessage);
+  });
+  const unsubscribeStatus = adapter.onStatus?.(() => {
+    const status = adapter.status?.() ?? MOCK_STATUS;
+    for (const port of ports) safePost(port, { t: 'status', status } satisfies PushMessage);
   });
 
   return () => {
     runtime.onConnect.removeListener(onConnect);
     unsubscribe();
+    unsubscribeStatus?.();
     for (const port of ports) port.disconnect();
     ports.clear();
   };
+}
+
+export interface MessageRuntimeLike {
+  id?: string;
+  onMessage: {
+    addListener(cb: (msg: unknown, sender: { id?: string; tab?: unknown; url?: string }, sendResponse: (r: unknown) => void) => boolean | void): void;
+  };
+}
+
+/** Popup -> background requests (enrollment). Only extension pages, never content scripts or the page. */
+export function attachPopupHandler(adapter: BackendAdapter, runtime: MessageRuntimeLike): void {
+  runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    const m = msg as Partial<PopupRequest> | null;
+    if (!m || m.t !== 'popup' || !POPUP_METHODS.includes(m.method as never)) return;
+    // sender.url is set by the browser: a content script reports the web page URL, so it is refused here.
+    const fromExtensionPage = sender.id === runtime.id && typeof sender.url === 'string' && sender.url.startsWith(`chrome-extension://${runtime.id}/`);
+    if (!fromExtensionPage) {
+      sendResponse(httpError('FORBIDDEN', 'Only the extension popup may call this.'));
+      return;
+    }
+    void (async (): Promise<ApiResult<unknown>> => {
+      if (m.method === 'status') return { ok: true, status: 200, body: adapter.status?.() ?? MOCK_STATUS };
+      if (m.method === 'signout') {
+        await adapter.signOut?.();
+        return { ok: true, status: 200, body: adapter.status?.() ?? MOCK_STATUS };
+      }
+      if (!adapter.enroll) return httpError('CAPABILITY_UNAVAILABLE', 'Enrollment exists only in live builds.');
+      const p = isPlainObject(m.params) ? m.params : {};
+      if (typeof p.invite_code !== 'string' || typeof p.display_name !== 'string')
+        return httpError('VALIDATION_FAILED', 'Invite code and display name are required.');
+      const login = typeof p.claimed_twitch_login === 'string' && p.claimed_twitch_login.trim() !== '' ? p.claimed_twitch_login : null;
+      return adapter.enroll({ invite_code: p.invite_code, display_name: p.display_name, claimed_twitch_login: login });
+    })()
+      .catch(() => httpError('INTERNAL_ERROR', 'The background failed.'))
+      .then(sendResponse);
+    return true; // Async response.
+  });
 }

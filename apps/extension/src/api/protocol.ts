@@ -2,7 +2,7 @@
 // Messages are untrusted input on both sides: validate shape before use.
 
 import { ERROR_CODES, type ErrorCode } from '@fazetime/contracts';
-import type { ApiResult } from './types';
+import type { ApiResult, BackgroundStatus } from './types';
 
 export const PORT_NAME = 'fazetime/v1';
 export const REQUEST_TIMEOUT_MS = 10_000;
@@ -18,6 +18,8 @@ export const METHODS = [
   'fixtures.load',
   'fixtures.injectError',
   'fixtures.armTimeout',
+  'presence',
+  'status',
 ] as const;
 export type Method = (typeof METHODS)[number];
 
@@ -31,7 +33,19 @@ export interface RequestMessage {
 export type ResponseMessage = { t: 'res'; id: number; result: ApiResult<unknown> };
 
 /** Pushed to every connected tab whenever state may have changed. */
-export type PushMessage = { t: 'snapshot'; result: ApiResult<unknown> } | { t: 'hello'; mode: 'MOCK' | 'LIVE'; fixtures: boolean };
+export type PushMessage =
+  | { t: 'snapshot'; result: ApiResult<unknown> }
+  | { t: 'hello'; mode: 'MOCK' | 'LIVE'; fixtures: boolean }
+  | { t: 'status'; status: BackgroundStatus };
+
+/** Popup (extension page) -> background. Content scripts are refused. */
+export const POPUP_METHODS = ['status', 'enroll', 'signout'] as const;
+export type PopupMethod = (typeof POPUP_METHODS)[number];
+export interface PopupRequest {
+  t: 'popup';
+  method: PopupMethod;
+  params?: unknown;
+}
 
 export type FromBackground = ResponseMessage | PushMessage;
 
@@ -47,6 +61,7 @@ export function isFromBackground(msg: unknown): msg is FromBackground {
   if (m.t === 'res') return Number.isSafeInteger(m.id) && isApiResult(m.result);
   if (m.t === 'snapshot') return isApiResult(m.result);
   if (m.t === 'hello') return m.mode === 'MOCK' || m.mode === 'LIVE';
+  if (m.t === 'status') return typeof m.status === 'object' && m.status !== null;
   return false;
 }
 

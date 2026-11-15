@@ -36,6 +36,8 @@ export interface OverlayRenderArgs {
 export interface MountDeps {
   doc: Document;
   getPath: () => string;
+  /** Live builds mount only on this channel (lowercase login); null = any channel page. */
+  allowedChannel?: string | null;
   instanceId: string;
   css: string;
   renderPanel: (args: PanelRenderArgs) => MountedView;
@@ -87,6 +89,12 @@ export class MountController {
 
   constructor(private readonly deps: MountDeps) {}
 
+  private channelFor(path: string): string | null {
+    const ch = channelFromPath(path);
+    const allowed = this.deps.allowedChannel ?? null;
+    return allowed && ch !== allowed ? null : ch;
+  }
+
   private get now(): number {
     return (this.deps.now ?? Date.now)();
   }
@@ -107,7 +115,7 @@ export class MountController {
   /** Call on SPA navigation; also re-checked from the observer in case an event is missed. */
   onLocationChange(): void {
     if (this.stopped) return;
-    const next = channelFromPath(this.deps.getPath());
+    const next = this.channelFor(this.deps.getPath());
     if (next === this.channel) {
       this.schedule();
       return;
@@ -177,7 +185,7 @@ export class MountController {
 
   check(): void {
     if (this.stopped) return;
-    const current = channelFromPath(this.deps.getPath());
+    const current = this.channelFor(this.deps.getPath());
     if (current !== this.channel) {
       this.onLocationChange();
       return;

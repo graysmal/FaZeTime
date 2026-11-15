@@ -607,13 +607,14 @@ export type OperationLookupResponse = WagerReceiptResponse;
 // ---------------------------------------------------------------------------
 
 /**
- * `operator/market_draft`. Section 9.13 does not define an operator market type; this is the
- * narrowest reading: PublicMarket fields with state DRAFT and no `opened_at_utc` yet.
- * P2 owns the real operator schema.
+ * `operator/market_draft`: PublicMarket fields with state DRAFT. Section 9.15(3): close/resolve
+ * times are null until OPEN (operator create takes close_in_s / resolve_in_s). P2 owns operator routes.
  */
-export interface OperatorMarketDraft extends Omit<PublicMarket, 'state' | 'opened_at_utc'> {
+export interface OperatorMarketDraft extends Omit<PublicMarket, 'state' | 'opened_at_utc' | 'close_at_utc' | 'resolve_by_utc'> {
   state: 'DRAFT';
   opened_at_utc: null;
+  close_at_utc: null;
+  resolve_by_utc: null;
 }
 
 // ---------------------------------------------------------------------------

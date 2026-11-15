@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type 
 import type { ErrorCode, Modes } from '@fazetime/contracts';
 import { checkTopUp, describeAmountProblem, formatMinor, parseDollarsToMinor } from '../lib/money';
 import type { PanelNotice, Placement } from '../content/mount';
+import { FAZETIME_MODE } from '../config';
 import { MarketCard } from './MarketCard';
 import { PANEL_OPEN_KEY, PROFILE_KEY, panelHeightKey, useEnv, usePanel, useStoredValue, type Profile } from './hooks';
 
@@ -17,6 +18,19 @@ export function clampPanelHeight(px: number, containerPx: number): number {
   return Math.round(Math.min(max, Math.max(PANEL_MIN_PX, px)));
 }
 
+/** MOCK for local fixture builds; DEMO (test money) for live builds. */
+export function ModeBadge() {
+  return FAZETIME_MODE === 'live' ? (
+    <span className="ft-badge ft-badge--mock" title="Live demo API. Test money only; nothing here is real money.">
+      DEMO · TEST MONEY
+    </span>
+  ) : (
+    <span className="ft-badge ft-badge--mock" title="Local mock data. No backend, no real money.">
+      MOCK
+    </span>
+  );
+}
+
 export function ModeChips({ modes, adapter }: { modes: Modes | undefined; adapter: string | null }) {
   const media = modes?.media_source_kind ?? 'NONE';
   return (
@@ -30,11 +44,9 @@ export function ModeChips({ modes, adapter }: { modes: Modes | undefined; adapte
       <span className="ft-mode">
         Funds: <b>{modes?.payment_mode ?? 'UNKNOWN'}</b>
       </span>
-      {adapter === 'MOCK' && (
-        <span className="ft-mode">
-          Data: <b>LOCAL MOCK</b>
-        </span>
-      )}
+      <span className="ft-mode">
+        Data: <b>{adapter === 'LIVE' || (adapter === null && FAZETIME_MODE === 'live') ? 'LIVE API' : 'LOCAL MOCK'}</b>
+      </span>
     </div>
   );
 }
@@ -79,9 +91,7 @@ export function Panel(props: { host: HTMLElement; placement: Placement; notice: 
           <span className="ft-word">
             FaZe<b>Time</b>
           </span>
-          <span className="ft-badge ft-badge--mock" title="Local mock data. No backend, no real money.">
-            MOCK
-          </span>
+          <ModeBadge />
           {snap?.market?.state === 'OPEN' && !open && <span className="ft-badge ft-badge--soft">Market open</span>}
         </div>
         <div className="ft-head-actions">
@@ -121,6 +131,16 @@ export function Panel(props: { host: HTMLElement; placement: Placement; notice: 
             </div>
           )}
           {st.connection === 'disconnected' && <div className="ft-notice">Reconnecting to the extension…</div>}
+          {st.backend?.mode === 'LIVE' && !st.backend.enrolled && (
+            <div className="ft-notice ft-notice--warn">
+              {st.backend.reenroll
+                ? 'Your session ended. Open the FaZeTime toolbar popup and enroll again with a new invite code.'
+                : 'Not enrolled. Open the FaZeTime toolbar popup and enter your invite code.'}
+            </div>
+          )}
+          {st.backend?.mode === 'LIVE' && st.backend.enrolled && (st.backend.link === 'POLLING' || st.backend.link === 'ORIGIN_REJECTED') && (
+            <div className="ft-notice">{st.backend.message ?? 'Live updates reconnecting; showing polled state.'}</div>
+          )}
           {st.snapshotIssue && st.snapshot && <div className="ft-notice">{st.snapshotIssue}</div>}
           {st.runNotice && (
             <div className="ft-notice">
@@ -226,9 +246,15 @@ function WalletTab() {
           <b>{w ? formatMinor(w.in_play_minor) : '…'}</b>
         </div>
       </div>
-      <button type="button" className="ft-primary" onClick={() => controller.openTopUp('manual')}>
-        Add demo funds (MOCK)
-      </button>
+      {st.snapshot?.modes.payment_mode === 'MOCK' ? (
+        <button type="button" className="ft-primary" onClick={() => controller.openTopUp('manual')}>
+          Add demo funds (MOCK)
+        </button>
+      ) : (
+        <button type="button" className="ft-primary" disabled title="Stripe test-mode top-ups arrive in phase 6">
+          Top-ups unavailable until phase 6
+        </button>
+      )}
       <p className="ft-fine">Demo funds only. Not money, cannot be withdrawn, and only valid in this demo run.</p>
       <div className="ft-stat">
         <span>Profile (set in the FaZeTime toolbar popup)</span>
@@ -250,6 +276,7 @@ function RedeemTab() {
     if (!st.catalog) void controller.loadCatalog();
   }, [controller, st.catalog]);
   const { busyItem, receipt, error } = st.redeem;
+  const unavailable = st.snapshot !== null && st.snapshot.modes.payment_mode !== 'MOCK';
   return (
     <div>
       <p className="ft-fine">Tiny fixed demo catalog. Codes are random and NON-REDEEMABLE: no store, coupon or prize exists.</p>
@@ -259,8 +286,8 @@ function RedeemTab() {
             <strong>{item.title}</strong>
             <p>{item.description}</p>
           </div>
-          <button type="button" className="ft-secondary" disabled={busyItem !== null} onClick={() => void controller.redeem(item.item_id)}>
-            {busyItem === item.item_id ? 'Redeeming…' : `Redeem ${formatMinor(item.price_minor)}`}
+          <button type="button" className="ft-secondary" disabled={busyItem !== null || unavailable} onClick={() => void controller.redeem(item.item_id)}>
+            {unavailable ? 'Unavailable until phase 6' : busyItem === item.item_id ? 'Redeeming…' : `Redeem ${formatMinor(item.price_minor)}`}
           </button>
         </div>
       ))}
@@ -292,6 +319,27 @@ function TopUpDialog() {
   const firstRef = useRef<HTMLButtonElement>(null);
   useEffect(() => firstRef.current?.focus(), []);
   if (!limits) return null;
+  if (st.snapshot?.modes.payment_mode !== 'MOCK') {
+    return (
+      <div className="ft-backdrop" onKeyDown={(e) => e.key === 'Escape' && controller.closeTopUp()}>
+        <div className="ft-dialog" role="dialog" aria-modal="false" aria-labelledby="ft-topup-title">
+          <div className="ft-row">
+            <h4 id="ft-topup-title">Add demo funds</h4>
+            <span className="ft-badge ft-badge--soft">UNAVAILABLE</span>
+          </div>
+          {t.reason === 'insufficient' && t.neededMinor ? (
+            <p className="ft-hint ft-hint--warn">You need {formatMinor(t.neededMinor)} more for that bet.</p>
+          ) : null}
+          <p className="ft-fine">
+            Test top-ups arrive with Stripe test mode in phase 6. This build cannot add funds, and nothing can be charged.
+          </p>
+          <button ref={firstRef} type="button" className="ft-secondary" onClick={() => controller.closeTopUp()}>
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  }
   const amount = choice === 'custom' ? parseDollarsToMinor(customText) : choice;
   const problem = checkTopUp(amount, limits);
   const busy = t.status === 'submitting';

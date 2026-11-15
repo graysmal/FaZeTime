@@ -42,7 +42,7 @@
     "market_id": "mkt_00000000000000000000000000000102",
     "stream_session_id": "run_00000000000000000000000000000001",
     "rules_version": 1,
-    "aggregate_version": 1,
+    "aggregate_version": 2,
     "state": "OPEN",
     "origin": "CANNED_FIXTURE",
     "question": "Will anyone place a bed in the first 30 seconds of round one?",

@@ -41,6 +41,7 @@ export function checkMarket(market: PublicMarket, path = 'market', opts: { viewe
     const w = market.winning_side === 'YES' ? market.pool.yes_minor : market.pool.no_minor;
     if (!(w > 0 && w < market.pool.total_minor)) add('SETTLED requires 0 < W < T');
   }
+  if (viewer && market.aggregate_version < 2) add('viewers first see aggregate_version >= 2 (DRAFT is 1, section 9.15(4))');
   if (market.opened_at_utc && Date.parse(market.opened_at_utc) >= Date.parse(market.close_at_utc)) add('opened_at_utc must precede close_at_utc');
   if (Date.parse(market.close_at_utc) > Date.parse(market.resolve_by_utc)) add('close_at_utc must not follow resolve_by_utc');
   return issues;
@@ -103,6 +104,11 @@ export function checkSnapshot(snapshot: StreamSnapshot): Issue[] {
     issues.push({ path: 'my_position', message: 'my_position is present iff market is present' });
   if (snapshot.stream.wagering_paused !== (snapshot.stream.wagering_paused_reason !== null))
     issues.push({ path: 'stream', message: 'wagering_paused_reason is present iff wagering_paused' });
+  // Section 9.15(2): paused iff the current market is OPEN and (OPERATOR_PAUSE or Twitch-origin with a non-LIVE source).
+  const mk = snapshot.market;
+  const twitchSourceDown = mk !== null && mk.state === 'OPEN' && (mk.origin === 'AI_APPROVED' || mk.origin === 'AI_AUTOMATIC') && snapshot.source_health.state !== 'LIVE';
+  if (snapshot.stream.wagering_paused && mk?.state !== 'OPEN') issues.push({ path: 'stream', message: 'wagering_paused requires an OPEN market' });
+  if (twitchSourceDown && !snapshot.stream.wagering_paused) issues.push({ path: 'stream', message: 'Twitch-origin OPEN market with a non-LIVE source must be paused' });
   const m = snapshot.market;
   if (m) {
     issues.push(...checkMarket(m, 'market', { viewer: true }));

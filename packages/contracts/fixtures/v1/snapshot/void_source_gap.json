@@ -8,8 +8,8 @@
     "stream_session_id": "run_00000000000000000000000000000001",
     "run_state": "ACTIVE",
     "aggregate_version": 4,
-    "wagering_paused": true,
-    "wagering_paused_reason": "SOURCE_NOT_LIVE"
+    "wagering_paused": false,
+    "wagering_paused_reason": null
   },
   "modes": {
     "ai_mode": "FIXTURE",

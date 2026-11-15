@@ -1,0 +1,5 @@
+{
+  "note": "PUBLIC key only (SubjectPublicKeyInfo DER, base64). Pins the unpacked extension ID. No private key exists on disk.",
+  "id": "hodaaffdhncidmaccebmionoljljfefe",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwoMFUbCCKttlsnHx4Ode3p1MyfvKFBuCk5N30AF1dOBL5uwL7TENMJd88IxC9ih1bU85ZuubQns7sTW7h1lb3n75cDv5iT75YAFStmq2AzVIzooPFzkSqGoBFRzNURR/avUWEo+MKSN6t7BRyzgcazHLue9V33qqxhB/+eXxZ6pPbW6tznb2JKor6hDr/SCIr/Q/gGoCQO6C4stN7IL2rn5reV4U33ykuBGOY0bKYfBTyfqJbCMOSZr62ER7v+xQFpENEKWJRw19fpItARlahY+WV/cd+Se/mysqkI2n4t9RAtriBp0Yy+pqGM1Hmoq4VteN/vxa0aSxgu5wBFB1dQIDAQAB"
+}

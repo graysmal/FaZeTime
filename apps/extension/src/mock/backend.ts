@@ -317,7 +317,8 @@ export class MockBackend implements BackendAdapter {
     await this.ready;
     const op = this.state.ops[operationId];
     if (!op || op.type !== 'wager') return httpError('NOT_FOUND', 'No such operation for this user.');
-    return { ok: true, status: 200, body: clone(op.receipt as WagerReceiptResponse) };
+    // Section 9.15(7): lookups return the stored original receipt with replayed: true.
+    return { ok: true, status: 200, body: { ...clone(op.receipt as WagerReceiptResponse), replayed: true } };
   }
 
   createTopUp(req: TopUpRequest): Promise<ApiResult<TopUpReceipt>> {

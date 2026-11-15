@@ -40,6 +40,10 @@
 **External accounts and devices**
 - Pi reachable as `fazetime@fazetime` over Tailscale with key auth. The coordinator never uses or stores a password and never runs sudo on it.
 - `.env.local` holds `GEMINI_API_KEY` and `CHERT_API_KEY`. It is gitignored; never print it.
+- **Stripe CLI** 1.55.11 is installed at `~/.local/bin/stripe` on `latpop`.
+  - Source: the official GitHub release, SHA-256 verified on 2026-11-14.
+  - No `stripe login` is needed: use `stripe listen --api-key "$STRIPE_SECRET_KEY" --forward-to …` with the test key.
+  - `STRIPE_SECRET_KEY` was not in `.env.local` yet at ~21:55 CT. The owner is creating the account; it must be test mode only.
 
 **Active workers**
 - Pi ASR/tailnet.

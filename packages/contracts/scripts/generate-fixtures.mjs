@@ -225,7 +225,7 @@ S.open_with_position = snapshot({
 
 S.open_empty_pool = snapshot({
   hwm: 41,
-  market: market(EMPTY, { aggregate_version: 1 }),
+  market: market(EMPTY, { aggregate_version: 2 }),
   my_position: noPosition(ID.mEmpty),
   wallet: wallet(2000, 0, 1),
 });
@@ -351,7 +351,7 @@ S.void_empty = snapshot({
   market: market(EMPTY, {
     times: voidTimes,
     state: 'VOID',
-    aggregate_version: 2,
+    aggregate_version: 3,
     locked_at_utc: at(-150),
     terminal_at_utc: at(-150),
     void_reason: 'EMPTY_POOL',
@@ -362,7 +362,7 @@ S.void_empty = snapshot({
 
 S.void_source_gap = snapshot({
   hwm: 54,
-  streamOver: { aggregate_version: 4, wagering_paused: true, wagering_paused_reason: 'SOURCE_NOT_LIVE' },
+  streamOver: { aggregate_version: 4 },
   sourceHealth: health('GAP', 40),
   market: market(STALE, {
     state: 'VOID',
@@ -487,6 +487,8 @@ F['operator/market_draft'] = {
     { state: 'DRAFT', times: { opened: 0, close: 150, resolve: 900 } },
   ),
   opened_at_utc: null,
+  close_at_utc: null,
+  resolve_by_utc: null,
 };
 
 F['me/viewer_funded'] = { schema_version: 1, ...meBody(wallet(2000, 0, 1)) };
@@ -622,7 +624,7 @@ const duelPast = (over) => market(DUEL, { times: lockedTimes, pool: LOCKED_POOL,
 const EVENTS = {
   stream_updated: ev(70, 'stream.updated', 'STREAM', ID.stream, 5, 'PUBLIC', 0, { stream: stream(ID.run2, { aggregate_version: 5 }), modes: MODES }, ID.run2),
   source_health: ev(52, 'source.health', 'SOURCE', ID.stream, 12, 'PUBLIC', 0, health('STALE', 18)),
-  market_opened: ev(41, 'market.opened', 'MARKET', ID.mDuel, 1, 'PUBLIC', -60, duelOpen(1, pool(0, 0, 0, 0))),
+  market_opened: ev(41, 'market.opened', 'MARKET', ID.mDuel, 2, 'PUBLIC', -60, duelOpen(2, pool(0, 0, 0, 0))),
   pool_updated: ev(48, 'pool.updated', 'MARKET', ID.mDuel, 7, 'PUBLIC', -30, duelOpen(7, pool(2000, 2500, 2500, 6))),
   market_locked: ev(50, 'market.locked', 'MARKET', ID.mDuel, 9, 'PUBLIC', -150, duelPast({ state: 'LOCKED', aggregate_version: 9 })),
   market_evaluating: ev(51, 'market.evaluating', 'MARKET', ID.mDuel, 10, 'PUBLIC', -150, duelPast({ state: 'EVALUATING', aggregate_version: 10 })),
