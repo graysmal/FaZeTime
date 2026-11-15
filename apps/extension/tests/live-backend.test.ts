@@ -233,9 +233,8 @@ describe('LiveBackend (background-only live adapter)', () => {
     expect(JSON.stringify(h.backend.peekSnapshot())).not.toContain('fzs_');
   });
 
-  it('top-ups and redemptions are CAPABILITY_UNAVAILABLE without a network call', async () => {
+  it('redemptions stay CAPABILITY_UNAVAILABLE without a network call (top-ups: see live-topup.test.ts)', async () => {
     const h = harness();
-    expect(await h.backend.createTopUp()).toMatchObject({ ok: false, status: 503, error: { error: { code: 'CAPABILITY_UNAVAILABLE' } } });
     expect(await h.backend.redeem()).toMatchObject({ ok: false, status: 503, error: { error: { code: 'CAPABILITY_UNAVAILABLE' } } });
     expect(Object.keys(h.counts)).toHaveLength(0);
   });

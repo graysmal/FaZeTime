@@ -8,7 +8,12 @@
 //   my_position is derived from wager.updated receipts; a state is pushed to tabs only when consistent.
 // - Polling fallback while the socket is not live: 2 s while a market is OPEN, 10 s otherwise.
 // - 401 anywhere clears the session and asks the user to re-enroll.
-// - Top-ups and redemptions are CAPABILITY_UNAVAILABLE until P6 (no network call is made).
+// - P6 Stripe test top-ups (9.18): POST /v1/topups (retry the SAME key on RATE_LIMITED, INTERNAL_ERROR or
+//   an unknown outcome), open the Stripe-hosted Checkout URL with chrome.tabs.create (never logged,
+//   stored or posted to a tab), persist the pending top-up, and poll GET /v1/topups/{id} every 3 s
+//   while CREATED/PENDING. Only the server's CREDITED status counts; a return URL is a polling hint.
+//   A credit never places a wager: the user confirms a new one.
+// - Redemptions stay CAPABILITY_UNAVAILABLE (no network call is made).
 
 import {
   checkSnapshot,
@@ -36,16 +41,21 @@ import {
   type WsTicketResponse,
 } from '@fazetime/contracts';
 import { httpError, unknownOutcome } from '../api/errors';
-import type {
-  ApiResult,
-  BackendAdapter,
-  BackgroundStatus,
-  EnrollInput,
-  LinkState,
-  PresenceInput,
-  RedeemCatalog,
-  RedemptionReceipt,
-  TopUpReceipt,
+import {
+  TOPUP_ID_PATTERN,
+  TOPUP_STATUSES,
+  type ApiResult,
+  type BackendAdapter,
+  type BackgroundStatus,
+  type EnrollInput,
+  type LinkState,
+  type PresenceInput,
+  type RedeemCatalog,
+  type RedemptionReceipt,
+  type StripeTopupReceipt,
+  type TopupStatus,
+  type TopUpRequest,
+  type TopUpTracking,
 } from '../api/types';
 import { DEMO_CATALOG } from '../mock/catalog';
 
@@ -58,11 +68,34 @@ export interface SessionRecord {
   role: string;
 }
 
+/**
+ * The one tracked Stripe test top-up, persisted by the background so a tab reload, popup close or
+ * service-worker restart keeps it. It never holds the Checkout URL or any token.
+ */
+export interface TopUpRecord {
+  user_id: string;
+  operation_id: string;
+  amount_minor: number;
+  topup_id: string | null;
+  status: TopupStatus | 'SUBMITTING';
+  stream_session_id: string | null;
+  checkout_expires_at_utc: string | null;
+  checkout_opened: boolean;
+  checkout_blocked: boolean;
+  watching: boolean;
+  dismissed: boolean;
+  created_at_ms: number;
+  updated_at_ms: number;
+}
+
 /** Background-only persistence. The token is never sent to a page, content script or log. */
 export interface LiveStore {
   getSession(): Promise<SessionRecord | null>;
   setSession(session: SessionRecord | null): Promise<void>;
   getDeviceId(): Promise<string>;
+  /** P6: the tracked top-up (optional; tests may keep it in memory). */
+  getTopUp?(): Promise<TopUpRecord | null>;
+  setTopUp?(record: TopUpRecord | null): Promise<void>;
 }
 
 export interface WsLike {
@@ -88,6 +121,50 @@ export interface LiveOptions {
   pollOpenMs?: number;
   pollIdleMs?: number;
   log?: (msg: string) => void;
+  /** Opens Stripe Checkout in a new tab (chrome.tabs.create; background only, no permission needed). */
+  openTab?: (url: string) => Promise<void>;
+  /** GET /v1/topups/{id} cadence while CREATED/PENDING (default 3 s, the server's reconcile throttle). */
+  topupPollMs?: number;
+  /** Cadence after the first 15 minutes of an unfinished checkout (default 15 s). */
+  topupSlowPollMs?: number;
+  /** Same-key retry delays for POST /v1/topups on RATE_LIMITED, INTERNAL_ERROR or unknown outcomes. */
+  topupRetryDelaysMs?: number[];
+}
+
+const OPEN_TOPUP: readonly string[] = ['CREATED', 'PENDING'];
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const TOPUP_FAST_WINDOW_MS = 15 * 60_000;
+/** The server marks EXPIRED on a reconcile after Stripe expires the session, so keep watching a bit. */
+const TOPUP_EXPIRY_GRACE_MS = 3 * 60_000;
+const TOPUP_NO_EXPIRY_CAP_MS = 30 * 60_000;
+const TOPUP_RESULT_TTL_MS = 30 * 60_000;
+const TOPUP_UNCONFIRMED_TTL_MS = 60 * 60_000;
+const TOPUP_HINT_MIN_GAP_MS = 1000;
+
+/** Only Stripe-hosted Checkout pages may be opened (never an arbitrary URL from a response). */
+export function isStripeCheckoutUrl(url: unknown): url is string {
+  if (typeof url !== 'string' || url.length > 4096) return false;
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' && u.hostname === 'checkout.stripe.com' && u.port === '' && !u.username && !u.password;
+  } catch {
+    return false;
+  }
+}
+
+export function isStripeTopupReceipt(v: unknown): v is StripeTopupReceipt {
+  if (typeof v !== 'object' || v === null) return false;
+  const r = v as Record<string, unknown>;
+  return (
+    typeof r.topup_id === 'string' &&
+    TOPUP_ID_PATTERN.test(r.topup_id) &&
+    typeof r.operation_id === 'string' &&
+    typeof r.stream_session_id === 'string' &&
+    Number.isSafeInteger(r.amount_minor) &&
+    (TOPUP_STATUSES as readonly string[]).includes(String(r.status)) &&
+    (r.checkout_url === null || r.checkout_url === undefined || typeof r.checkout_url === 'string') &&
+    (r.checkout_expires_at_utc === null || r.checkout_expires_at_utc === undefined || typeof r.checkout_expires_at_utc === 'string')
+  );
 }
 
 /** my_position derived from the user's own receipts for this market (9.15(6), 9.15(7)). */
@@ -149,6 +226,13 @@ export class LiveBackend implements BackendAdapter {
   private readonly ready: Promise<void>;
   private readonly fetchImpl: typeof fetch;
   private readonly now: () => number;
+  // P6 top-up tracking (one at a time; the server is authoritative for its status).
+  private topup: TopUpRecord | null = null;
+  private topupTimer: ReturnType<typeof setTimeout> | null = null;
+  private topupPollInFlight: Promise<void> | null = null;
+  private lastTopupPollAt = 0;
+  private readonly createInFlight = new Map<string, Promise<ApiResult<TopUpTracking>>>();
+  private readonly topupListeners = new Set<() => void>();
 
   constructor(private readonly opts: LiveOptions) {
     this.fetchImpl = opts.fetch ?? ((...a) => fetch(...a));
@@ -164,6 +248,7 @@ export class LiveBackend implements BackendAdapter {
       await this.opts.store.setSession(null).catch(() => undefined);
     }
     this.setLink(this.session ? 'IDLE' : 'NEEDS_ENROLL', this.reenroll ? 'Your session expired. Re-enroll with a new invite.' : null);
+    await this.restoreTopUp();
   }
 
   // ---------------------------------------------------------------- status / listeners
@@ -285,6 +370,8 @@ export class LiveBackend implements BackendAdapter {
     this.reenroll = false;
     this.setLink('IDLE', null);
     this.ensureLink();
+    if (this.topup && this.topup.user_id !== me.user.user_id) await this.setTopUpRecord(null);
+    else this.scheduleTopUpPoll(0);
     return { ok: true, status: 201, body: { me } }; // The token never leaves the background.
   }
 
@@ -296,6 +383,7 @@ export class LiveBackend implements BackendAdapter {
     await this.opts.store.setSession(null);
     this.closeSocket();
     this.stopPolling();
+    await this.setTopUpRecord(null);
     this.setLink('NEEDS_ENROLL', null);
     this.emitChange();
   }
@@ -346,6 +434,7 @@ export class LiveBackend implements BackendAdapter {
     if (!sameRun) {
       this.versions.clear();
       this.retiredMarkets.clear();
+      if (this.topup) queueMicrotask(() => this.emitTopUp()); // previous_run may have flipped.
     }
     if (!cur || !sameRun || snap.event_hwm >= cur.event_hwm) {
       this.current = snap;
@@ -702,8 +791,277 @@ export class LiveBackend implements BackendAdapter {
     return this.call<WagerReceiptResponse>('GET', `/v1/operations/${operationId}`);
   }
 
-  async createTopUp(): Promise<ApiResult<TopUpReceipt>> {
-    return httpError('CAPABILITY_UNAVAILABLE', 'Test top-ups arrive with Stripe test mode in phase 6. Nothing was charged.');
+  // ---------------------------------------------------------------- P6 Stripe test top-ups (9.18)
+  /** Tab-facing view of the tracked top-up. No URL, no token. */
+  peekTopUp(): TopUpTracking | null {
+    const r = this.topup;
+    if (!r || r.dismissed) return null;
+    const run = this.current?.stream.stream_session_id ?? this.me?.current_stream?.stream_session_id ?? null;
+    return {
+      payment_mode: 'STRIPE_TEST',
+      topup_id: r.topup_id,
+      operation_id: r.operation_id,
+      amount_minor: r.amount_minor,
+      status: r.status,
+      checkout_opened: r.checkout_opened,
+      checkout_blocked: r.checkout_blocked,
+      previous_run: r.stream_session_id !== null && run !== null && r.stream_session_id !== run,
+      watching: r.watching,
+      updated_at_ms: r.updated_at_ms,
+    };
+  }
+
+  onTopUp(listener: () => void): () => void {
+    this.topupListeners.add(listener);
+    return () => this.topupListeners.delete(listener);
+  }
+
+  private emitTopUp(): void {
+    for (const l of [...this.topupListeners]) l();
+  }
+
+  private async restoreTopUp(): Promise<void> {
+    let rec = (await this.opts.store.getTopUp?.().catch(() => null)) ?? null;
+    if (!rec || typeof rec.operation_id !== 'string') return;
+    const age = this.now() - (rec.updated_at_ms || 0);
+    const terminal = !OPEN_TOPUP.includes(rec.status) && rec.status !== 'SUBMITTING';
+    const wrongUser = !this.session || rec.user_id !== this.session.user_id;
+    if (wrongUser || (terminal && age > TOPUP_RESULT_TTL_MS) || (rec.status === 'SUBMITTING' && age > TOPUP_UNCONFIRMED_TTL_MS)) {
+      await this.opts.store.setTopUp?.(null).catch(() => undefined);
+      return;
+    }
+    // A create that was in flight when the worker stopped: its outcome is unknown until the user retries
+    // with the SAME operation_id (we never re-send it, or open a tab, without a click).
+    if (rec.status === 'SUBMITTING') rec = { ...rec, watching: false };
+    else if (OPEN_TOPUP.includes(rec.status)) rec = { ...rec, watching: true };
+    this.topup = rec;
+    setTimeout(() => this.scheduleTopUpPoll(0), 0);
+  }
+
+  private async setTopUpRecord(rec: TopUpRecord | null): Promise<void> {
+    this.topup = rec;
+    await this.opts.store.setTopUp?.(rec).catch(() => undefined);
+    this.emitTopUp();
+    this.scheduleTopUpPoll();
+  }
+
+  private patchTopUp(patch: Partial<TopUpRecord>): Promise<void> {
+    if (!this.topup) return Promise.resolve();
+    return this.setTopUpRecord({ ...this.topup, ...patch, updated_at_ms: this.now() });
+  }
+
+  /**
+   * POST /v1/topups for ONE user click (a fresh operation_id from the panel; the same one only when the
+   * user retries an unknown outcome). Retries reuse the same key and body. Opens Stripe Checkout once.
+   */
+  createTopUp(req: TopUpRequest): Promise<ApiResult<TopUpTracking>> {
+    const key = typeof req?.operation_id === 'string' ? req.operation_id : '';
+    const inFlight = this.createInFlight.get(key);
+    if (inFlight) return inFlight; // A double click or a retry while the first request is still running.
+    const p = this.createTopUpOnce(req, false).finally(() => this.createInFlight.delete(key));
+    if (key) this.createInFlight.set(key, p);
+    return p;
+  }
+
+  private async createTopUpOnce(req: TopUpRequest, forceOpen: boolean): Promise<ApiResult<TopUpTracking>> {
+    await this.ready;
+    if (!this.session) return httpError('UNAUTHENTICATED', 'Not enrolled. Open the FaZeTime popup and enter your invite code.');
+    if (typeof req?.operation_id !== 'string' || !UUID_RE.test(req.operation_id) || !Number.isSafeInteger(req.amount_minor))
+      return httpError('VALIDATION_FAILED', 'A top-up needs a lowercase UUID operation_id and an integer amount_minor.');
+    const body = { operation_id: req.operation_id, amount_minor: req.amount_minor };
+    const prev = this.topup;
+    const same = prev !== null && prev.operation_id === body.operation_id && prev.amount_minor === body.amount_minor;
+    const now = this.now();
+    // Persist the intent BEFORE the request so a worker restart keeps the key.
+    await this.setTopUpRecord(
+      same
+        ? { ...prev!, status: prev!.topup_id ? prev!.status : 'SUBMITTING', watching: true, dismissed: false, checkout_blocked: false, updated_at_ms: now }
+        : {
+            user_id: this.session.user_id,
+            operation_id: body.operation_id,
+            amount_minor: body.amount_minor,
+            topup_id: null,
+            status: 'SUBMITTING',
+            stream_session_id: null,
+            checkout_expires_at_utc: null,
+            checkout_opened: false,
+            checkout_blocked: false,
+            watching: true, // While SUBMITTING: the request is in flight. false = outcome unknown.
+            dismissed: false,
+            created_at_ms: now,
+            updated_at_ms: now,
+          },
+    );
+    const r = await this.postTopUp(body);
+    if (!r.ok) {
+      if (r.kind === 'http' && !r.error.error.retryable) {
+        // Definitive: this request created nothing new. Keep only what was already known.
+        await this.setTopUpRecord(same ? (prev!.topup_id ? prev : null) : prev);
+        return r;
+      }
+      await this.patchTopUp({ watching: false }); // Outcome unknown: the user retries with the SAME key.
+      return r;
+    }
+    if (!isStripeTopupReceipt(r.body) || r.body.operation_id !== body.operation_id) {
+      this.opts.log?.('unexpected top-up response; outcome unknown');
+      await this.patchTopUp({ watching: false });
+      return { ok: false, kind: 'unknown', message: 'Unexpected top-up response; the outcome is unknown.' };
+    }
+    const receipt = r.body;
+    const checkoutUrl = receipt.checkout_url; // Used once, right here. Never stored, logged or posted.
+    await this.adoptReceipt(receipt);
+    // Open Checkout once per click. A same-key retry of an already opened checkout does not open a second
+    // tab unless the user asked to reopen it.
+    const alreadyOpened = same && prev!.checkout_opened && prev!.topup_id === receipt.topup_id;
+    if (receipt.status === 'PENDING' && checkoutUrl && (forceOpen || !alreadyOpened)) await this.openCheckout(checkoutUrl);
+    return { ok: true, status: r.status, body: this.peekTopUp()! };
+  }
+
+  /** Same key, same body on RATE_LIMITED, INTERNAL_ERROR or an unknown outcome (9.10). */
+  private async postTopUp(body: { operation_id: string; amount_minor: number }): Promise<ApiResult<StripeTopupReceipt>> {
+    const delays = this.opts.topupRetryDelaysMs ?? [1000, 2000, 4000];
+    let r = await this.call<StripeTopupReceipt>('POST', '/v1/topups', body);
+    for (const base of delays) {
+      if (r.ok || !this.session) return r;
+      const retryable = r.kind === 'unknown' || r.error.error.retryable;
+      if (!retryable) return r;
+      const hinted = r.kind === 'http' ? (r.error.error.retry_after_ms ?? 0) : 0;
+      await new Promise((resolve) => setTimeout(resolve, Math.min(Math.max(base, hinted), 10_000)));
+      r = await this.call<StripeTopupReceipt>('POST', '/v1/topups', body);
+    }
+    return r;
+  }
+
+  private async openCheckout(url: string): Promise<boolean> {
+    if (!isStripeCheckoutUrl(url) || !this.opts.openTab) {
+      this.opts.log?.('refused to open a top-up link that is not a Stripe Checkout page'); // Never the URL.
+      await this.patchTopUp({ checkout_blocked: true });
+      return false;
+    }
+    try {
+      await this.opts.openTab(url);
+    } catch {
+      this.opts.log?.('could not open the Stripe Checkout tab');
+      await this.patchTopUp({ checkout_blocked: true });
+      return false;
+    }
+    await this.patchTopUp({ checkout_opened: true, checkout_blocked: false });
+    return true;
+  }
+
+  /** Apply a server receipt (POST or GET). Only the server's status is shown; credits refresh the wallet. */
+  private async adoptReceipt(receipt: StripeTopupReceipt): Promise<void> {
+    const prev = this.topup;
+    const mine = prev !== null && prev.operation_id === receipt.operation_id ? prev : null;
+    const wasCredited = mine?.topup_id === receipt.topup_id && mine.status === 'CREDITED';
+    const wasStatus = mine?.status ?? null;
+    const now = this.now();
+    await this.setTopUpRecord({
+      user_id: this.session?.user_id ?? mine?.user_id ?? '',
+      operation_id: receipt.operation_id,
+      amount_minor: receipt.amount_minor,
+      topup_id: receipt.topup_id,
+      status: receipt.status,
+      stream_session_id: receipt.stream_session_id,
+      checkout_expires_at_utc: receipt.checkout_expires_at_utc ?? mine?.checkout_expires_at_utc ?? null,
+      checkout_opened: mine?.checkout_opened ?? false,
+      checkout_blocked: mine?.checkout_blocked ?? false,
+      watching: OPEN_TOPUP.includes(receipt.status),
+      dismissed: mine?.dismissed ?? false,
+      created_at_ms: mine?.created_at_ms ?? now,
+      updated_at_ms: now,
+    });
+    if (wasStatus !== receipt.status && !OPEN_TOPUP.includes(receipt.status)) this.opts.log?.(`top-up ${receipt.status.toLowerCase()} (server status)`);
+    if (receipt.status === 'CREDITED' && !wasCredited) void this.fetchSnapshot(); // Authoritative wallet refresh.
+  }
+
+  private scheduleTopUpPoll(delayMs?: number): void {
+    if (this.topupTimer !== null) clearTimeout(this.topupTimer);
+    this.topupTimer = null;
+    const rec = this.topup;
+    if (!rec || !rec.topup_id || !OPEN_TOPUP.includes(rec.status) || !rec.watching || !this.session) return;
+    const now = this.now();
+    const expires = rec.checkout_expires_at_utc ? Date.parse(rec.checkout_expires_at_utc) - this.offsetMs : Number.NaN;
+    const deadline = Number.isFinite(expires) ? expires + TOPUP_EXPIRY_GRACE_MS : rec.created_at_ms + TOPUP_NO_EXPIRY_CAP_MS;
+    if (now > deadline) {
+      this.opts.log?.('stopped polling an unfinished top-up after its checkout expiry');
+      void this.patchTopUp({ watching: false });
+      return;
+    }
+    const fast = now - rec.created_at_ms < TOPUP_FAST_WINDOW_MS;
+    const every = delayMs ?? (fast ? (this.opts.topupPollMs ?? 3000) : (this.opts.topupSlowPollMs ?? 15_000));
+    this.topupTimer = setTimeout(() => {
+      this.topupTimer = null;
+      void this.pollTopUp();
+    }, every);
+  }
+
+  /** GET /v1/topups/{id}. Single-flight; the server reconciles with Stripe at most once per 3 s. */
+  private pollTopUp(): Promise<void> {
+    if (this.topupPollInFlight) return this.topupPollInFlight;
+    const p = (async () => {
+      const rec = this.topup;
+      if (!rec?.topup_id || !this.session) return;
+      this.lastTopupPollAt = this.now();
+      const r = await this.call<StripeTopupReceipt>('GET', `/v1/topups/${rec.topup_id}`);
+      if (this.topup?.topup_id !== rec.topup_id) return; // Replaced meanwhile.
+      if (r.ok) {
+        if (isStripeTopupReceipt(r.body) && r.body.topup_id === rec.topup_id) await this.adoptReceipt(r.body);
+      } else if (r.kind === 'http' && (r.error.error.code === 'NOT_FOUND' || r.error.error.code === 'FORBIDDEN')) {
+        this.opts.log?.('the server does not know this top-up for this user; no longer tracking it');
+        await this.setTopUpRecord(null);
+        return;
+      }
+    })().finally(() => {
+      this.topupPollInFlight = null;
+      this.scheduleTopUpPoll();
+    });
+    this.topupPollInFlight = p;
+    return p;
+  }
+
+  /** ?fazetime_topup=<id> on the Twitch page: poll now. A hint only; the server decides the status. */
+  async topUpHint(topupId: string): Promise<ApiResult<TopUpTracking | null>> {
+    await this.ready;
+    if (!this.session) return httpError('UNAUTHENTICATED', 'Not enrolled.');
+    if (!TOPUP_ID_PATTERN.test(topupId)) return httpError('VALIDATION_FAILED', 'Bad topup_id.');
+    const rec = this.topup;
+    if (rec?.topup_id === topupId) {
+      if (OPEN_TOPUP.includes(rec.status)) {
+        if (!rec.watching) await this.patchTopUp({ watching: true }); // "Check again" resumes watching.
+        if (this.now() - this.lastTopupPollAt >= TOPUP_HINT_MIN_GAP_MS) await this.pollTopUp();
+      }
+      return { ok: true, status: 200, body: this.peekTopUp() };
+    }
+    if (rec && (OPEN_TOPUP.includes(rec.status) || rec.status === 'SUBMITTING')) return { ok: true, status: 200, body: this.peekTopUp() };
+    // Not tracked here (for example, extension storage was cleared): read it once; only our own is returned.
+    const r = await this.call<StripeTopupReceipt>('GET', `/v1/topups/${topupId}`);
+    if (!r.ok) return r.kind === 'http' && r.error.error.code === 'NOT_FOUND' ? { ok: true, status: 200, body: this.peekTopUp() } : r;
+    if (isStripeTopupReceipt(r.body) && r.body.topup_id === topupId && !(rec?.topup_id === topupId && rec.dismissed)) await this.adoptReceipt(r.body);
+    return { ok: true, status: 200, body: this.peekTopUp() };
+  }
+
+  /** User click: reopen Checkout, or re-send an unconfirmed create, with the SAME operation_id and amount. */
+  async reopenTopUpCheckout(): Promise<ApiResult<TopUpTracking | null>> {
+    await this.ready;
+    const rec = this.topup;
+    if (!rec || rec.dismissed || !(rec.status === 'SUBMITTING' || OPEN_TOPUP.includes(rec.status)))
+      return { ok: true, status: 200, body: this.peekTopUp() };
+    const key = rec.operation_id;
+    const p =
+      this.createInFlight.get(key) ??
+      this.createTopUpOnce({ operation_id: key, amount_minor: rec.amount_minor }, true).finally(() => this.createInFlight.delete(key));
+    this.createInFlight.set(key, p);
+    const r = await p;
+    return r.ok ? { ok: true, status: 200, body: this.peekTopUp() } : r;
+  }
+
+  /** The user acknowledged a finished result. Unfinished top-ups are never dropped this way. */
+  async dismissTopUp(): Promise<ApiResult<null>> {
+    await this.ready;
+    const rec = this.topup;
+    if (rec && !rec.dismissed && !OPEN_TOPUP.includes(rec.status) && rec.status !== 'SUBMITTING') await this.patchTopUp({ dismissed: true });
+    return { ok: true, status: 200, body: null };
   }
 
   async getCatalog(): Promise<ApiResult<RedeemCatalog>> {

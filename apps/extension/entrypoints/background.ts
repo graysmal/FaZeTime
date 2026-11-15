@@ -22,7 +22,11 @@ export default defineBackground(() => {
       channel: LIVE_CHANNEL,
       extensionVersion: EXTENSION_VERSION,
       store: wxtLiveStore,
-      log: (msg) => console.info('[FaZeTime live]', msg), // Never logs tokens, tickets or invite codes.
+      log: (msg) => console.info('[FaZeTime live]', msg), // Never logs tokens, tickets, invite codes or Checkout URLs.
+      // P6: Stripe-hosted Checkout opens in a new tab from the background. tabs.create needs no permission.
+      openTab: async (url) => {
+        await browser.tabs.create({ url, active: true });
+      },
     });
     attachRouter(adapter, runtime);
     attachPopupHandler(adapter, runtime);
@@ -31,6 +35,7 @@ export default defineBackground(() => {
       dropSocket: () => adapter.debugDropSocket(),
       status: () => adapter.status(),
       snapshotFetches: () => adapter.snapshotFetches,
+      topup: () => adapter.peekTopUp(), // IDs and server status only; never the Checkout URL.
     };
     return;
   }

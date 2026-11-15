@@ -15,6 +15,7 @@ import type {
   RedemptionRequest,
   TopUpReceipt,
   TopUpRequest,
+  TopUpTracking,
   WalletApi,
 } from './types';
 
@@ -140,8 +141,18 @@ export class BackgroundClient implements MarketDataSource, WalletApi {
   getOperation(operationId: string): Promise<ApiResult<WagerReceiptResponse>> {
     return this.request('getOperation', { operation_id: operationId });
   }
-  createTopUp(req: TopUpRequest): Promise<ApiResult<TopUpReceipt>> {
+  createTopUp(req: TopUpRequest): Promise<ApiResult<TopUpReceipt | TopUpTracking>> {
     return this.request('createTopUp', req);
+  }
+  /** The page URL carried ?fazetime_topup=<id>. A polling hint only; it never credits. */
+  topUpHint(topupId: string): Promise<ApiResult<TopUpTracking | null>> {
+    return this.request('topupHint', { topup_id: topupId });
+  }
+  reopenTopUpCheckout(): Promise<ApiResult<TopUpTracking | null>> {
+    return this.request('reopenTopUpCheckout');
+  }
+  dismissTopUp(): Promise<ApiResult<null>> {
+    return this.request('dismissTopUp');
   }
   presence(input: PresenceInput): Promise<ApiResult<unknown>> {
     return this.request('presence', input);

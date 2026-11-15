@@ -706,6 +706,7 @@ The adapter is in `services/api/fazetime_api/integrations/`, pinned to `Stripe-V
   - `checkout_url`: only while the top-up is `PENDING`. The client opens it in a new tab. It is never logged.
   - `checkout_expires_at_utc`
   - `replayed`
+  - `stream_session_id`: the run the top-up credits. Additive. It lets the UI explain a credit that landed in an archived run.
 - Errors:
 
 | Code | When |
@@ -735,6 +736,7 @@ The adapter is in `services/api/fazetime_api/integrations/`, pinned to `Stripe-V
 - Credits always post to the top-up's own run, even if that run is ARCHIVED (§9.5). A reset never touches pending top-ups.
 - A late credit never backdates a wager; the user must confirm a new wager.
 - `wallet.changed` is emitted on credit.
-- The success and cancel URLs come from server config. Their query parameter is only a polling hint.
+- The success and cancel URLs come from server config. Their query parameter (`fazetime_topup=<id>`) is only a polling hint. `fazetime_result=cancel` only changes the wording shown; status always comes from the server.
+- Logging: the Stripe client logs at most the `cs_test_` prefix plus 4 characters of a session ID, never the full ID or the Checkout URL.
 - The webhook route is fed by the Stripe CLI: `stripe listen --device-name fazetime-api --forward-to <API>/v1/webhooks/stripe`, with the key passed through the environment.
 

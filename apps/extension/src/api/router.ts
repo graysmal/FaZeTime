@@ -2,7 +2,7 @@
 
 import { isErrorCode, isRequestMessage, PORT_NAME, POPUP_METHODS, type PopupRequest, type PortLike, type PushMessage, type RequestMessage } from './protocol';
 import { httpError } from './errors';
-import { MOCK_STATUS, type ApiResult, type BackendAdapter, type PresenceInput, type RedemptionRequest, type TopUpRequest } from './types';
+import { MOCK_STATUS, TOPUP_ID_PATTERN, type ApiResult, type BackendAdapter, type PresenceInput, type RedemptionRequest, type TopUpRequest } from './types';
 import type { WagerRequest } from '@fazetime/contracts';
 
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
@@ -22,6 +22,17 @@ export async function handleRequest(adapter: BackendAdapter, msg: RequestMessage
     case 'createTopUp':
       if (!isPlainObject(params)) return httpError('VALIDATION_FAILED', 'Top-up body must be an object.');
       return adapter.createTopUp(params as unknown as TopUpRequest);
+    case 'topupHint':
+      if (!adapter.topUpHint) return httpError('CAPABILITY_UNAVAILABLE', 'Stripe test top-ups exist only in live builds.');
+      if (!isPlainObject(params) || typeof params.topup_id !== 'string' || !TOPUP_ID_PATTERN.test(params.topup_id))
+        return httpError('VALIDATION_FAILED', 'Bad topup_id.');
+      return adapter.topUpHint(params.topup_id);
+    case 'reopenTopUpCheckout':
+      if (!adapter.reopenTopUpCheckout) return httpError('CAPABILITY_UNAVAILABLE', 'Stripe test top-ups exist only in live builds.');
+      return adapter.reopenTopUpCheckout();
+    case 'dismissTopUp':
+      if (!adapter.dismissTopUp) return httpError('CAPABILITY_UNAVAILABLE', 'Stripe test top-ups exist only in live builds.');
+      return adapter.dismissTopUp();
     case 'getCatalog':
       return adapter.getCatalog();
     case 'status':
@@ -113,6 +124,7 @@ export function attachRouter(adapter: BackendAdapter, runtime: RuntimeLike): () 
     // A new tab (or reload): serve the cache immediately, then refresh once from the server.
     const cached = adapter.peekSnapshot?.();
     if (cached) safePost(port, { t: 'snapshot', result: cached } satisfies PushMessage);
+    if (adapter.peekTopUp) safePost(port, { t: 'topup', topup: adapter.peekTopUp() } satisfies PushMessage);
     adapter.onTabConnected?.();
   };
 
@@ -126,11 +138,16 @@ export function attachRouter(adapter: BackendAdapter, runtime: RuntimeLike): () 
     const status = adapter.status?.() ?? MOCK_STATUS;
     for (const port of ports) safePost(port, { t: 'status', status } satisfies PushMessage);
   });
+  const unsubscribeTopUp = adapter.onTopUp?.(() => {
+    const topup = adapter.peekTopUp?.() ?? null;
+    for (const port of ports) safePost(port, { t: 'topup', topup } satisfies PushMessage);
+  });
 
   return () => {
     runtime.onConnect.removeListener(onConnect);
     unsubscribe();
     unsubscribeStatus?.();
+    unsubscribeTopUp?.();
     for (const port of ports) port.disconnect();
     ports.clear();
   };

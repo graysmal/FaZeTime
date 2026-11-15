@@ -8,6 +8,7 @@ import type {
   ErrorEnvelope,
   Me,
   PageVisibility,
+  PaymentMode,
   PlayerState,
   PresenceAck,
   StreamSnapshot,
@@ -27,7 +28,7 @@ export type ApiResult<T> =
   | { ok: false; kind: 'http'; status: number; error: ErrorEnvelope }
   | { ok: false; kind: 'unknown'; message: string };
 
-// --- P1-local shapes (NOT contract v1). P6 defines real top-ups; redemption is a P1 mock. ---
+// --- P1-local MOCK shapes (NOT contract v1). Redemption stays a P1 mock. ---
 
 export interface TopUpRequest {
   operation_id: string;
@@ -44,6 +45,69 @@ export interface TopUpReceipt {
   payment_mode: 'MOCK';
   wallet_after: WalletSummary;
   replayed: boolean;
+}
+
+// --- P6 Stripe test top-ups (CONTRACTS 9.18) ---
+
+export const TOPUP_STATUSES = ['CREATED', 'PENDING', 'CREDITED', 'FAILED', 'EXPIRED'] as const;
+export type TopupStatus = (typeof TOPUP_STATUSES)[number];
+export const TOPUP_ID_PATTERN = /^top_[0-9a-f]{32}$/;
+
+/**
+ * Server `TopupReceipt` (CONTRACTS 9.18). BACKGROUND ONLY: `checkout_url` is opened with
+ * chrome.tabs.create by the background and is never logged, stored or posted to a tab.
+ */
+export interface StripeTopupReceipt {
+  schema_version: 1;
+  topup_id: string;
+  operation_id: string;
+  /** The run this top-up credits, even after a reset (9.5, 9.18). */
+  stream_session_id: string;
+  amount_minor: number;
+  currency: 'usd';
+  status: TopupStatus;
+  payment_mode: PaymentMode;
+  checkout_url: string | null;
+  checkout_expires_at_utc: string | null;
+  replayed: boolean;
+}
+
+/**
+ * What tabs see of the one tracked Stripe test top-up. Never contains the Checkout URL or a token.
+ * `status` comes only from the server (GET /v1/topups/{id}); a return URL never sets it.
+ */
+export interface TopUpTracking {
+  payment_mode: 'STRIPE_TEST';
+  topup_id: string | null;
+  operation_id: string;
+  amount_minor: number;
+  /** SUBMITTING: the create request is in flight or its outcome is unknown (retry with the same key). */
+  status: TopupStatus | 'SUBMITTING';
+  /** The background opened Stripe Checkout in a new tab for this top-up. */
+  checkout_opened: boolean;
+  /** The background refused to open the link (not a https://checkout.stripe.com page) or the tab failed. */
+  checkout_blocked: boolean;
+  /** The top-up belongs to a different (earlier) demo run than the one on screen. */
+  previous_run: boolean;
+  /** The background is still polling the server for this top-up. */
+  watching: boolean;
+  updated_at_ms: number;
+}
+
+export function isTopUpTracking(v: unknown): v is TopUpTracking {
+  if (typeof v !== 'object' || v === null) return false;
+  const t = v as Record<string, unknown>;
+  return (
+    t.payment_mode === 'STRIPE_TEST' &&
+    (t.topup_id === null || (typeof t.topup_id === 'string' && TOPUP_ID_PATTERN.test(t.topup_id))) &&
+    typeof t.operation_id === 'string' &&
+    Number.isSafeInteger(t.amount_minor) &&
+    (t.status === 'SUBMITTING' || (TOPUP_STATUSES as readonly string[]).includes(String(t.status))) &&
+    typeof t.checkout_opened === 'boolean' &&
+    typeof t.checkout_blocked === 'boolean' &&
+    typeof t.previous_run === 'boolean' &&
+    typeof t.watching === 'boolean'
+  );
 }
 
 export interface RedeemItem {
@@ -89,8 +153,11 @@ export interface WalletApi {
   placeWager(req: WagerRequest): Promise<ApiResult<WagerReceiptResponse>>;
   /** GET /v1/operations/{operation_id} */
   getOperation(operationId: string): Promise<ApiResult<WagerReceiptResponse>>;
-  /** P1 mock credit. P6: POST /v1/topups returns a Stripe-hosted Checkout URL instead. */
-  createTopUp(req: TopUpRequest): Promise<ApiResult<TopUpReceipt>>;
+  /**
+   * MOCK: immediate synthetic credit (TopUpReceipt). LIVE (P6): POST /v1/topups; the background opens
+   * Stripe-hosted Checkout in a new tab and returns the tracking view (no URL). Credit arrives later.
+   */
+  createTopUp(req: TopUpRequest): Promise<ApiResult<TopUpReceipt | TopUpTracking>>;
   /** P1-only fixed demo catalog. */
   getCatalog(): Promise<ApiResult<RedeemCatalog>>;
   /** POST /v1/redemptions (P1 mock). */
@@ -156,6 +223,15 @@ export interface BackendAdapter extends MarketDataSource, WalletApi {
   /** A tab connected (new page or reload): refresh the snapshot once in the background. */
   onTabConnected?(): void;
   presence?(input: PresenceInput): Promise<ApiResult<PresenceAck>>;
+  /** P6 (live): the one tracked Stripe test top-up, for pushes to tabs. */
+  peekTopUp?(): TopUpTracking | null;
+  onTopUp?(listener: () => void): () => void;
+  /** The page URL carried ?fazetime_topup=<id>: poll now. A hint only; it never credits. */
+  topUpHint?(topupId: string): Promise<ApiResult<TopUpTracking | null>>;
+  /** User-initiated: reopen Checkout (or re-send an unconfirmed create) with the SAME operation_id. */
+  reopenTopUpCheckout?(): Promise<ApiResult<TopUpTracking | null>>;
+  /** Forget a finished top-up result after the user acknowledged it. */
+  dismissTopUp?(): Promise<ApiResult<null>>;
   enroll?(input: EnrollInput): Promise<ApiResult<{ me: Me }>>;
   signOut?(): Promise<void>;
 }

@@ -303,9 +303,9 @@ export function MarketCard({ surface }: { surface: 'panel' | 'overlay' }) {
             <span className="ft-label">
               Available <b>{formatMinor(snap.wallet.available_minor)}</b>
             </span>
-            {snap.modes.payment_mode === 'MOCK' && (
+            {(snap.modes.payment_mode === 'MOCK' || snap.modes.payment_mode === 'STRIPE_TEST') && (
               <button type="button" className="ft-link" onClick={() => (controller.openTopUp('manual'), surface === 'overlay' && requestPanelOpen())}>
-                Add demo funds
+                {mode === 'live' ? 'Add funds' : 'Add demo funds'}
               </button>
             )}
           </div>
@@ -320,7 +320,7 @@ export function MarketCard({ surface }: { surface: 'panel' | 'overlay' }) {
 }
 
 function BetStatus({ surface, labelFor }: { surface: 'panel' | 'overlay'; labelFor: (s: Side) => string }) {
-  const { controller, requestPanelOpen } = useEnv();
+  const { controller, requestPanelOpen, mode } = useEnv();
   const { bet } = usePanel();
   switch (bet.kind) {
     case 'idle':
@@ -380,7 +380,7 @@ function BetStatus({ surface, labelFor }: { surface: 'panel' | 'overlay'; labelF
                   if (surface === 'overlay') requestPanelOpen();
                 }}
               >
-                Add demo funds
+                {mode === 'live' ? 'Add funds' : 'Add demo funds'}
               </button>
             )}
           </div>

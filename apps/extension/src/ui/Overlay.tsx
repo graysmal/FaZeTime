@@ -52,7 +52,9 @@ export function Overlay({ host }: { host: HTMLElement }) {
       {expanded && (
         <div className="ft-drop" style={{ maxHeight }}>
           <MarketCard surface="overlay" />
-          {st.topUp.open && <p className="ft-hint">The demo top-up dialog is open in the FaZeTime panel beside chat.</p>}
+          {st.topUp.open && (
+            <p className="ft-hint">{mode === 'live' ? 'The top-up dialog is open in the FaZeTime panel beside chat.' : 'The demo top-up dialog is open in the FaZeTime panel beside chat.'}</p>
+          )}
         </div>
       )}
     </div>

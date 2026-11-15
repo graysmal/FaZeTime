@@ -13,15 +13,18 @@ import {
   type WagerRequest,
 } from '@fazetime/contracts';
 import type { PushMessage } from '../api/protocol';
-import type {
-  ApiResult,
-  BackgroundStatus,
-  FixtureInfo,
-  MarketDataSource,
-  RedeemItem,
-  RedemptionReceipt,
-  TopUpReceipt,
-  WalletApi,
+import {
+  isTopUpTracking,
+  TOPUP_ID_PATTERN,
+  type ApiResult,
+  type BackgroundStatus,
+  type FixtureInfo,
+  type MarketDataSource,
+  type RedeemItem,
+  type RedemptionReceipt,
+  type TopUpReceipt,
+  type TopUpTracking,
+  type WalletApi,
 } from '../api/types';
 import { newOperationId } from '../lib/ids';
 import { formatMinor } from '../lib/money';
@@ -46,7 +49,16 @@ export interface FixtureApi {
   armTimeout(): Promise<ApiResult<FixtureInfo>>;
 }
 
-export type PanelApi = MarketDataSource & WalletApi & { fixtures: FixtureApi; connect(): boolean; dispose(): void };
+export type PanelApi = MarketDataSource &
+  WalletApi & {
+    fixtures: FixtureApi;
+    connect(): boolean;
+    dispose(): void;
+    /** P6 (live builds; the background answers CAPABILITY_UNAVAILABLE elsewhere). */
+    topUpHint?(topupId: string): Promise<ApiResult<TopUpTracking | null>>;
+    reopenTopUpCheckout?(): Promise<ApiResult<TopUpTracking | null>>;
+    dismissTopUp?(): Promise<ApiResult<null>>;
+  };
 
 export interface TopUpState {
   open: boolean;
@@ -80,6 +92,10 @@ export interface PanelState {
   fixtureInfo: FixtureInfo | null;
   catalog: RedeemItem[] | null;
   backend: BackgroundStatus | null;
+  /** P6: the background's tracked Stripe test top-up (server status only; never a URL). */
+  pendingTopUp: TopUpTracking | null;
+  /** The return URL said "cancel" for this top-up: wording only, the status stays the server's. */
+  checkoutClosedFor: string | null;
 }
 
 const CLOSED_TOPUP: TopUpState = {
@@ -108,6 +124,8 @@ export function initialPanelState(): PanelState {
     fixtureInfo: null,
     catalog: null,
     backend: null,
+    pendingTopUp: null,
+    checkoutClosedFor: null,
   };
 }
 
@@ -171,6 +189,10 @@ export class PanelController {
       const prev = this.state.backend;
       this.set({ backend: msg.status });
       if (prev && (prev.enrolled !== msg.status.enrolled || prev.link !== msg.status.link)) void this.refresh();
+      return;
+    }
+    if (msg.t === 'topup') {
+      this.applyTopUp(msg.topup);
       return;
     }
     if (msg.t === 'hello') {
@@ -329,28 +351,35 @@ export class PanelController {
     this.dispatchBet({ type: 'DISMISS' });
   }
 
-  // --- top-up (P1 MOCK credit; P6 replaces with Stripe-hosted Checkout outside the panel) ---
+  // --- top-up (MOCK: immediate synthetic credit. LIVE P6: Stripe-hosted Checkout in a new tab) ---
   openTopUp(reason: 'manual' | 'insufficient', neededMinor: number | null = null): void {
     this.set({ topUp: { ...CLOSED_TOPUP, open: true, reason, neededMinor } });
   }
 
   closeTopUp(): void {
     if (this.state.topUp.status === 'submitting') return;
+    // Closing the dialog never cancels a pending Stripe checkout; the background keeps polling it.
     this.set({ topUp: CLOSED_TOPUP });
   }
 
   async submitTopUp(amountMinor: number): Promise<void> {
     const t = this.state.topUp;
     if (t.status === 'submitting') return;
+    // A new key for every click; the SAME key only to retry an unknown outcome of the same amount.
     const reuse = t.status === 'unknown' && t.amountMinor === amountMinor && t.operationId;
     const operationId = reuse ? t.operationId! : newOperationId();
     this.set({ topUp: { ...t, status: 'submitting', message: null, operationId, amountMinor } });
     const r = await this.api.createTopUp({ operation_id: operationId, amount_minor: amountMinor });
     if (this.disposed) return;
     const cur = this.state.topUp;
-    if (r.ok) {
+    if (r.ok && isTopUpTracking(r.body)) {
+      // LIVE: Stripe Checkout opened in a new tab (by the background). Nothing is credited yet.
+      this.set({ topUp: { ...cur, status: 'idle', message: null }, checkoutClosedFor: null });
+      this.applyTopUp(r.body);
+    } else if (r.ok) {
+      const body = r.body as TopUpReceipt;
       this.set({
-        topUp: { ...cur, status: 'credited', receipt: r.body, message: `Added ${formatMinor(r.body.amount_minor)} of MOCK demo funds. No payment was made.` },
+        topUp: { ...cur, status: 'credited', receipt: body, message: `Added ${formatMinor(body.amount_minor)} of MOCK demo funds. No payment was made.` },
       });
       void this.refresh();
     } else if (r.kind === 'http' && !r.error.error.retryable) {
@@ -361,6 +390,61 @@ export class PanelController {
         topUp: { ...cur, status: 'unknown', message: 'Outcome unknown. Press FaZe Up! again to safely retry the same request.' },
       });
     }
+  }
+
+  /** Background push (or a create/hint answer): the tracked top-up's SERVER status. */
+  applyTopUp(next: TopUpTracking | null): void {
+    if (next !== null && !isTopUpTracking(next)) return; // Untrusted message shape.
+    const prev = this.state.pendingTopUp;
+    const patch: Partial<PanelState> = { pendingTopUp: next };
+    const t = this.state.topUp;
+    // A late answer for the request the dialog is waiting on supersedes its "unknown" message.
+    if (next && t.operationId === next.operation_id && t.status === 'unknown' && next.status !== 'SUBMITTING')
+      patch.topUp = { ...t, status: 'idle', message: null };
+    const newlyCredited = next?.status === 'CREDITED' && !(prev?.status === 'CREDITED' && prev.topup_id === next.topup_id);
+    if (newlyCredited) {
+      // The credit never places or resumes a wager: a bet refused for funds goes back to a fresh card,
+      // which shows a new estimate, and the user confirms a new bet (P6).
+      const bet = this.state.bet;
+      if (bet.kind === 'rejected' && bet.error.code === 'INSUFFICIENT_FUNDS') patch.bet = IDLE;
+    }
+    this.set(patch);
+    if (newlyCredited) void this.refresh();
+  }
+
+  /** The page URL carried ?fazetime_topup=<id> (Stripe's return). Poll now; this never credits. */
+  async topUpHint(topupId: string, opts: { closed?: boolean } = {}): Promise<void> {
+    if (!TOPUP_ID_PATTERN.test(topupId) || !this.api.topUpHint) return;
+    if (opts.closed) this.set({ checkoutClosedFor: topupId });
+    const r = await this.api.topUpHint(topupId);
+    if (!this.disposed && r.ok) this.applyTopUp(r.body);
+  }
+
+  /** User click: reopen Stripe Checkout (or retry an unconfirmed create) with the same operation_id. */
+  async reopenTopUpCheckout(): Promise<void> {
+    if (!this.api.reopenTopUpCheckout) return;
+    this.set({ checkoutClosedFor: null });
+    const r = await this.api.reopenTopUpCheckout();
+    if (this.disposed) return;
+    if (r.ok) this.applyTopUp(r.body);
+    else if (r.kind === 'http' && !r.error.error.retryable) {
+      const copy = describeError(r.error.error);
+      this.set({ topUp: { ...this.state.topUp, status: 'error', message: `${copy.title}. ${copy.detail}` } });
+    }
+  }
+
+  /** User click: ask the server again for an unfinished top-up. */
+  async checkTopUpAgain(): Promise<void> {
+    const id = this.state.pendingTopUp?.topup_id;
+    if (id) await this.topUpHint(id);
+  }
+
+  /** The user acknowledged a finished top-up result. */
+  async dismissTopUpResult(): Promise<void> {
+    const cur = this.state.pendingTopUp;
+    if (!cur || !['CREDITED', 'FAILED', 'EXPIRED'].includes(cur.status)) return;
+    this.set({ pendingTopUp: null, checkoutClosedFor: null });
+    await this.api.dismissTopUp?.();
   }
 
   // --- redeem (P1 mock; codes are NON-REDEEMABLE) ---

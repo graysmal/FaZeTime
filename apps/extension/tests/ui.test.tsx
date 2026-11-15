@@ -158,3 +158,74 @@ describe('D31: live builds look like a product (no MOCK/DEMO badges or mode chip
     expect(html).toContain('ft-modes');
   });
 });
+
+describe('P6-E live Stripe test top-ups (D31 wording, no card fields)', () => {
+  const stripe = (name: string): StreamSnapshot => ({ ...snap(name), modes: { ai_mode: 'OFF', payment_mode: 'STRIPE_TEST', media_source_kind: null } });
+  const tracking = (over: Record<string, unknown> = {}) =>
+    ({
+      payment_mode: 'STRIPE_TEST',
+      topup_id: `top_${'a'.repeat(32)}`,
+      operation_id: '00000000-0000-4000-8000-000000000020',
+      amount_minor: 1000,
+      status: 'PENDING',
+      checkout_opened: true,
+      checkout_blocked: false,
+      previous_run: false,
+      watching: true,
+      updated_at_ms: Date.now(),
+      ...over,
+    }) as PanelState['pendingTopUp'];
+  const dialogState = (over: Partial<PanelState> = {}): Partial<PanelState> => ({
+    snapshot: stripe('open_low_balance'),
+    topUp: { ...initialPanelState().topUp, open: true, reason: 'insufficient', neededMinor: 200 },
+    ...over,
+  });
+
+  it('the Wallet tab offers "Add funds" with exactly one test-credits note', () => {
+    const html = render(envWith({ snapshot: stripe('open_no_position') }, 'live'), <WalletTab />);
+    expect(html).toMatch(/<button type="button" class="ft-primary">Add funds<\/button>/);
+    expect(html.match(/Balances are test credits\./g)).toHaveLength(1);
+    expect(html).not.toMatch(/MOCK|DEMO|aren&#x27;t available/);
+  });
+
+  it('the dialog keeps "FaZe Up!", the presets and one note, with no card fields and no mock wording', () => {
+    const html = render(envWith(dialogState(), 'live'), <TopUpDialog />);
+    expect(html).toContain('FaZe Up!');
+    for (const preset of ['$5', '$10', '$50', 'Custom']) expect(html).toContain(preset);
+    expect(html.match(/Balances are test credits\./g)).toHaveLength(1);
+    expect(html).toContain('may close before you are back');
+    expect(html).toContain('Card details are entered only there');
+    expect(html).not.toMatch(/<input[^>]*(card|cvc|cvv|expiry|exp-date|cc-)/i);
+    expect(html).not.toMatch(/MOCK|DEMO|no payment/);
+  });
+
+  it('pending: waits for Stripe and offers to reopen checkout; the button says it is not credited yet', () => {
+    const html = render(envWith(dialogState({ pendingTopUp: tracking() }), 'live'), <TopUpDialog />);
+    expect(html).toContain('Finish paying $10.00 in the Stripe tab. Credits appear here once Stripe confirms.');
+    expect(html).toContain('Open checkout');
+    expect(html).not.toContain('Test credits added');
+  });
+
+  it('credited: "Test credits added: $X" and a reminder that the bet was not placed', () => {
+    const html = render(envWith(dialogState({ pendingTopUp: tracking({ status: 'CREDITED', watching: false }) }), 'live'), <TopUpDialog />);
+    expect(html).toContain('Test credits added: $10.00');
+    expect(html).toContain('Your bet was not placed. Check the market and confirm it again.');
+    expect(html).toContain('>Done<');
+  });
+
+  it('failed, expired and archived-run results read honestly', () => {
+    const one = (over: Record<string, unknown>) =>
+      render(envWith({ snapshot: stripe('open_no_position'), pendingTopUp: tracking(over) }, 'live'), (
+        <Panel host={document.createElement('div')} placement="chat" notice={null} retryAttach={() => undefined} />
+      ));
+    expect(one({ status: 'FAILED', watching: false })).toContain('payment didn&#x27;t go through. No credits were added.');
+    expect(one({ status: 'EXPIRED', watching: false })).toContain('checkout expired. No credits were added.');
+    expect(one({ status: 'CREDITED', watching: false, previous_run: true })).toContain('Test credits added: $10.00, credited to the previous demo run.');
+  });
+
+  it('the market card shows "Add funds" (not demo wording) and a fresh estimate', () => {
+    const html = render(envWith({ snapshot: stripe('open_no_position') }, 'live'), <MarketCard surface="panel" />);
+    expect(html).toContain('Add funds');
+    expect(html).not.toContain('Add demo funds');
+  });
+});

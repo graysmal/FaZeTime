@@ -2,7 +2,7 @@
 // Messages are untrusted input on both sides: validate shape before use.
 
 import { ERROR_CODES, type ErrorCode } from '@fazetime/contracts';
-import type { ApiResult, BackgroundStatus } from './types';
+import type { ApiResult, BackgroundStatus, TopUpTracking } from './types';
 
 export const PORT_NAME = 'fazetime/v1';
 export const REQUEST_TIMEOUT_MS = 10_000;
@@ -20,6 +20,9 @@ export const METHODS = [
   'fixtures.armTimeout',
   'presence',
   'status',
+  'topupHint',
+  'reopenTopUpCheckout',
+  'dismissTopUp',
 ] as const;
 export type Method = (typeof METHODS)[number];
 
@@ -36,7 +39,9 @@ export type ResponseMessage = { t: 'res'; id: number; result: ApiResult<unknown>
 export type PushMessage =
   | { t: 'snapshot'; result: ApiResult<unknown> }
   | { t: 'hello'; mode: 'MOCK' | 'LIVE'; fixtures: boolean }
-  | { t: 'status'; status: BackgroundStatus };
+  | { t: 'status'; status: BackgroundStatus }
+  /** P6: the tracked Stripe test top-up (never its Checkout URL), or null when none is tracked. */
+  | { t: 'topup'; topup: TopUpTracking | null };
 
 /** Popup (extension page) -> background. Content scripts are refused. */
 export const POPUP_METHODS = ['status', 'enroll', 'signout'] as const;
@@ -62,6 +67,7 @@ export function isFromBackground(msg: unknown): msg is FromBackground {
   if (m.t === 'snapshot') return isApiResult(m.result);
   if (m.t === 'hello') return m.mode === 'MOCK' || m.mode === 'LIVE';
   if (m.t === 'status') return typeof m.status === 'object' && m.status !== null;
+  if (m.t === 'topup') return m.topup === null || (typeof m.topup === 'object' && !Array.isArray(m.topup));
   return false;
 }
 

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type 
 import type { ErrorCode, Modes } from '@fazetime/contracts';
 import { checkTopUp, describeAmountProblem, formatMinor, parseDollarsToMinor } from '../lib/money';
 import type { PanelNotice, Placement } from '../content/mount';
+import { describeTopUp } from '../state/topupCopy';
 import { MarketCard } from './MarketCard';
 import { PANEL_OPEN_KEY, PROFILE_KEY, panelHeightKey, useEnv, usePanel, useStoredValue, type Profile } from './hooks';
 
@@ -152,6 +153,7 @@ export function Panel(props: { host: HTMLElement; placement: Placement; notice: 
               </button>
             </div>
           )}
+          {st.pendingTopUp && !st.topUp.open && <TopUpNotice />}
           <nav className="ft-tabs" role="tablist" aria-label="FaZeTime sections">
             {(['market', 'wallet', 'redeem'] as const).map((t) => (
               <button key={t} type="button" role="tab" aria-selected={tab === t} className="ft-tab" onClick={() => setTab(t)}>
@@ -248,7 +250,7 @@ export function WalletTab() {
           <b>{w ? formatMinor(w.in_play_minor) : '…'}</b>
         </div>
       </div>
-      {st.snapshot?.modes.payment_mode === 'MOCK' ? (
+      {st.snapshot?.modes.payment_mode === 'MOCK' || st.snapshot?.modes.payment_mode === 'STRIPE_TEST' ? (
         <button type="button" className="ft-primary" onClick={() => controller.openTopUp('manual')}>
           {mode === 'live' ? 'Add funds' : 'Add demo funds (MOCK)'}
         </button>
@@ -325,6 +327,7 @@ export function TopUpDialog() {
   const firstRef = useRef<HTMLButtonElement>(null);
   useEffect(() => firstRef.current?.focus(), []);
   if (!limits) return null;
+  if (st.snapshot?.modes.payment_mode === 'STRIPE_TEST') return <StripeTopUpDialog />;
   if (st.snapshot?.modes.payment_mode !== 'MOCK') {
     return (
       <div className="ft-backdrop" onKeyDown={(e) => e.key === 'Escape' && controller.closeTopUp()}>
@@ -406,6 +409,137 @@ export function TopUpDialog() {
         )}
         <button type="button" className="ft-secondary" onClick={() => controller.closeTopUp()} disabled={busy}>
           {t.status === 'credited' ? 'Done' : 'Cancel'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Buttons for the tracked top-up's suggested follow-up. */
+function TopUpActions({ action, terminal, onDone }: { action: 'REOPEN' | 'CHECK' | null; terminal: boolean; onDone?: () => void }) {
+  const { controller } = useEnv();
+  return (
+    <>
+      {action === 'REOPEN' && (
+        <button type="button" className="ft-link" onClick={() => void controller.reopenTopUpCheckout()}>
+          Open checkout
+        </button>
+      )}
+      {action === 'CHECK' && (
+        <button type="button" className="ft-link" onClick={() => void controller.checkTopUpAgain()}>
+          Check again
+        </button>
+      )}
+      {terminal && (
+        <button type="button" className="ft-link" onClick={() => (onDone ? onDone() : void controller.dismissTopUpResult())}>
+          OK
+        </button>
+      )}
+    </>
+  );
+}
+
+/** Panel-level line for a Stripe test top-up while the dialog is closed (e.g. after Stripe's return). */
+export function TopUpNotice() {
+  const st = usePanel();
+  const t = st.pendingTopUp;
+  if (!t) return null;
+  const copy = describeTopUp(t, st.checkoutClosedFor === t.topup_id);
+  return (
+    <div className={`ft-notice${copy.tone === 'err' ? ' ft-notice--warn' : ''}`} role="status">
+      <span>{copy.text}</span>
+      <TopUpActions action={copy.action} terminal={copy.terminal} />
+    </div>
+  );
+}
+
+/**
+ * P6 live top-up (CONTRACTS 9.18). "FaZe Up!" asks the background to create the top-up; the background
+ * opens Stripe-hosted Checkout in a new tab. No card fields exist here: card entry happens only on
+ * Stripe's page. Credits appear only after the SERVER reports CREDITED, and nothing re-places a bet.
+ */
+export function StripeTopUpDialog() {
+  const { controller } = useEnv();
+  const st = usePanel();
+  const limits = st.snapshot?.limits;
+  const t = st.topUp;
+  const track = st.pendingTopUp;
+  const [choice, setChoice] = useState<number | 'custom'>(() => limits?.topup_presets_minor[0] ?? 0);
+  const [customText, setCustomText] = useState('');
+  const firstRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => firstRef.current?.focus(), []);
+  if (!limits) return null;
+  const amount = choice === 'custom' ? parseDollarsToMinor(customText) : choice;
+  const problem = checkTopUp(amount, limits);
+  const creating = t.status === 'submitting' || (track?.status === 'SUBMITTING' && track.watching);
+  const copy = track ? describeTopUp(track, st.checkoutClosedFor === track.topup_id) : null;
+  const close = () => {
+    if (copy?.terminal) void controller.dismissTopUpResult();
+    controller.closeTopUp();
+  };
+  const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      close();
+    }
+  };
+  return (
+    <div className="ft-backdrop" onKeyDown={onKey}>
+      <div className="ft-dialog" role="dialog" aria-modal="false" aria-labelledby="ft-topup-title">
+        <div className="ft-row">
+          <h4 id="ft-topup-title">Add funds</h4>
+        </div>
+        {t.reason === 'insufficient' && (
+          <p className="ft-hint ft-hint--warn">
+            {t.neededMinor ? `You need ${formatMinor(t.neededMinor)} more for that bet. ` : ''}Topping up does not hold your bet or the market; it may close
+            before you are back.
+          </p>
+        )}
+        <div className="ft-amounts" role="group" aria-label="Top-up amount">
+          {limits.topup_presets_minor.map((p, i) => (
+            <button
+              key={p}
+              ref={i === 0 ? firstRef : undefined}
+              type="button"
+              className="ft-amount"
+              aria-pressed={choice === p}
+              disabled={creating}
+              onClick={() => setChoice(p)}
+            >
+              {formatMinor(p).replace('.00', '')}
+            </button>
+          ))}
+          <button type="button" className="ft-amount" aria-pressed={choice === 'custom'} disabled={creating} onClick={() => setChoice('custom')}>
+            Custom
+          </button>
+        </div>
+        {choice === 'custom' && (
+          <label className="ft-label">
+            Custom amount ({formatMinor(limits.topup_min_minor)} to {formatMinor(limits.topup_max_minor)}, steps of {formatMinor(limits.topup_step_minor)})
+            <input className="ft-input" inputMode="decimal" value={customText} placeholder="20" onChange={(e) => setCustomText(e.target.value)} />
+          </label>
+        )}
+        {problem && choice === 'custom' && customText !== '' && (
+          <div className="ft-field-error">{describeAmountProblem(problem, limits.topup_min_minor, limits.topup_max_minor, limits.topup_step_minor)}</div>
+        )}
+        <button type="button" className="ft-primary" disabled={creating || problem !== null || amount === null} onClick={() => amount !== null && void controller.submitTopUp(amount)}>
+          {creating ? 'Opening checkout…' : 'FaZe Up!'}
+        </button>
+        <p className="ft-hint">Opens Stripe's secure checkout in a new tab. Card details are entered only there.</p>
+        {t.message && (
+          <div className={`ft-status ${t.status === 'error' ? 'ft-status--err' : 'ft-status--wait'}`} role="status">
+            {t.message}
+          </div>
+        )}
+        {copy && (
+          <div className={`ft-status ft-status--${copy.tone}`} role="status">
+            <span>{copy.text}</span> <TopUpActions action={copy.action} terminal={false} />
+          </div>
+        )}
+        {copy?.tone === 'ok' && t.reason === 'insufficient' && <p className="ft-hint">Your bet was not placed. Check the market and confirm it again.</p>}
+        <p className="ft-fine">{TEST_CREDITS_NOTE}</p>
+        <button type="button" className="ft-secondary" onClick={close} disabled={t.status === 'submitting'}>
+          {copy?.terminal ? 'Done' : 'Close'}
         </button>
       </div>
     </div>

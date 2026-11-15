@@ -101,6 +101,18 @@ export default defineContentScript({
     ctx.setInterval(sendPresence, 15_000);
     ctx.addEventListener(document, 'visibilitychange', sendPresence);
 
+    // P6: Stripe's success/cancel return URL carries ?fazetime_topup=<id>. It is ONLY a hint to poll the
+    // server now; it never credits, and the status shown is always the server's.
+    let lastTopUpHint: string | null = null;
+    const checkTopUpHint = () => {
+      if (FAZETIME_MODE !== 'live' || !controller) return;
+      const params = new URLSearchParams(location.search);
+      const id = params.get('fazetime_topup');
+      if (!id || !/^top_[0-9a-f]{32}$/.test(id) || id === lastTopUpHint) return;
+      lastTopUpHint = id;
+      void controller.topUpHint(id, { closed: params.get('fazetime_result') === 'cancel' });
+    };
+
     const mounter = new MountController({
       doc: document,
       getPath: () => location.pathname,
@@ -110,6 +122,7 @@ export default defineContentScript({
       renderPanel: ({ host, root, placement, notice, channel, retryAttach }) => {
         const view = renderInto(root, channel, () => <Panel host={host} placement={placement} notice={notice} retryAttach={retryAttach} />);
         presenceChannel = channel;
+        checkTopUpHint();
         ctx.setTimeout(sendPresence, 1500);
         return {
           unmount: () => {
@@ -127,6 +140,7 @@ export default defineContentScript({
     // fallback. Each only re-reads location.pathname; the DOM is touched only on a real change.
     const onNav = () => {
       mounter.onLocationChange();
+      checkTopUpHint();
       ctx.setTimeout(() => mounter.onLocationChange(), 60);
     };
     ctx.addEventListener(window, 'wxt:locationchange', onNav);
